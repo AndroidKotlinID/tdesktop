@@ -344,8 +344,8 @@ void HistoryMessageVia::resize(int32 availw) const {
 	}
 }
 
-void HistoryMessageSigned::create(UserData *from, const QDateTime &date) {
-	auto time = qsl(", ") + date.toString(cTimeFormat());
+void HistoryMessageSigned::create(UserData *from, const QString &date) {
+	auto time = qsl(", ") + date;
 	auto name = App::peerName(from);
 	auto timew = st::msgDateFont->width(time);
 	auto namew = st::msgDateFont->width(name);
@@ -359,11 +359,9 @@ int HistoryMessageSigned::maxWidth() const {
 	return _signature.maxWidth();
 }
 
-void HistoryMessageEdited::create(const QDateTime &editDate, const QDateTime &date) {
+void HistoryMessageEdited::create(const QDateTime &editDate, const QString &date) {
 	_editDate = editDate;
-
-	auto time = date.toString(cTimeFormat());
-	_edited.setText(st::msgDateTextStyle, lang(lng_edited) + ' ' + time, _textNameOptions);
+	_edited.setText(st::msgDateTextStyle, lang(lng_edited) + ' ' + date, _textNameOptions);
 }
 
 int HistoryMessageEdited::maxWidth() const {
@@ -495,8 +493,11 @@ void HistoryMessageReply::paint(Painter &p, const HistoryItem *holder, int x, in
 
 	if (w > st::msgReplyBarSkip) {
 		if (replyToMsg) {
-			bool hasPreview = replyToMsg->getMedia() ? replyToMsg->getMedia()->hasReplyPreview() : false;
-			int previewSkip = hasPreview ? (st::msgReplyBarSize.height() + st::msgReplyBarSkip - st::msgReplyBarSize.width() - st::msgReplyBarPos.x()) : 0;
+			auto hasPreview = replyToMsg->getMedia() ? replyToMsg->getMedia()->hasReplyPreview() : false;
+			if (hasPreview && w < st::msgReplyBarSkip + st::msgReplyBarSize.height()) {
+				hasPreview = false;
+			}
+			auto previewSkip = hasPreview ? (st::msgReplyBarSize.height() + st::msgReplyBarSkip - st::msgReplyBarSize.width() - st::msgReplyBarPos.x()) : 0;
 
 			if (hasPreview) {
 				ImagePtr replyPreview = replyToMsg->getMedia()->replyPreview();
@@ -862,11 +863,13 @@ void HistoryMessage::createComponents(const CreateConfig &config) {
 	if (auto views = Get<HistoryMessageViews>()) {
 		views->_views = config.viewsCount;
 	}
-	if (auto msgsigned = Get<HistoryMessageSigned>()) {
-		msgsigned->create(_from->asUser(), date);
-	}
 	if (auto edited = Get<HistoryMessageEdited>()) {
-		edited->create(config.editDate, date);
+		edited->create(config.editDate, date.toString(cTimeFormat()));
+		if (auto msgsigned = Get<HistoryMessageSigned>()) {
+			msgsigned->create(_from->asUser(), edited->_edited.originalText());
+		}
+	} else if (auto msgsigned = Get<HistoryMessageSigned>()) {
+		msgsigned->create(_from->asUser(), date.toString(cTimeFormat()));
 	}
 	if (auto forwarded = Get<HistoryMessageForwarded>()) {
 		forwarded->_originalDate = config.originalDate;
@@ -1089,10 +1092,8 @@ void HistoryMessage::initDimensions() {
 			}
 			if (entry) {
 				accumulate_max(_maxw, entry->_page->maxWidth());
+				_minh += entry->_page->minHeight();
 			}
-		}
-		if (entry) {
-			_minh += entry->_page->minHeight();
 		}
 	} else if (_media) {
 		_media->initDimensions();
@@ -1173,9 +1174,16 @@ void HistoryMessage::applyEdition(const MTPDmessage &message) {
 			if (!Has<HistoryMessageEdited>()) {
 				AddComponents(HistoryMessageEdited::Bit());
 			}
-			Get<HistoryMessageEdited>()->create(::date(message.vedit_date), date);
+			auto edited = Get<HistoryMessageEdited>();
+			edited->create(::date(message.vedit_date), date.toString(cTimeFormat()));
+			if (auto msgsigned = Get<HistoryMessageSigned>()) {
+				msgsigned->create(_from->asUser(), edited->_edited.originalText());
+			}
 		} else if (Has<HistoryMessageEdited>()) {
 			RemoveComponents(HistoryMessageEdited::Bit());
+			if (auto msgsigned = Get<HistoryMessageSigned>()) {
+				msgsigned->create(_from->asUser(), date.toString(cTimeFormat()));
+			}
 		}
 		initTime();
 	}
@@ -1285,6 +1293,15 @@ TextWithEntities HistoryMessage::selectedText(TextSelection selection) const {
 		result.text += qstr("\n\n");
 		TextUtilities::Append(result, std::move(logEntryOriginalResult));
 	}
+	if (auto reply = Get<HistoryMessageReply>()) {
+		if (selection == FullSelection && reply->replyToMsg) {
+			TextWithEntities wrapped;
+			wrapped.text.reserve(lang(lng_in_reply_to).size() + reply->replyToMsg->author()->name.size() + 4 + result.text.size());
+			wrapped.text.append('[').append(lang(lng_in_reply_to)).append(' ').append(reply->replyToMsg->author()->name).append(qsl("]\n"));
+			TextUtilities::Append(wrapped, std::move(result));
+			result = wrapped;
+		}
+	}
 	if (auto forwarded = Get<HistoryMessageForwarded>()) {
 		if (selection == FullSelection) {
 			auto fwdinfo = forwarded->_text.originalTextWithEntities(AllTextSelection, ExpandLinksAll);
@@ -1294,15 +1311,6 @@ TextWithEntities HistoryMessage::selectedText(TextSelection selection) const {
 			wrapped.text.append('[');
 			TextUtilities::Append(wrapped, std::move(fwdinfo));
 			wrapped.text.append(qsl("]\n"));
-			TextUtilities::Append(wrapped, std::move(result));
-			result = wrapped;
-		}
-	}
-	if (auto reply = Get<HistoryMessageReply>()) {
-		if (selection == FullSelection && reply->replyToMsg) {
-			TextWithEntities wrapped;
-			wrapped.text.reserve(lang(lng_in_reply_to).size() + reply->replyToMsg->author()->name.size() + 4 + result.text.size());
-			wrapped.text.append('[').append(lang(lng_in_reply_to)).append(' ').append(reply->replyToMsg->author()->name).append(qsl("]\n"));
 			TextUtilities::Append(wrapped, std::move(result));
 			result = wrapped;
 		}
@@ -1837,7 +1845,7 @@ int HistoryMessage::performResizeGetHeight() {
 				_media->resizeGetHeight(_maxw);
 			}
 			if (entry) {
-				entry->_page->resizeGetHeight(_maxw);
+				_height += entry->_page->resizeGetHeight(countGeometry().width());
 			}
 		} else {
 			if (emptyText()) {
@@ -1861,31 +1869,29 @@ int HistoryMessage::performResizeGetHeight() {
 			}
 			if (mediaDisplayed) {
 				_height += _media->resizeGetHeight(contentWidth);
-			}
-			if (entry) {
+				if (entry) {
+					_height += entry->_page->resizeGetHeight(countGeometry().width());
+				}
+			} else if (entry) {
 				_height += entry->_page->resizeGetHeight(contentWidth);
 			}
 		}
 
 		if (displayFromName()) {
-			auto g = countGeometry();
-			fromNameUpdated(g.width());
+			fromNameUpdated(countGeometry().width());
 			_height += st::msgNameFont->height;
 		} else if (via && !forwarded) {
-			auto g = countGeometry();
-			via->resize(g.width() - st::msgPadding.left() - st::msgPadding.right());
+			via->resize(countGeometry().width() - st::msgPadding.left() - st::msgPadding.right());
 			_height += st::msgNameFont->height;
 		}
 
 		if (displayForwardedFrom()) {
-			auto g = countGeometry();
-			auto fwdheight = ((forwarded->_text.maxWidth() > (g.width() - st::msgPadding.left() - st::msgPadding.right())) ? 2 : 1) * st::semiboldFont->height;
+			auto fwdheight = ((forwarded->_text.maxWidth() > (countGeometry().width() - st::msgPadding.left() - st::msgPadding.right())) ? 2 : 1) * st::semiboldFont->height;
 			_height += fwdheight;
 		}
 
 		if (reply) {
-			auto g = countGeometry();
-			reply->resize(g.width() - st::msgPadding.left() - st::msgPadding.right());
+			reply->resize(countGeometry().width() - st::msgPadding.left() - st::msgPadding.right());
 			_height += st::msgReplyPadding.top() + st::msgReplyBarSize.height() + st::msgReplyPadding.bottom();
 		}
 	} else if (_media) {
