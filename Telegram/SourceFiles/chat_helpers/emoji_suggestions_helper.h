@@ -20,22 +20,21 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include <QtCore/QString>
-#include <QtCore/QStringList>
+#include "emoji_suggestions.h"
+#include "emoji_suggestions_data.h"
 
-namespace codegen {
-namespace emoji {
+namespace Ui {
+namespace Emoji {
 
-struct Options {
-	QString outputPath = ".";
-	QString replacesPath;
-#ifdef SUPPORT_IMAGE_GENERATION
-	bool writeImages = false;
-#endif // SUPPORT_IMAGE_GENERATION
-};
+inline utf16string QStringToUTF16(const QString &string) {
+	return utf16string(reinterpret_cast<const utf16char*>(string.constData()), string.size());
+}
 
-// Parsing failed if inputPath is empty in the result.
-Options parseOptions();
+inline QString QStringFromUTF16(utf16string string) {
+	return QString::fromRawData(reinterpret_cast<const QChar*>(string.data()), string.size());
+}
 
-} // namespace emoji
-} // namespace codegen
+constexpr auto kSuggestionMaxLength = internal::kReplacementMaxLength;
+
+} // namespace Emoji
+} // namespace Ui
