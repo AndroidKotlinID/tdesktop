@@ -51,6 +51,10 @@
         'sources!': [
           '<(src_loc)/_other/updater_linux.cpp',
         ],
+      }, {
+        'ldflags': [
+          '-static-libstdc++',
+        ],
       }],
       [ '"<(build_mac)" != "1"', {
         'sources!': [
@@ -93,10 +97,10 @@
       }],
       [ 'build_mac', {
         'include_dirs': [
-          '<(libs_loc)/openssl-xcode/include'
+          '<(libs_loc)/openssl/include'
         ],
         'library_dirs': [
-          '<(libs_loc)/openssl-xcode',
+          '<(libs_loc)/openssl',
         ],
         'xcode_settings': {
           'OTHER_LDFLAGS': [
@@ -131,7 +135,7 @@
           }, {
             'include_dirs': [
               '/usr/local/include',
-              '<(libs_loc)/openssl-xcode/include'
+              '<(libs_loc)/openssl/include'
             ],
             'library_dirs': [
               '/usr/local/lib',
@@ -153,7 +157,7 @@
           }, {
             'include_dirs': [
               '/usr/local/include',
-              '<(libs_loc)/openssl-xcode/include'
+              '<(libs_loc)/openssl/include'
             ],
             'library_dirs': [
               '/usr/local/lib',

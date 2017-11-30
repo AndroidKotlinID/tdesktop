@@ -8,7 +8,7 @@
 
 ## Prepare folder
 
-Choose an empty folder for the future build, for example **D:\\TBuild**. It will be named ***BuildPath*** in the rest of this document. Create two folders there, ***BuildPath*\\ThirdParty** and ***BuildPath*\\Libraries**
+Choose an empty folder for the future build, for example **D:\\TBuild**. It will be named ***BuildPath*** in the rest of this document. Create two folders there, ***BuildPath*\\ThirdParty** and ***BuildPath*\\Libraries**.
 
 All commands (if not stated otherwise) will be launched from **x86 Native Tools Command Prompt for VS 2017.bat** (should be in **Start Menu > Visual Studio 2017** menu folder). Pay attention not to use any other Command Prompt.
 
@@ -50,6 +50,8 @@ Open **x86 Native Tools Command Prompt for VS 2017.bat**, go to ***BuildPath*** 
 
     mkdir Libraries
     cd Libraries
+
+    git clone https://github.com/Microsoft/Range-V3-VS2015 range-v3
 
     git clone https://github.com/telegramdesktop/lzma.git
     cd lzma\C\Util\LzmaLib
@@ -118,7 +120,7 @@ Open **x86 Native Tools Command Prompt for VS 2017.bat**, go to ***BuildPath*** 
 
     git clone https://github.com/FFmpeg/FFmpeg.git ffmpeg
     cd ffmpeg
-    git checkout release/3.2
+    git checkout release/3.4
 
     set CHERE_INVOKING=enabled_from_arguments
     set MSYS2_PATH_TYPE=inherit

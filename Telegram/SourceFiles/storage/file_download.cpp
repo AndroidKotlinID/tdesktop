@@ -20,6 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "storage/file_download.h"
 
+#include "data/data_document.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "messenger.h"
@@ -661,6 +662,8 @@ void mtpFileLoader::getCdnFileHashesDone(const MTPVector<MTPCdnFileHash> &result
 }
 
 void mtpFileLoader::placeSentRequest(mtpRequestId requestId, const RequestData &requestData) {
+	Expects(!_finished);
+
 	_downloader->requestedAmountIncrement(requestData.dcId, requestData.dcIndex, partSize());
 	++_queue->queriesCount;
 	_sentRequests.emplace(requestId, requestData);

@@ -284,7 +284,7 @@ void DcOptions::constructFromSerialized(const QByteArray &serialized) {
 
 		// https://stackoverflow.com/questions/1076714/max-length-for-client-ip-address
 		constexpr auto kMaxIpSize = 45;
-		if (ipSize > kMaxIpSize) {
+		if (ipSize <= 0 || ipSize > kMaxIpSize) {
 			LOG(("MTP Error: Bad data inside DcOptions::constructFromSerialized()"));
 			return;
 		}
@@ -297,7 +297,7 @@ void DcOptions::constructFromSerialized(const QByteArray &serialized) {
 			return;
 		}
 
-		applyOneGuarded(DcId(id), MTPDdcOption::Flags(flags), ip, port);
+		applyOneGuarded(DcId(id), MTPDdcOption::Flags::from_raw(flags), ip, port);
 	}
 
 	// Read CDN config
@@ -341,7 +341,7 @@ DcOptions::Ids DcOptions::configEnumDcIds() const {
 			}
 		}
 	}
-	std::sort(result.begin(), result.end());
+	ranges::sort(result);
 	return result;
 }
 
