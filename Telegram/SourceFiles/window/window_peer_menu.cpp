@@ -31,6 +31,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "auth_session.h"
 #include "apiwrap.h"
 #include "mainwidget.h"
+#include "mainwindow.h"
 #include "observer_peer.h"
 #include "styles/style_boxes.h"
 #include "window/window_controller.h"
@@ -110,7 +111,9 @@ auto DeleteAndLeaveHandler(not_null<PeerData*> peer) {
 			if (!App::main()) return;
 
 			Ui::hideLayer();
-			Ui::showChatsList();
+			if (App::wnd()->controller()->activePeer.current() == peer) {
+				Ui::showChatsList();
+			}
 			if (peer->isUser()) {
 				App::main()->deleteConversation(peer);
 			} else if (auto chat = peer->asChat()) {
