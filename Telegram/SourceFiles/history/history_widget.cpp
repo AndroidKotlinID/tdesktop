@@ -1739,11 +1739,11 @@ void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool re
 
 	if (peerId) {
 		_peer = App::peer(peerId);
-		_topBar->setHistoryPeer(_peer);
 		_channel = peerToChannel(_peer->id);
 		_canSendMessages = canSendMessages(_peer);
 		_tabbedSelector->setCurrentPeer(_peer);
 	}
+	_topBar->setHistoryPeer(_peer);
 	updateTopBarSelection();
 
 	if (_peer && _peer->isChannel()) {
@@ -3118,7 +3118,7 @@ void HistoryWidget::showAnimated(
 
 	_cacheUnder = params.oldContentCache;
 	show();
-	_topBar->updateControlsVisibility();
+	_topBar->finishAnimating();
 	historyDownAnimationFinish();
 	unreadMentionsAnimationFinish();
 	_topShadow->setVisible(params.withTopBarShadow ? false : true);
@@ -5989,8 +5989,13 @@ void HistoryWidget::handlePeerUpdate() {
 		Auth().api().requestFullPeer(_peer);
 	} else if (_peer->isUser() && (_peer->asUser()->blockStatus() == UserData::BlockStatus::Unknown || _peer->asUser()->callsStatus() == UserData::CallsStatus::Unknown)) {
 		Auth().api().requestFullPeer(_peer);
-	} else if (_peer->isMegagroup() && !_peer->asChannel()->mgInfo->botStatus) {
-		Auth().api().requestBots(_peer->asChannel());
+	} else if (auto channel = _peer->asMegagroup()) {
+		if (!channel->mgInfo->botStatus) {
+			Auth().api().requestBots(channel);
+		}
+		if (channel->mgInfo->admins.empty()) {
+			Auth().api().requestAdmins(channel);
+		}
 	}
 	if (!_a_show.animating()) {
 		if (_unblock->isHidden() == isBlocked() || (!isBlocked() && _joinChannel->isHidden() == isJoinChannel())) {
