@@ -33,7 +33,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 void HistoryInit();
 
 class HistoryItem;
-using SelectedItemSet = QMap<int, not_null<HistoryItem*>>;
+using HistoryItemsList = std::vector<not_null<HistoryItem*>>;
 
 enum NewMessageType {
 	NewMessageUnread,
@@ -51,7 +51,11 @@ public:
 		_selfDestructTimer.setCallback([this] { checkSelfDestructItems(); });
 	}
 
-	void regSendAction(History *history, UserData *user, const MTPSendMessageAction &action, TimeId when);
+	void registerSendAction(
+		not_null<History*> history,
+		not_null<UserData*> user,
+		const MTPSendMessageAction &action,
+		TimeId when);
 	void step_typings(TimeMs ms, bool timer);
 
 	History *find(const PeerId &peerId);
@@ -261,7 +265,7 @@ public:
 	bool mute() const {
 		return _mute;
 	}
-	void setMute(bool newMute);
+	bool changeMute(bool newMute);
 	void getNextShowFrom(HistoryBlock *block, int i);
 	void addUnreadBar();
 	void destroyUnreadBar();
@@ -347,11 +351,14 @@ public:
 	}
 
 	void paintDialog(Painter &p, int32 w, bool sel) const;
-	bool updateSendActionNeedsAnimating(TimeMs ms, bool force = false);
-	void unregSendAction(UserData *from);
-	bool updateSendActionNeedsAnimating(UserData *user, const MTPSendMessageAction &action);
 	bool mySendActionUpdated(SendAction::Type type, bool doing);
 	bool paintSendAction(Painter &p, int x, int y, int availableWidth, int outerWidth, style::color color, TimeMs ms);
+
+	// Interface for Histories
+	bool updateSendActionNeedsAnimating(TimeMs ms, bool force = false);
+	bool updateSendActionNeedsAnimating(
+		not_null<UserData*> user,
+		const MTPSendMessageAction &action);
 
 	void clearLastKeyboard();
 
@@ -423,11 +430,11 @@ public:
 		return _editDraft ? editDraft() : localDraft();
 	}
 
-	QVector<FullMsgId> forwardDraft() const {
+	const MessageIdsList &forwardDraft() const {
 		return _forwardDraft;
 	}
-	SelectedItemSet validateForwardDraft();
-	void setForwardDraft(const SelectedItemSet &items);
+	HistoryItemsList validateForwardDraft();
+	void setForwardDraft(MessageIdsList &&items);
 
 	// some fields below are a property of a currently displayed instance of this
 	// conversation history not a property of the conversation history itself
@@ -557,6 +564,8 @@ private:
 	void addToSharedMedia(std::vector<MsgId> (&medias)[kSharedMediaTypeCount], bool force);
 	void addBlockToSharedMedia(HistoryBlock *block);
 
+	void clearSendAction(not_null<UserData*> from);
+
 	enum class Flag {
 		f_has_pending_resized_items = (1 << 0),
 		f_pending_resize            = (1 << 1),
@@ -603,7 +612,7 @@ private:
 
 	std::unique_ptr<Data::Draft> _localDraft, _cloudDraft;
 	std::unique_ptr<Data::Draft> _editDraft;
-	QVector<FullMsgId> _forwardDraft;
+	MessageIdsList _forwardDraft;
 
 	using TypingUsers = QMap<UserData*, TimeMs>;
 	TypingUsers _typing;

@@ -38,6 +38,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/wrap/fade_wrap.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/search_field_controller.h"
+#include "window/window_peer_menu.h"
 
 namespace Info {
 
@@ -144,6 +145,9 @@ Ui::FadeWrap<Ui::RpWidget> *TopBar::pushButton(
 		return !selectionMode()
 			&& !_searchModeEnabled;
 	});
+	weak->toggle(
+		!selectionMode() && !_searchModeEnabled,
+		anim::type::instant);
 	weak->widthValue()
 		| rpl::start_with_next([this] {
 			updateControlsGeometry(width());
@@ -489,14 +493,14 @@ bool TopBar::searchMode() const {
 	return _searchModeAvailable && _searchModeEnabled;
 }
 
-SelectedItemSet TopBar::collectItems() const {
-	auto result = SelectedItemSet();
-	for (auto value : _selectedItems.list) {
-		if (auto item = App::histItemById(value.msgId)) {
-			result.insert(result.size(), item);
-		}
-	}
-	return result;
+MessageIdsList TopBar::collectItems() const {
+	return ranges::view::all(
+		_selectedItems.list
+	) | ranges::view::transform([](auto &&item) {
+		return item.msgId;
+	}) | ranges::view::filter([](const FullMsgId &msgId) {
+		return App::histItemById(msgId) != nullptr;
+	}) | ranges::to_vector;
 }
 
 void TopBar::performForward() {
@@ -505,20 +509,11 @@ void TopBar::performForward() {
 		_cancelSelectionClicks.fire({});
 		return;
 	}
-	auto callback = [items = std::move(items), weak = make_weak(this)](
-			not_null<PeerData*> peer) {
-		App::main()->setForwardDraft(peer->id, items);
+	Window::ShowForwardMessagesBox(std::move(items), [weak = make_weak(this)]{
 		if (weak) {
 			weak->_cancelSelectionClicks.fire({});
 		}
-	};
-	Ui::show(Box<PeerListBox>(
-		std::make_unique<ChooseRecipientBoxController>(std::move(callback)),
-		[](not_null<PeerListBox*> box) {
-			box->addButton(langFactory(lng_cancel), [box] {
-				box->closeBox();
-			});
-		}));
+	});
 }
 
 void TopBar::performDelete() {
@@ -526,13 +521,14 @@ void TopBar::performDelete() {
 	if (items.empty()) {
 		_cancelSelectionClicks.fire({});
 	} else {
-		Ui::show(Box<DeleteMessagesBox>(items));
+		Ui::show(Box<DeleteMessagesBox>(std::move(items)));
 	}
 }
 
 rpl::producer<QString> TitleValue(
 		const Section &section,
-		not_null<PeerData*> peer) {
+		not_null<PeerData*> peer,
+		bool isStackBottom) {
 	return Lang::Viewer([&] {
 		switch (section.type()) {
 		case Section::Type::Profile:
@@ -550,6 +546,9 @@ rpl::producer<QString> TitleValue(
 			Unexpected("Bad peer type in Info::TitleValue()");
 
 		case Section::Type::Media:
+			if (peer->isSelf() && isStackBottom) {
+				return lng_profile_shared_media;
+			}
 			switch (section.mediaType()) {
 			case Section::MediaType::Photo:
 				return lng_media_type_photos;

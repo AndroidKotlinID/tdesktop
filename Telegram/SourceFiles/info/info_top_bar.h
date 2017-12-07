@@ -43,7 +43,8 @@ class Section;
 
 rpl::producer<QString> TitleValue(
 	const Section &section,
-	not_null<PeerData*> peer);
+	not_null<PeerData*> peer,
+	bool isStackBottom);
 
 class TopBar : public Ui::RpWidget {
 public:
@@ -97,12 +98,11 @@ private:
 	bool searchMode() const;
 	Ui::StringWithNumbers generateSelectedText() const;
 	[[nodiscard]] bool computeCanDelete() const;
-	[[nodiscard]] SelectedItemSet collectSelectedItems() const;
 	void updateSelectionState();
 	void createSelectionControls();
 	void clearSelectionControls();
 
-	SelectedItemSet collectItems() const;
+	MessageIdsList collectItems() const;
 	void performForward();
 	void performDelete();
 

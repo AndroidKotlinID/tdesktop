@@ -26,6 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_item.h"
 #include "window/themes/window_theme.h"
 #include "window/window_controller.h"
+#include "window/window_peer_menu.h"
 #include "storage/file_download.h"
 #include "ui/widgets/popup_menu.h"
 #include "lang/lang_keys.h"
@@ -673,17 +674,13 @@ auto ListWidget::collectSelectedItems() const -> SelectedItems {
 	return items;
 }
 
-SelectedItemSet ListWidget::collectSelectedSet() const {
-	auto items = SelectedItemSet();
-	if (hasSelectedItems()) {
-		for (auto &data : _selected) {
-			auto fullId = computeFullId(data.first);
-			if (auto item = App::histItemById(fullId)) {
-				items.insert(items.size(), item);
-			}
-		}
-	}
-	return items;
+MessageIdsList ListWidget::collectSelectedIds() const {
+	const auto selected = collectSelectedItems();
+	return ranges::view::all(
+		selected.list
+	) | ranges::view::transform([](const SelectedItem &item) {
+		return item.msgId;
+	}) | ranges::to_vector;
 }
 
 void ListWidget::pushSelectedItems() {
@@ -1364,53 +1361,39 @@ void ListWidget::contextMenuEvent(QContextMenuEvent *e) {
 }
 
 void ListWidget::forwardSelected() {
-	forwardItems(collectSelectedSet());
-}
-
-void ListWidget::forwardItem(UniversalMsgId universalId) {
-	if (auto item = App::histItemById(computeFullId(universalId))) {
-		auto items = SelectedItemSet();
-		items.insert(0, item);
+	if (auto items = collectSelectedIds(); !items.empty()) {
 		forwardItems(std::move(items));
 	}
 }
 
-void ListWidget::forwardItems(SelectedItemSet items) {
-	if (items.empty()) {
-		return;
+void ListWidget::forwardItem(UniversalMsgId universalId) {
+	if (const auto item = App::histItemById(computeFullId(universalId))) {
+		forwardItems({ 1, item->fullId() });
 	}
-	auto weak = make_weak(this);
-	auto controller = std::make_unique<ChooseRecipientBoxController>(
-		[weak, items = std::move(items)](not_null<PeerData*> peer) {
-			App::main()->setForwardDraft(peer->id, items);
-			if (weak) {
-				weak->clearSelected();
-			}
-		});
-	Ui::show(Box<PeerListBox>(
-		std::move(controller),
-		[](not_null<PeerListBox*> box) {
-			box->addButton(langFactory(lng_cancel), [box] {
-				box->closeBox();
-			});
-		}));
+}
+
+void ListWidget::forwardItems(MessageIdsList &&items) {
+	const auto weak = make_weak(this);
+	Window::ShowForwardMessagesBox(std::move(items), [weak] {
+		if (const auto strong = weak.data()) {
+			strong->clearSelected();
+		}
+	});
 }
 
 void ListWidget::deleteSelected() {
-	deleteItems(collectSelectedSet());
+	deleteItems(collectSelectedIds());
 }
 
 void ListWidget::deleteItem(UniversalMsgId universalId) {
-	if (auto item = App::histItemById(computeFullId(universalId))) {
-		auto items = SelectedItemSet();
-		items.insert(0, item);
-		deleteItems(std::move(items));
+	if (const auto item = App::histItemById(computeFullId(universalId))) {
+		deleteItems({ 1, item->fullId() });
 	}
 }
 
-void ListWidget::deleteItems(SelectedItemSet items) {
+void ListWidget::deleteItems(MessageIdsList &&items) {
 	if (!items.empty()) {
-		Ui::show(Box<DeleteMessagesBox>(items));
+		Ui::show(Box<DeleteMessagesBox>(std::move(items)));
 	}
 }
 

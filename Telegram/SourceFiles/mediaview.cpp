@@ -35,6 +35,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_message.h"
 #include "history/history_media_types.h"
 #include "window/themes/window_theme_preview.h"
+#include "window/window_peer_menu.h"
 #include "base/task_queue.h"
 #include "observer_peer.h"
 #include "auth_session.h"
@@ -398,7 +399,7 @@ void MediaView::updateActions() {
 			return true;
 		} else if (!_msgid && _photo && App::self() && _user == App::self()) {
 			return _userPhotosData && _fullIndex && _fullCount;
-		} else if (_photo && _photo->peer && _photo->peer->photoId == _photo->id) {
+		} else if (_photo && _photo->peer && _photo->peer->userpicPhotoId() == _photo->id) {
 			if (auto chat = _photo->peer->asChat()) {
 				return chat->canEdit();
 			} else if (auto channel = _photo->peer->asChannel()) {
@@ -936,11 +937,7 @@ void MediaView::onForward() {
 	}
 
 	close();
-	if (auto main = App::main()) {
-		auto items = SelectedItemSet();
-		items.insert(item->id, item);
-		main->showForwardLayer(items);
-	}
+	Window::ShowForwardMessagesBox({ 1, item->fullId() });
 }
 
 void MediaView::onDelete() {
@@ -948,7 +945,7 @@ void MediaView::onDelete() {
 	auto deletingPeerPhoto = [this]() {
 		if (!_msgid) return true;
 		if (_photo && _history) {
-			if (_history->peer->photoId == _photo->id) {
+			if (_history->peer->userpicPhotoId() == _photo->id) {
 				return _firstOpenedPeerPhoto;
 			}
 		}
@@ -1010,12 +1007,12 @@ base::optional<MediaView::SharedMediaType> MediaView::sharedMediaType() const {
 }
 
 base::optional<MediaView::SharedMediaKey> MediaView::sharedMediaKey() const {
-	if (!_msgid && _peer && !_user && _photo && _peer->photoId == _photo->id) {
+	if (!_msgid && _peer && !_user && _photo && _peer->userpicPhotoId() == _photo->id) {
 		return SharedMediaKey {
 			_history->peer->id,
 			_migrated ? _migrated->peer->id : 0,
 			SharedMediaType::ChatPhoto,
-			_peer->photoId
+			_peer->userpicPhotoId()
 		};
 	}
 	if (!IsServerMsgId(_msgid.msg)) {

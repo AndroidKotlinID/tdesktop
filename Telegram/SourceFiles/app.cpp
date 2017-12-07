@@ -60,7 +60,7 @@ namespace {
 	using PeersData = QHash<PeerId, PeerData*>;
 	PeersData peersData;
 
-	using MutedPeers = QMap<PeerData*, bool>;
+	using MutedPeers = QMap<not_null<PeerData*>, bool>;
 	MutedPeers mutedPeers;
 
 	PhotosData photosData;
@@ -195,9 +195,6 @@ namespace {
 		Window::Theme::Background()->reset();
 
 		cSetOtherOnline(0);
-		globalNotifyAllPtr = UnknownNotifySettings;
-		globalNotifyUsersPtr = UnknownNotifySettings;
-		globalNotifyChatsPtr = UnknownNotifySettings;
 		clearStorageImages();
 		if (auto w = wnd()) {
 			w->updateConnectingStatus();
@@ -1162,28 +1159,6 @@ namespace {
 		return ImagePtr();
 	}
 
-	StorageImageLocation imageLocation(int32 w, int32 h, const MTPFileLocation &loc) {
-		if (loc.type() == mtpc_fileLocation) {
-			const auto &l(loc.c_fileLocation());
-			return StorageImageLocation(w, h, l.vdc_id.v, l.vvolume_id.v, l.vlocal_id.v, l.vsecret.v);
-		}
-		return StorageImageLocation(w, h, 0, 0, 0, 0);
-	}
-
-	StorageImageLocation imageLocation(const MTPPhotoSize &size) {
-		switch (size.type()) {
-		case mtpc_photoSize: {
-			const auto &d(size.c_photoSize());
-			return imageLocation(d.vw.v, d.vh.v, d.vlocation);
-		} break;
-		case mtpc_photoCachedSize: {
-			const auto &d(size.c_photoCachedSize());
-			return imageLocation(d.vw.v, d.vh.v, d.vlocation);
-		} break;
-		}
-		return StorageImageLocation();
-	}
-
 	void feedInboxRead(const PeerId &peer, MsgId upTo) {
 		if (auto history = App::historyLoaded(peer)) {
 			history->inboxRead(upTo);
@@ -1421,7 +1396,18 @@ namespace {
 	}
 
 	DocumentData *feedDocument(const MTPDdocument &document, DocumentData *convert) {
-		return App::documentSet(document.vid.v, convert, document.vaccess_hash.v, document.vversion.v, document.vdate.v, document.vattributes.v, qs(document.vmime_type), App::image(document.vthumb), document.vdc_id.v, document.vsize.v, App::imageLocation(document.vthumb));
+		return App::documentSet(
+			document.vid.v,
+			convert,
+			document.vaccess_hash.v,
+			document.vversion.v,
+			document.vdate.v,
+			document.vattributes.v,
+			qs(document.vmime_type),
+			App::image(document.vthumb),
+			document.vdc_id.v,
+			document.vsize.v,
+			StorageImageLocation::FromMTP(document.vthumb));
 	}
 
 	WebPageData *feedWebPage(const MTPDwebPage &webpage, WebPageData *convert) {
@@ -2598,28 +2584,32 @@ namespace {
 		return QString();
 	}
 
-	void regMuted(PeerData *peer, int32 changeIn) {
+	void regMuted(not_null<PeerData*> peer, TimeMs changeIn) {
 		::mutedPeers.insert(peer, true);
-		if (App::main()) App::main()->updateMutedIn(changeIn);
+		App::main()->updateMutedIn(changeIn);
 	}
 
-	void unregMuted(PeerData *peer) {
+	void unregMuted(not_null<PeerData*> peer) {
 		::mutedPeers.remove(peer);
 	}
 
 	void updateMuted() {
-		int32 changeInMin = 0;
-		for (MutedPeers::iterator i = ::mutedPeers.begin(); i != ::mutedPeers.end();) {
-			int32 changeIn = 0;
-			History *h = App::history(i.key()->id);
-			if (isNotifyMuted(i.key()->notify, &changeIn)) {
-				h->setMute(true);
-				if (changeIn && (!changeInMin || changeIn < changeInMin)) {
-					changeInMin = changeIn;
+		auto changeInMin = TimeMs(0);
+		for (auto i = ::mutedPeers.begin(); i != ::mutedPeers.end();) {
+			const auto history = App::historyLoaded(i.key()->id);
+			const auto muteFinishesIn = i.key()->notifyMuteFinishesIn();
+			if (muteFinishesIn > 0) {
+				if (history) {
+					history->changeMute(true);
+				}
+				if (!changeInMin || muteFinishesIn < changeInMin) {
+					changeInMin = muteFinishesIn;
 				}
 				++i;
 			} else {
-				h->setMute(false);
+				if (history) {
+					history->changeMute(false);
+				}
 				i = ::mutedPeers.erase(i);
 			}
 		}

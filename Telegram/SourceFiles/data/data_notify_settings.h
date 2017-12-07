@@ -20,14 +20,41 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-enum DragState {
-	DragStateNone = 0x00,
-	DragStateFiles = 0x01,
-	DragStatePhotoFiles = 0x02,
-	DragStateImage = 0x03,
+namespace Data {
+
+class NotifySettingsValue;
+
+class NotifySettings {
+public:
+	NotifySettings();
+
+	enum class MuteChange {
+		Ignore,
+		Mute,
+		Unmute,
+	};
+	enum class SilentPostsChange {
+		Ignore,
+		Silent,
+		Notify,
+	};
+
+	bool change(const MTPPeerNotifySettings &settings);
+	bool change(
+		MuteChange mute,
+		SilentPostsChange silent,
+		int muteForSeconds);
+	TimeMs muteFinishesIn() const;
+	bool settingsUnknown() const;
+	bool silentPosts() const;
+	MTPinputPeerNotifySettings serialize() const;
+
+	~NotifySettings();
+
+private:
+	bool _known = false;
+	std::unique_ptr<NotifySettingsValue> _value;
+
 };
 
-enum class ReadServerHistoryChecks {
-	OnlyIfUnread,
-	ForceRequest,
-};
+} // namespace Data

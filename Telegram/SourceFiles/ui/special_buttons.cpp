@@ -24,6 +24,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_history.h"
 #include "dialogs/dialogs_layout.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/empty_userpic.h"
 #include "data/data_photo.h"
 #include "core/file_utilities.h"
 #include "boxes/photo_crop_box.h"
@@ -483,11 +484,11 @@ void UserpicButton::openPeerPhoto() {
 		return;
 	}
 
-	auto id = _peer->photoId;
-	if (!id || id == UnknownPeerPhotoId) {
+	const auto id = _peer->userpicPhotoId();
+	if (!id) {
 		return;
 	}
-	auto photo = App::photo(id);
+	const auto photo = App::photo(id);
 	if (photo->date) {
 		Messenger::Instance().showPhoto(photo, _peer);
 	}
@@ -522,11 +523,20 @@ void UserpicButton::paintEvent(QPaintEvent *e) {
 	auto photoTop = photoPosition.y();
 
 	auto ms = getms();
-	if (_a_appearance.animating(ms)) {
-		p.drawPixmapLeft(photoPosition, width(), _oldUserpic);
-		p.setOpacity(_a_appearance.current());
+	if (showSavedMessages()) {
+		Ui::EmptyUserpic::PaintSavedMessages(
+			p,
+			photoPosition.x(),
+			photoPosition.y(),
+			width(),
+			_st.photoSize);
+	} else {
+		if (_a_appearance.animating(ms)) {
+			p.drawPixmapLeft(photoPosition, width(), _oldUserpic);
+			p.setOpacity(_a_appearance.current());
+		}
+		p.drawPixmapLeft(photoPosition, width(), _userpic);
 	}
-	p.drawPixmapLeft(photoPosition, width(), _userpic);
 
 	if (_role == Role::ChangePhoto) {
 		auto over = isOver() || isDown();
@@ -632,18 +642,15 @@ QPoint UserpicButton::prepareRippleStartPosition() const {
 void UserpicButton::processPeerPhoto() {
 	Expects(_peer != nullptr);
 
-	auto hasPhoto = (_peer->photoId
-		&& _peer->photoId != UnknownPeerPhotoId);
 	_waiting = !_peer->userpicLoaded();
 	if (_waiting) {
 		_peer->loadUserpic(true);
 	}
 	if (_role == Role::OpenPhoto) {
-		auto id = _peer->photoId;
-		if (id == UnknownPeerPhotoId) {
+		if (_peer->userpicPhotoUnknown()) {
 			_peer->updateFullForced();
 		}
-		_canOpenPhoto = (id != 0 && id != UnknownPeerPhotoId);
+		_canOpenPhoto = (_peer->userpicPhotoId() != 0);
 		updateCursor();
 	}
 }
@@ -744,6 +751,17 @@ void UserpicButton::switchChangePhotoOverlay(bool enabled) {
 			update();
 		}
 	}
+}
+
+void UserpicButton::showSavedMessagesOnSelf(bool enabled) {
+	if (_showSavedMessagesOnSelf != enabled) {
+		_showSavedMessagesOnSelf = enabled;
+		update();
+	}
+}
+
+bool UserpicButton::showSavedMessages() const {
+	return _showSavedMessagesOnSelf && _peer && _peer->isSelf();
 }
 
 void UserpicButton::startChangeOverlayAnimation() {

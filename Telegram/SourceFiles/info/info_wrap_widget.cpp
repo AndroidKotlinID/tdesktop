@@ -21,6 +21,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "info/info_wrap_widget.h"
 
 #include <rpl/flatten_latest.h>
+#include <rpl/take.h>
 #include <rpl/combine.h>
 #include "info/profile/info_profile_widget.h"
 #include "info/profile/info_profile_members.h"
@@ -36,6 +37,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/search_field_controller.h"
+#include "calls/calls_instance.h"
 #include "window/window_controller.h"
 #include "window/window_slide_animation.h"
 #include "window/window_peer_menu.h"
@@ -124,17 +126,35 @@ void WrapWidget::startInjectingActivePeerProfiles() {
 }
 
 void WrapWidget::injectActivePeerProfile(not_null<PeerData*> peer) {
-	auto firstPeerId = hasStackHistory()
+	const auto firstPeerId = hasStackHistory()
 		? _historyStack.front().section->peerId()
 		: _controller->peerId();
-	auto firstSectionType = hasStackHistory()
+	const auto firstSectionType = hasStackHistory()
 		? _historyStack.front().section->section().type()
 		: _controller->section().type();
-	if (firstSectionType != Section::Type::Profile
+	const auto firstSectionMediaType = [&] {
+		if (firstSectionType == Section::Type::Profile) {
+			return Section::MediaType::kCount;
+		}
+		return hasStackHistory()
+			? _historyStack.front().section->section().mediaType()
+			: _controller->section().mediaType();
+	}();
+	const auto expectedType = peer->isSelf()
+		? Section::Type::Media
+		: Section::Type::Profile;
+	const auto expectedMediaType = peer->isSelf()
+		? Section::MediaType::Photo
+		: Section::MediaType::kCount;
+	if (firstSectionType != expectedType
+		|| firstSectionMediaType != expectedMediaType
 		|| firstPeerId != peer->id) {
 		auto injected = StackItem();
+		auto section = peer->isSelf()
+			? Section(Section::MediaType::Photo)
+			: Section(Section::Type::Profile);
 		injected.section = std::move(
-			Memento(peer->id).takeStack().front());
+			Memento(peer->id, section).takeStack().front());
 		_historyStack.insert(
 			_historyStack.begin(),
 			std::move(injected));
@@ -285,7 +305,7 @@ void WrapWidget::setupTop() {
 }
 
 void WrapWidget::createTopBar() {
-	auto wrapValue = wrap();
+	const auto wrapValue = wrap();
 	auto selectedItems = _topBar
 		? _topBar->takeSelectedItems()
 		: SelectedItems(Section::MediaType::kCount);
@@ -297,7 +317,8 @@ void WrapWidget::createTopBar() {
 
 	_topBar->setTitle(TitleValue(
 		_controller->section(),
-		_controller->peer()));
+		_controller->peer(),
+		!hasStackHistory()));
 	if (wrapValue == Wrap::Narrow || hasStackHistory()) {
 		_topBar->enableBackButton();
 		_topBar->backRequest()
@@ -331,6 +352,7 @@ void WrapWidget::createTopBar() {
 	if (_controller->section().type() == Section::Type::Profile
 		&& (wrapValue != Wrap::Side || hasStackHistory())) {
 		addProfileMenuButton();
+		addProfileCallsButton();
 //		addProfileNotificationsButton();
 	}
 
@@ -354,10 +376,42 @@ void WrapWidget::addProfileMenuButton() {
 	});
 }
 
+void WrapWidget::addProfileCallsButton() {
+	Expects(_topBar != nullptr);
+
+	const auto user = _controller->peer()->asUser();
+	if (!user || user->isSelf() || !Global::PhoneCallsEnabled()) {
+		return;
+	}
+
+	Notify::PeerUpdateValue(
+		user,
+		Notify::PeerUpdate::Flag::UserHasCalls
+	) | rpl::filter([=] {
+		return user->hasCalls();
+	}) | rpl::take(
+		1
+	) | rpl::start_with_next([=] {
+		_topBar->addButton(
+			base::make_unique_q<Ui::IconButton>(
+				_topBar,
+				(wrap() == Wrap::Layer
+					? st::infoLayerTopBarCall
+					: st::infoTopBarCall))
+		)->addClickHandler([=] {
+			Calls::Current().startOutgoingCall(user);
+		});
+	}, _topBar->lifetime());
+
+	if (user && user->callsStatus() == UserData::CallsStatus::Unknown) {
+		user->updateFull();
+	}
+}
+
 void WrapWidget::addProfileNotificationsButton() {
 	Expects(_topBar != nullptr);
 
-	auto peer = _controller->peer();
+	const auto peer = _controller->peer();
 	auto notifications = _topBar->addButton(
 		base::make_unique_q<Ui::IconButton>(
 			_topBar,
@@ -365,18 +419,17 @@ void WrapWidget::addProfileNotificationsButton() {
 				? st::infoLayerTopBarNotifications
 				: st::infoTopBarNotifications)));
 	notifications->addClickHandler([peer] {
-		App::main()->updateNotifySetting(
-			peer,
-			peer->isMuted()
-				? NotifySettingSetNotify
-				: NotifySettingSetMuted);
+		const auto muteState = peer->isMuted()
+			? Data::NotifySettings::MuteChange::Unmute
+			: Data::NotifySettings::MuteChange::Mute;
+		App::main()->updateNotifySettings(peer, muteState);
 	});
 	Profile::NotificationsEnabledValue(peer)
 		| rpl::start_with_next([notifications](bool enabled) {
-			auto iconOverride = enabled
+			const auto iconOverride = enabled
 				? &st::infoNotificationsActive
 				: nullptr;
-			auto rippleOverride = enabled
+			const auto rippleOverride = enabled
 				? &st::lightButtonBgOver
 				: nullptr;
 			notifications->setIconOverride(iconOverride, iconOverride);
