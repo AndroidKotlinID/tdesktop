@@ -457,7 +457,7 @@ void PeerMenuShareContactBox(not_null<UserData*> user) {
 		}));
 }
 
-void ShowForwardMessagesBox(
+QPointer<Ui::RpWidget> ShowForwardMessagesBox(
 		MessageIdsList &&items,
 		base::lambda_once<void()> &&successCallback) {
 	const auto weak = std::make_shared<QPointer<PeerListBox>>();
@@ -493,16 +493,12 @@ void ShowForwardMessagesBox(
 	*weak = Ui::show(Box<PeerListBox>(
 		std::make_unique<ChooseRecipientBoxController>(std::move(callback)),
 		std::move(initBox)), LayerOption::KeepOther);
+	return weak->data();
 }
 
 void PeerMenuAddChannelMembers(not_null<ChannelData*> channel) {
-	if (channel->isMegagroup()) {
-		auto &participants = channel->mgInfo->lastParticipants;
-		AddParticipantsBoxController::Start(
-			channel,
-			{ participants.cbegin(), participants.cend() });
-		return;
-	} else if (channel->membersCount() >= Global::ChatSizeMax()) {
+	if (!channel->isMegagroup()
+		&& channel->membersCount() >= Global::ChatSizeMax()) {
 		Ui::show(
 			Box<MaxInviteBox>(channel),
 			LayerOption::KeepOther);

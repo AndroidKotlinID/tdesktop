@@ -257,11 +257,11 @@ namespace {
 
 	int32 onlineWillChangeIn(TimeId online, TimeId now) {
 		if (online <= 0) {
-            if (-online > now) return -online - now;
+			if (-online > now) return std::max(-online - now, 86400);
             return 86400;
         }
 		if (online > now) {
-			return online - now;
+			return std::max(online - now, 86400);
 		}
 		int32 minutes = (now - online) / 60;
 		if (minutes < 60) {
@@ -272,7 +272,7 @@ namespace {
 			return (hours + 1) * 3600 - (now - online);
 		}
 		QDateTime dNow(date(now)), dTomorrow(dNow.date().addDays(1));
-		return dNow.secsTo(dTomorrow);
+		return std::max(dNow.secsTo(dTomorrow), 86400LL);
 	}
 
 	QString onlineText(UserData *user, TimeId now, bool precise) {
@@ -1040,8 +1040,7 @@ namespace {
 			existing->updateMedia(m.has_media() ? (&m.vmedia) : nullptr);
 			existing->updateReplyMarkup(m.has_reply_markup() ? (&m.vreply_markup) : nullptr);
 			existing->setViewsCount(m.has_views() ? m.vviews.v : -1);
-			existing->addToOverview(AddToOverviewNew);
-
+			existing->addToUnreadMentions(AddToUnreadMentionsMethod::New);
 			if (auto sharedMediaTypes = existing->sharedMediaTypes()) {
 				Auth().storage().add(Storage::SharedMediaAddNew(
 					peerId,

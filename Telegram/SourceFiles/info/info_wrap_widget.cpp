@@ -116,7 +116,7 @@ void WrapWidget::startInjectingActivePeerProfiles() {
 	using namespace rpl::mappers;
 	rpl::combine(
 		_wrap.value(),
-		_controller->window()->activePeer.value())
+		_controller->parentController()->activePeer.value())
 		| rpl::filter((_1 == Wrap::Side) && (_2 != nullptr))
 		| rpl::map(_2)
 		| rpl::start_with_next([this](not_null<PeerData*> peer) {
@@ -241,7 +241,7 @@ void WrapWidget::forceContentRepaint() {
 //		_anotherTabMemento = createTabMemento(tab);
 //	}
 //	auto newController = createController(
-//		_controller->window(),
+//		_controller->parentController(),
 //		_anotherTabMemento.get());
 //	auto newContent = createContent(
 //		_anotherTabMemento.get(),
@@ -331,7 +331,7 @@ void WrapWidget::createTopBar() {
 				_topBar,
 				st::infoTopBarClose));
 		close->addClickHandler([this] {
-			_controller->window()->closeThirdSection();
+			_controller->parentController()->closeThirdSection();
 		});
 	}
 	if (wrapValue == Wrap::Layer) {
@@ -340,14 +340,15 @@ void WrapWidget::createTopBar() {
 				_topBar,
 				st::infoLayerTopBarClose));
 		close->addClickHandler([this] {
-			_controller->window()->hideSpecialLayer();
+			_controller->parentController()->hideSpecialLayer();
 		});
 	} else if (requireTopBarSearch()) {
 		auto search = _controller->searchFieldController();
 		Assert(search != nullptr);
 		_topBar->createSearchView(
 			search,
-			_controller->searchEnabledByContent());
+			_controller->searchEnabledByContent(),
+			_controller->takeSearchStartsFocused());
 	}
 	if (_controller->section().type() == Section::Type::Profile
 		&& (wrapValue != Wrap::Side || hasStackHistory())) {
@@ -464,7 +465,7 @@ void WrapWidget::showProfileMenu() {
 	_topBarMenuToggle->installEventFilter(_topBarMenu.get());
 
 	Window::FillPeerMenu(
-		_controller->window(),
+		_controller->parentController(),
 		_controller->peer(),
 		[this](const QString &text, base::lambda<void()> callback) {
 			return _topBarMenu->addAction(text, std::move(callback));
@@ -669,7 +670,9 @@ void WrapWidget::showAnimatedHook(
 }
 
 void WrapWidget::doSetInnerFocus() {
-	_content->setInnerFocus();
+	if (!_topBar->focusSearchField()) {
+		_content->setInnerFocus();
+	}
 }
 
 void WrapWidget::showFinishedHook() {
@@ -785,7 +788,7 @@ void WrapWidget::showNewContent(
 		&& (params.animated != anim::type::instant);
 	auto animationParams = SectionSlideParams();
 	auto newController = createController(
-		_controller->window(),
+		_controller->parentController(),
 		memento);
 	auto newContent = object_ptr<ContentWidget>(nullptr);
 	if (needAnimation) {
@@ -815,6 +818,9 @@ void WrapWidget::showNewContent(
 		showNewContent(memento);
 	}
 	if (animationParams) {
+		if (Ui::InFocusChain(this)) {
+			setFocus();
+		}
 		showAnimated(
 			saveToStack
 				? SlideDirection::FromRight

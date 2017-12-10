@@ -721,7 +721,7 @@ void HistoryItem::destroy() {
 		Assert(detached());
 	} else {
 		// All this must be done for all items manually in History::clear(false)!
-		eraseFromOverview();
+		eraseFromUnreadMentions();
 		if (IsServerMsgId(id)) {
 			if (auto types = sharedMediaTypes()) {
 				Auth().storage().remove(Storage::SharedMediaRemoveOne(
@@ -1148,6 +1148,11 @@ void HistoryItem::clipCallback(Media::Clip::Notification notification) {
 		}
 		if (!stopped) {
 			setPendingInitDimensions();
+			if (detached()) {
+				// We still want to handle our pending initDimensions and
+				// resize state even if we're detached in history.
+				_history->setHasPendingResizedItems();
+			}
 			Auth().data().markItemLayoutChanged(this);
 			Global::RefPendingRepaintItems().insert(this);
 		}

@@ -29,6 +29,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/input_fields.h"
 #include "ui/rp_widget.h"
 #include "base/flags.h"
+#include "base/timer.h"
 
 namespace InlineBots {
 namespace Layout {
@@ -48,6 +49,7 @@ class IconButton;
 class HistoryDownButton;
 class EmojiButton;
 class SendButton;
+class SilentToggle;
 class FlatButton;
 class LinkButton;
 class RoundButton;
@@ -67,7 +69,6 @@ class TabbedSelector;
 } // namespace ChatHelpers
 
 class DragArea;
-class SilentToggle;
 class SendFilesBox;
 class BotKeyboard;
 class MessageField;
@@ -206,16 +207,7 @@ public:
 	void pushInfoToThirdSection(
 		const Window::SectionShow &params);
 
-	void updateSendAction(
-		not_null<History*> history,
-		SendAction::Type type,
-		int32 progress = 0);
-	void cancelSendAction(
-		not_null<History*> history,
-		SendAction::Type type);
-
 	void updateRecentStickers();
-	void sendActionDone(const MTPBool &result, mtpRequestId req);
 
 	void destroyData();
 
@@ -383,8 +375,6 @@ public slots:
 	void onCopyPostLink();
 	void onFieldBarCancel();
 
-	void onCancelSendAction();
-
 	void onPreviewParse();
 	void onPreviewCheck();
 	void onPreviewTimeout();
@@ -492,6 +482,16 @@ private:
 	void updateHighlightedMessage();
 	void clearHighlightMessages();
 	void stopMessageHighlight();
+
+	void updateSendAction(
+		not_null<History*> history,
+		SendAction::Type type,
+		int32 progress = 0);
+	void cancelSendAction(
+		not_null<History*> history,
+		SendAction::Type type);
+	void cancelTypingAction();
+	void sendActionDone(const MTPBool &result, mtpRequestId req);
 
 	void animationCallback();
 	void updateOverStates(QPoint pos);
@@ -779,6 +779,7 @@ private:
 	void updateSendButtonType();
 	bool showRecordButton() const;
 	bool showInlineBotCancel() const;
+	void refreshSilentToggle();
 
 	object_ptr<ReportSpamPanel> _reportSpamPanel = { nullptr };
 
@@ -796,7 +797,7 @@ private:
 	object_ptr<Ui::IconButton> _botKeyboardShow;
 	object_ptr<Ui::IconButton> _botKeyboardHide;
 	object_ptr<Ui::IconButton> _botCommandStart;
-	object_ptr<SilentToggle> _silent;
+	object_ptr<Ui::SilentToggle> _silent = { nullptr };
 	bool _cmdStartShown = false;
 	object_ptr<MessageField> _field;
 	bool _recording = false;
@@ -851,7 +852,7 @@ private:
 	TimeMs _highlightStart = 0;
 
 	QMap<QPair<not_null<History*>, SendAction::Type>, mtpRequestId> _sendActionRequests;
-	QTimer _sendActionStopTimer;
+	base::Timer _sendActionStopTimer;
 
 	TimeMs _saveDraftStart = 0;
 	bool _saveDraftText = false;

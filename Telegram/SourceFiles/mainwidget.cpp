@@ -91,25 +91,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/storage_shared_media.h"
 #include "storage/storage_user_photos.h"
 
-namespace {
-
-MTPMessagesFilter TypeToMediaFilter(MediaOverviewType &type) {
-	switch (type) {
-	case OverviewPhotos: return MTP_inputMessagesFilterPhotos();
-	case OverviewVideos: return MTP_inputMessagesFilterVideo();
-	case OverviewMusicFiles: return MTP_inputMessagesFilterMusic();
-	case OverviewFiles: return MTP_inputMessagesFilterDocument();
-	case OverviewVoiceFiles: return MTP_inputMessagesFilterVoice();
-	case OverviewRoundVoiceFiles: return MTP_inputMessagesFilterRoundVoice();
-	case OverviewGIFs: return MTP_inputMessagesFilterGif();
-	case OverviewLinks: return MTP_inputMessagesFilterUrl();
-	case OverviewChatPhotos: return MTP_inputMessagesFilterChatPhotos();
-	default: return MTP_inputMessagesFilterEmpty();
-	}
-}
-
-} // namespace
-
 enum StackItemType {
 	HistoryStackItem,
 	SectionStackItem,
@@ -217,8 +198,11 @@ MainWidget::MainWidget(
 , _sideShadow(this)
 , _dialogs(this, _controller)
 , _history(this, _controller)
-, _playerPlaylist(this, Media::Player::Panel::Layout::OnlyPlaylist)
-, _playerPanel(this, Media::Player::Panel::Layout::Full) {
+, _playerPlaylist(
+	this,
+	_controller,
+	Media::Player::Panel::Layout::OnlyPlaylist)
+, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full) {
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
 	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
 
@@ -715,18 +699,15 @@ bool MainWidget::onInlineSwitchChosen(const PeerId &peer, const QString &botAndQ
 	return true;
 }
 
-void MainWidget::cancelForwarding(History *history) {
+void MainWidget::cancelForwarding(not_null<History*> history) {
 	history->setForwardDraft({});
 	_history->updateForwarding();
 }
 
-void MainWidget::finishForwarding(History *history, bool silent) {
-	if (!history) return;
-
+void MainWidget::finishForwarding(not_null<History*> history) {
 	auto toForward = history->validateForwardDraft();
 	if (!toForward.empty()) {
 		auto options = ApiWrap::SendOptions(history);
-		options.silent = silent;
 		Auth().api().forwardMessages(std::move(toForward), options);
 
 		if (_history->peer() == history->peer) {
@@ -1462,17 +1443,17 @@ Dialogs::IndexedList *MainWidget::contactsNoDialogsList() {
 
 void MainWidget::sendMessage(const MessageToSend &message) {
 	const auto history = message.history;
+	const auto peer = history->peer;
 	auto &textWithTags = message.textWithTags;
 
-	auto options = ApiWrap::SendOptions(message.history);
+	auto options = ApiWrap::SendOptions(history);
 	options.clearDraft = message.clearDraft;
 	options.replyTo = message.replyTo;
 	options.generateLocal = true;
-	options.silent = message.silent;
 	options.webPageId = message.webPageId;
 	Auth().api().sendAction(options);
 
-	if (!history->peer->canWrite()) {
+	if (!peer->canWrite()) {
 		return;
 	}
 	saveRecentHashtags(textWithTags.text);
@@ -1485,16 +1466,16 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 	HistoryItem *lastMessage = nullptr;
 
 	while (TextUtilities::CutPart(sending, left, MaxMessageSize)) {
-		auto newId = FullMsgId(peerToChannel(history->peer->id), clientMsgId());
+		auto newId = FullMsgId(peerToChannel(peer->id), clientMsgId());
 		auto randomId = rand_value<uint64>();
 
 		TextUtilities::Trim(sending);
 
 		App::historyRegRandom(randomId, newId);
-		App::historyRegSentData(randomId, history->peer->id, sending.text);
+		App::historyRegSentData(randomId, peer->id, sending.text);
 
 		MTPstring msgText(MTP_string(sending.text));
-		auto flags = NewMessageFlags(history->peer) | MTPDmessage::Flag::f_entities; // unread, out
+		auto flags = NewMessageFlags(peer) | MTPDmessage::Flag::f_entities;
 		auto sendFlags = MTPmessages_SendMessage::Flags(0);
 		if (message.replyTo) {
 			flags |= MTPDmessage::Flag::f_reply_to_msg_id;
@@ -1508,15 +1489,15 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 			media = MTP_messageMediaWebPage(MTP_webPagePending(MTP_long(page->id), MTP_int(page->pendingTill)));
 			flags |= MTPDmessage::Flag::f_media;
 		}
-		bool channelPost = history->peer->isChannel() && !history->peer->isMegagroup();
-		bool silentPost = channelPost && message.silent;
+		bool channelPost = peer->isChannel() && !peer->isMegagroup();
+		bool silentPost = channelPost && peer->notifySilentPosts();
 		if (channelPost) {
 			flags |= MTPDmessage::Flag::f_views;
 			flags |= MTPDmessage::Flag::f_post;
 		}
 		if (!channelPost) {
 			flags |= MTPDmessage::Flag::f_from_id;
-		} else if (history->peer->asChannel()->addsSignature()) {
+		} else if (peer->asChannel()->addsSignature()) {
 			flags |= MTPDmessage::Flag::f_post_author;
 		}
 		if (silentPost) {
@@ -1538,7 +1519,7 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 				MTP_flags(flags),
 				MTP_int(newId.msg),
 				MTP_int(messageFromId),
-				peerToMTP(history->peer->id),
+				peerToMTP(peer->id),
 				MTPnullFwdHeader,
 				MTPint(),
 				MTP_int(message.replyTo),
@@ -1555,7 +1536,7 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 		history->sendRequestId = MTP::send(
 			MTPmessages_SendMessage(
 				MTP_flags(sendFlags),
-				history->peer->input,
+				peer->input,
 				MTP_int(message.replyTo),
 				msgText,
 				MTP_long(randomId),
@@ -1570,7 +1551,7 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 
 	history->lastSentMsg = lastMessage;
 
-	finishForwarding(history, message.silent);
+	finishForwarding(history);
 }
 
 void MainWidget::saveRecentHashtags(const QString &text) {
@@ -1634,97 +1615,10 @@ void MainWidget::searchMessages(const QString &query, PeerData *inPeer) {
 	}
 }
 
-bool MainWidget::preloadOverview(PeerData *peer, MediaOverviewType type) {
-	auto filter = TypeToMediaFilter(type);
-	if (filter.type() == mtpc_inputMessagesFilterEmpty) {
-		return false;
-	}
-
-	auto history = App::history(peer->id);
-	if (history->overviewCountLoaded(type) || _overviewPreload[type].contains(peer)) {
-		return false;
-	}
-
-	auto request = MTPmessages_Search(
-		MTP_flags(0),
-		peer->input,
-		MTP_string(""),
-		MTP_inputUserEmpty(),
-		filter,
-		MTP_int(0),
-		MTP_int(0),
-		MTP_int(0),
-		MTP_int(0),
-		MTP_int(0),
-		MTP_int(0),
-		MTP_int(0));
-	_overviewPreload[type].insert(peer, MTP::send(
-		request,
-		rpcDone(&MainWidget::overviewPreloaded, peer),
-		rpcFail(&MainWidget::overviewFailed, peer),
-		0,
-		10));
-	return true;
-}
-
-void MainWidget::overviewPreloaded(
-		PeerData *peer,
-		const MTPmessages_Messages &result,
-		mtpRequestId req) {
-	MediaOverviewType type = OverviewCount;
-	for (int32 i = 0; i < OverviewCount; ++i) {
-		OverviewsPreload::iterator j = _overviewPreload[i].find(peer);
-		if (j != _overviewPreload[i].end() && j.value() == req) {
-			type = MediaOverviewType(i);
-			_overviewPreload[i].erase(j);
-			break;
-		}
-	}
-
-	if (type == OverviewCount) return;
-
-	auto startMessageId = MsgId(0);
-	App::history(peer->id)->overviewSliceDone(type, startMessageId, result, true);
-
-	Notify::mediaOverviewUpdated(peer, type);
-}
-
 void MainWidget::itemEdited(HistoryItem *item) {
 	if (_history->peer() == item->history()->peer || (_history->peer() && _history->peer() == item->history()->peer->migrateTo())) {
 		_history->itemEdited(item);
 	}
-}
-
-bool MainWidget::overviewFailed(PeerData *peer, const RPCError &error, mtpRequestId req) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	MediaOverviewType type = OverviewCount;
-	for (int32 i = 0; i < OverviewCount; ++i) {
-		OverviewsPreload::iterator j = _overviewPreload[i].find(peer);
-		if (j != _overviewPreload[i].end() && j.value() == req) {
-			_overviewPreload[i].erase(j);
-			break;
-		}
-	}
-	return true;
-}
-
-void MainWidget::loadMediaBack(PeerData *peer, MediaOverviewType type, bool many) {
-	if (_overviewLoad[type].constFind(peer) != _overviewLoad[type].cend()) return;
-
-	auto history = App::history(peer->id);
-	if (history->overviewLoaded(type)) {
-		return;
-	}
-
-	auto minId = history->overviewMinId(type);
-	auto limit = (many || history->overview(type).size() > MediaOverviewStartPerPage) ? SearchPerPage : MediaOverviewStartPerPage;
-	auto filter = TypeToMediaFilter(type);
-	if (filter.type() == mtpc_inputMessagesFilterEmpty) {
-		return;
-	}
-
-	_overviewLoad[type].insert(peer, MTP::send(MTPmessages_Search(MTP_flags(0), peer->input, MTPstring(), MTP_inputUserEmpty(), filter, MTP_int(0), MTP_int(0), MTP_int(minId), MTP_int(0), MTP_int(limit), MTP_int(0), MTP_int(0)), rpcDone(&MainWidget::overviewLoaded, { history, minId })));
 }
 
 void MainWidget::checkLastUpdate(bool afterSleep) {
@@ -1733,28 +1627,6 @@ void MainWidget::checkLastUpdate(bool afterSleep) {
 		_lastUpdateTime = n;
 		MTP::ping();
 	}
-}
-
-void MainWidget::overviewLoaded(
-		std::pair<not_null<History*>,MsgId> historyAndStartMsgId,
-		const MTPmessages_Messages &result,
-		mtpRequestId req) {
-	auto history = historyAndStartMsgId.first;
-	OverviewsPreload::iterator it;
-	MediaOverviewType type = OverviewCount;
-	for (int32 i = 0; i < OverviewCount; ++i) {
-		it = _overviewLoad[i].find(history->peer);
-		if (it != _overviewLoad[i].cend()) {
-			type = MediaOverviewType(i);
-			_overviewLoad[i].erase(it);
-			break;
-		}
-	}
-	if (type == OverviewCount) return;
-
-	history->overviewSliceDone(type, historyAndStartMsgId.second, result);
-
-	Notify::mediaOverviewUpdated(history->peer, type);
 }
 
 void MainWidget::messagesAffected(
@@ -4951,7 +4823,7 @@ void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
 					auto entities = d.has_entities() ? TextUtilities::EntitiesFromMTP(d.ventities.v) : EntitiesInText();
 					item->setText({ text, entities });
 					item->updateMedia(d.has_media() ? (&d.vmedia) : nullptr);
-					item->addToOverview(AddToOverviewNew);
+					item->addToUnreadMentions(AddToUnreadMentionsMethod::New);
 					if (!wasAlready) {
 						if (auto sharedMediaTypes = item->sharedMediaTypes()) {
 							Auth().storage().add(Storage::SharedMediaAddNew(
