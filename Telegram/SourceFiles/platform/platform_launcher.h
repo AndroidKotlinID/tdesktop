@@ -20,11 +20,24 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/utils.h"
+namespace Platform {
 
-#define BETA_VERSION_MACRO (0ULL)
+//class Launcher : public Core::Launcher {
+//public:
+//	using Core::Launcher::Launcher;
+//
+//	...
+//
+//};
 
-constexpr int AppVersion = 1002001;
-constexpr str_const AppVersionStr = "1.2.1";
-constexpr bool AppAlphaVersion = false;
-constexpr uint64 AppBetaVersion = BETA_VERSION_MACRO;
+} // namespace Platform
+
+// Platform dependent implementations.
+
+#ifdef Q_OS_MAC
+#include "platform/mac/launcher_mac.h"
+#elif defined Q_OS_LINUX // Q_OS_MAC
+#include "platform/linux/launcher_linux.h"
+#elif defined Q_OS_WINRT || defined Q_OS_WIN // Q_OS_MAC || Q_OS_LINUX
+#include "platform/win/launcher_win.h"
+#endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT || Q_OS_WIN

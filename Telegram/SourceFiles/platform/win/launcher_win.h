@@ -20,11 +20,26 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/utils.h"
+#include "core/launcher.h"
 
-#define BETA_VERSION_MACRO (0ULL)
+namespace Platform {
 
-constexpr int AppVersion = 1002001;
-constexpr str_const AppVersionStr = "1.2.1";
-constexpr bool AppAlphaVersion = false;
-constexpr uint64 AppBetaVersion = BETA_VERSION_MACRO;
+class Launcher : public Core::Launcher {
+public:
+	using Core::Launcher::Launcher;
+
+private:
+	base::optional<QStringList> readArgumentsHook(
+		int argc,
+		char *argv[]) const override;
+
+	bool launchUpdater(UpdaterLaunch action) override;
+
+	bool launch(
+		const QString &operation,
+		const QString &binaryPath,
+		const QStringList &argumentsList);
+
+};
+
+} // namespace Platform
