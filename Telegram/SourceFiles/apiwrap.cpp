@@ -120,6 +120,7 @@ void ApiWrap::addLocalChangelogs(int oldAppVersion) {
 		addLocalAlphaChangelog(1001024, "\xE2\x80\x94 Radically improved navigation. New side panel on the right with quick access to shared media and group members.\n\xE2\x80\x94 Pinned Messages. If you are a channel admin, pin messages to focus your subscribers\xE2\x80\x99 attention on important announcements.\n\xE2\x80\x94 Also supported clearing history in supergroups and added a host of minor improvements.");
 		addLocalAlphaChangelog(1001026, "\xE2\x80\x94 Admin badges in supergroup messages.\n\xE2\x80\x94 Fix crashing on launch in OS X 10.6.\n\xE2\x80\x94 Bug fixes and other minor improvements.");
 		addLocalAlphaChangelog(1001027, "\xE2\x80\x94 Saved Messages. Bookmark messages by forwarding them to \xE2\x80\x9C""Saved Messages\xE2\x80\x9D. Access them from the Chats list or from the side menu.");
+		addLocalAlphaChangelog(1002002, "\xE2\x80\x94 Grouped photos and videos are displayed as albums.");
 	}
 	if (!addedSome) {
 		auto text = lng_new_version_wrap(lt_version, str_const_toString(AppVersionStr), lt_changes, lang(lng_new_version_minor), lt_link, qsl("https://desktop.telegram.org/changelog")).trimmed();
@@ -1608,18 +1609,18 @@ void ApiWrap::gotWebPages(ChannelData *channel, const MTPmessages_Messages &msgs
 	}
 
 	if (!v) return;
-	QMap<uint64, int32> msgsIds; // copied from feedMsgs
-	for (int32 i = 0, l = v->size(); i < l; ++i) {
-		const auto &msg(v->at(i));
-		switch (msg.type()) {
-		case mtpc_message: msgsIds.insert((uint64(uint32(msg.c_message().vid.v)) << 32) | uint64(i), i); break;
-		case mtpc_messageEmpty: msgsIds.insert((uint64(uint32(msg.c_messageEmpty().vid.v)) << 32) | uint64(i), i); break;
-		case mtpc_messageService: msgsIds.insert((uint64(uint32(msg.c_messageService().vid.v)) << 32) | uint64(i), i); break;
-		}
+
+	auto indices = base::flat_map<uint64, int>(); // copied from feedMsgs
+	for (auto i = 0, l = v->size(); i != l; ++i) {
+		const auto msgId = idFromMessage(v->at(i));
+		indices.emplace((uint64(uint32(msgId)) << 32) | uint64(i), i);
 	}
 
-	for_const (auto msgId, msgsIds) {
-		if (auto item = App::histories().addNewMessage(v->at(msgId), NewMessageExisting)) {
+	for (const auto [position, index] : indices) {
+		const auto item = App::histories().addNewMessage(
+			v->at(index),
+			NewMessageExisting);
+		if (item) {
 			item->setPendingInitDimensions();
 		}
 	}
@@ -2455,6 +2456,7 @@ void ApiWrap::forwardMessages(
 	}
 
 	auto forwardFrom = items.front()->history()->peer;
+	auto currentGroupId = items.front()->groupId();
 	auto ids = QVector<MTPint>();
 	auto randomIds = QVector<MTPlong>();
 
@@ -2462,8 +2464,12 @@ void ApiWrap::forwardMessages(
 		if (shared) {
 			++shared->requestsLeft;
 		}
+		const auto finalFlags = sendFlags
+			| (currentGroupId == MessageGroupId()
+				? MTPmessages_ForwardMessages::Flag(0)
+				: MTPmessages_ForwardMessages::Flag::f_grouped);
 		history->sendRequestId = request(MTPmessages_ForwardMessages(
-			MTP_flags(sendFlags),
+			MTP_flags(finalFlags),
 			forwardFrom->input,
 			MTP_vector<MTPint>(ids),
 			MTP_vector<MTPlong>(randomIds),
@@ -2508,9 +2514,13 @@ void ApiWrap::forwardMessages(
 				App::historyRegRandom(randomId, newId);
 			}
 		}
-		if (forwardFrom != item->history()->peer) {
+		const auto newFrom = item->history()->peer;
+		const auto newGroupId = item->groupId();
+		if (forwardFrom != newFrom
+			|| currentGroupId != newGroupId) {
 			sendAccumulated();
-			forwardFrom = item->history()->peer;
+			forwardFrom = newFrom;
+			currentGroupId = newGroupId;
 		}
 		ids.push_back(MTP_int(item->id));
 		randomIds.push_back(MTP_long(randomId));

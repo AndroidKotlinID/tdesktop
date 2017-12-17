@@ -480,7 +480,7 @@ EditCaptionBox::EditCaptionBox(QWidget*, HistoryMedia *media, FullMsgId msgId) :
 
 	case MediaTypePhoto: {
 		_photo = true;
-		auto photo = static_cast<HistoryPhoto*>(media)->photo();
+		auto photo = static_cast<HistoryPhoto*>(media)->getPhoto();
 		dimensions = QSize(photo->full->width(), photo->full->height());
 		image = photo->full;
 	} break;
@@ -490,6 +490,17 @@ EditCaptionBox::EditCaptionBox(QWidget*, HistoryMedia *media, FullMsgId msgId) :
 		doc = static_cast<HistoryVideo*>(media)->getDocument();
 		dimensions = doc->dimensions;
 		image = doc->thumb;
+	} break;
+
+	case MediaTypeGrouped: {
+		if (const auto photo = media->getPhoto()) {
+			dimensions = QSize(photo->full->width(), photo->full->height());
+			image = photo->full;
+		} else if (const auto doc = media->getDocument()) {
+			dimensions = doc->dimensions;
+			image = doc->thumb;
+			_animated = true;
+		}
 	} break;
 
 	case MediaTypeFile:

@@ -95,14 +95,6 @@ bool needReSetInlineResultDocument(const MTPMessageMedia &media, DocumentData *e
 	return true;
 }
 
-} // namespace
-
-void HistoryInitMedia() {
-	initTextOptions();
-}
-
-namespace {
-
 int32 documentMaxStatusWidth(DocumentData *document) {
 	int32 result = st::normalFont->width(formatDownloadText(document->size, document->size));
 	if (const auto song = document->song()) {
@@ -125,7 +117,43 @@ int32 gifMaxStatusWidth(DocumentData *document) {
 	return result;
 }
 
-TextWithEntities captionedSelectedText(const QString &attachType, const Text &caption, TextSelection selection) {
+QSize CountPixSizeForSize(QSize original, QSize geometry) {
+	const auto width = geometry.width();
+	const auto height = geometry.height();
+	auto tw = original.width();
+	auto th = original.height();
+	if (tw * height > th * width) {
+		if (th > height || tw * height < 2 * th * width) {
+			tw = (height * tw) / th;
+			th = height;
+		} else if (tw < width) {
+			th = (width * th) / tw;
+			tw = width;
+		}
+	} else {
+		if (tw > width || th * width < 2 * tw * height) {
+			th = (width * th) / tw;
+			tw = width;
+		} else if (tw > 0 && th < height) {
+			tw = (height * tw) / th;
+			th = height;
+		}
+	}
+	if (tw < 1) tw = 1;
+	if (th < 1) th = 1;
+	return { tw, th };
+}
+
+} // namespace
+
+void HistoryInitMedia() {
+	initTextOptions();
+}
+
+TextWithEntities WithCaptionSelectedText(
+		const QString &attachType,
+		const Text &caption,
+		TextSelection selection) {
 	if (selection != FullSelection) {
 		return caption.originalTextWithEntities(selection, ExpandLinksAll);
 	}
@@ -143,7 +171,9 @@ TextWithEntities captionedSelectedText(const QString &attachType, const Text &ca
 	return result;
 }
 
-QString captionedNotificationText(const QString &attachType, const Text &caption) {
+QString WithCaptionNotificationText(
+		const QString &attachType,
+		const Text &caption) {
 	if (caption.isEmpty()) {
 		return attachType;
 	}
@@ -153,7 +183,9 @@ QString captionedNotificationText(const QString &attachType, const Text &caption
 	return lng_dialogs_text_media(lt_media_part, attachTypeWrapped, lt_caption, captionText);
 }
 
-QString captionedInDialogsText(const QString &attachType, const Text &caption) {
+QString WithCaptionDialogsText(
+		const QString &attachType,
+		const Text &caption) {
 	if (caption.isEmpty()) {
 		return textcmdLink(1, TextUtilities::Clean(attachType));
 	}
@@ -162,8 +194,6 @@ QString captionedInDialogsText(const QString &attachType, const Text &caption) {
 	auto attachTypeWrapped = textcmdLink(1, lng_dialogs_text_media_wrapped(lt_media, TextUtilities::Clean(attachType)));
 	return lng_dialogs_text_media(lt_media_part, attachTypeWrapped, lt_caption, captionText);
 }
-
-} // namespace
 
 void HistoryFileMedia::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) {
 	if (p == _savel || p == _cancell) {
@@ -184,7 +214,10 @@ void HistoryFileMedia::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool
 	Auth().data().requestItemRepaint(_parent);
 }
 
-void HistoryFileMedia::setLinks(ClickHandlerPtr &&openl, ClickHandlerPtr &&savel, ClickHandlerPtr &&cancell) {
+void HistoryFileMedia::setLinks(
+		ClickHandlerPtr &&openl,
+		ClickHandlerPtr &&savel,
+		ClickHandlerPtr &&cancell) {
 	_openl = std::move(openl);
 	_savel = std::move(savel);
 	_cancell = std::move(cancell);
@@ -232,33 +265,66 @@ void HistoryFileMedia::checkAnimationFinished() const {
 
 HistoryFileMedia::~HistoryFileMedia() = default;
 
-HistoryPhoto::HistoryPhoto(not_null<HistoryItem*> parent, not_null<PhotoData*> photo, const QString &caption) : HistoryFileMedia(parent)
+HistoryPhoto::HistoryPhoto(
+	not_null<HistoryItem*> parent,
+	not_null<PhotoData*> photo,
+	const QString &caption)
+: HistoryFileMedia(parent)
 , _data(photo)
 , _caption(st::minPhotoSize - st::msgPadding.left() - st::msgPadding.right()) {
-	setLinks(MakeShared<PhotoOpenClickHandler>(_data), MakeShared<PhotoSaveClickHandler>(_data), MakeShared<PhotoCancelClickHandler>(_data));
+	const auto fullId = parent->fullId();
+	setLinks(
+		MakeShared<PhotoOpenClickHandler>(_data, fullId),
+		MakeShared<PhotoSaveClickHandler>(_data, fullId),
+		MakeShared<PhotoCancelClickHandler>(_data, fullId));
 	if (!caption.isEmpty()) {
-		_caption.setText(st::messageTextStyle, caption + _parent->skipBlock(), itemTextNoMonoOptions(_parent));
+		_caption.setText(
+			st::messageTextStyle,
+			caption + _parent->skipBlock(),
+			itemTextNoMonoOptions(_parent));
 	}
 	init();
 }
 
-HistoryPhoto::HistoryPhoto(not_null<HistoryItem*> parent, not_null<PeerData*> chat, not_null<PhotoData*> photo, int32 width) : HistoryFileMedia(parent)
+HistoryPhoto::HistoryPhoto(
+	not_null<HistoryItem*> parent,
+	not_null<PeerData*> chat,
+	not_null<PhotoData*> photo,
+	int width)
+: HistoryFileMedia(parent)
 , _data(photo) {
-	setLinks(MakeShared<PhotoOpenClickHandler>(_data, chat), MakeShared<PhotoSaveClickHandler>(_data, chat), MakeShared<PhotoCancelClickHandler>(_data, chat));
+	const auto fullId = parent->fullId();
+	setLinks(
+		MakeShared<PhotoOpenClickHandler>(_data, fullId, chat),
+		MakeShared<PhotoSaveClickHandler>(_data, fullId, chat),
+		MakeShared<PhotoCancelClickHandler>(_data, fullId, chat));
 
 	_width = width;
 	init();
 }
 
-HistoryPhoto::HistoryPhoto(not_null<HistoryItem*> parent, not_null<PeerData*> chat, const MTPDphoto &photo, int32 width) : HistoryPhoto(parent, chat, App::feedPhoto(photo), width) {
+HistoryPhoto::HistoryPhoto(
+	not_null<HistoryItem*> parent,
+	not_null<PeerData*> chat,
+	const MTPDphoto &photo,
+	int width)
+: HistoryPhoto(parent, chat, App::feedPhoto(photo), width) {
 }
 
-HistoryPhoto::HistoryPhoto(not_null<HistoryItem*> parent, const HistoryPhoto &other) : HistoryFileMedia(parent)
+HistoryPhoto::HistoryPhoto(
+	not_null<HistoryItem*> parent,
+	not_null<HistoryItem*> realParent,
+	const HistoryPhoto &other)
+: HistoryFileMedia(parent)
 , _data(other._data)
 , _pixw(other._pixw)
 , _pixh(other._pixh)
 , _caption(other._caption) {
-	setLinks(MakeShared<PhotoOpenClickHandler>(_data), MakeShared<PhotoSaveClickHandler>(_data), MakeShared<PhotoCancelClickHandler>(_data));
+	const auto fullId = realParent->fullId();
+	setLinks(
+		MakeShared<PhotoOpenClickHandler>(_data, fullId),
+		MakeShared<PhotoSaveClickHandler>(_data, fullId),
+		MakeShared<PhotoCancelClickHandler>(_data, fullId));
 
 	init();
 }
@@ -378,7 +444,6 @@ void HistoryPhoto::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 	bool radial = isRadialAnimation(ms);
 
 	auto rthumb = rtlrect(skipx, skipy, width, height, _width);
-	QPixmap pix;
 	if (_parent->toHistoryMessage()) {
 		if (bubble) {
 			skipx = st::mediaPadding.left();
@@ -400,21 +465,17 @@ void HistoryPhoto::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 		auto roundRadius = inWebPage ? ImageRoundRadius::Small : ImageRoundRadius::Large;
 		auto roundCorners = inWebPage ? ImageRoundCorner::All : ((isBubbleTop() ? (ImageRoundCorner::TopLeft | ImageRoundCorner::TopRight) : ImageRoundCorner::None)
 			| ((isBubbleBottom() && _caption.isEmpty()) ? (ImageRoundCorner::BottomLeft | ImageRoundCorner::BottomRight) : ImageRoundCorner::None));
-		if (loaded) {
-			pix = _data->full->pixSingle(_pixw, _pixh, width, height, roundRadius, roundCorners);
-		} else {
-			pix = _data->thumb->pixBlurredSingle(_pixw, _pixh, width, height, roundRadius, roundCorners);
-		}
+		const auto pix = loaded
+			? _data->full->pixSingle(_pixw, _pixh, width, height, roundRadius, roundCorners)
+			: _data->thumb->pixBlurredSingle(_pixw, _pixh, width, height, roundRadius, roundCorners);
 		p.drawPixmap(rthumb.topLeft(), pix);
 		if (selected) {
 			App::complexOverlayRect(p, rthumb, roundRadius, roundCorners);
 		}
 	} else {
-		if (loaded) {
-			pix = _data->full->pixCircled(_pixw, _pixh);
-		} else {
-			pix = _data->thumb->pixBlurredCircled(_pixw, _pixh);
-		}
+		const auto pix = loaded
+			? _data->full->pixCircled(_pixw, _pixh)
+			: _data->thumb->pixBlurredCircled(_pixw, _pixh);
 		p.drawPixmap(rthumb.topLeft(), pix);
 	}
 	if (radial || (!loaded && !_data->loading())) {
@@ -479,9 +540,11 @@ void HistoryPhoto::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 }
 
 HistoryTextState HistoryPhoto::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 	int skipx = 0, skipy = 0, width = _width, height = _height;
 	auto bubble = _parent->hasBubble();
 
@@ -495,7 +558,10 @@ HistoryTextState HistoryPhoto::getState(QPoint point, HistoryStateRequest reques
 				height -= st::msgPadding.bottom();
 			}
 			if (QRect(st::msgPadding.left(), height, captionw, _height - height).contains(point)) {
-				result = _caption.getState(point - QPoint(st::msgPadding.left(), height), captionw, request.forText());
+				result = HistoryTextState(_parent, _caption.getState(
+					point - QPoint(st::msgPadding.left(), height),
+					captionw,
+					request.forText()));
 				return result;
 			}
 			height -= st::mediaCaptionSkip;
@@ -532,6 +598,163 @@ HistoryTextState HistoryPhoto::getState(QPoint point, HistoryStateRequest reques
 		}
 	}
 	return result;
+}
+
+QSize HistoryPhoto::sizeForGrouping() const {
+	const auto width = convertScale(_data->full->width());
+	const auto height = convertScale(_data->full->height());
+	return { std::max(width, 1), std::max(height, 1) };
+}
+
+void HistoryPhoto::drawGrouped(
+		Painter &p,
+		const QRect &clip,
+		TextSelection selection,
+		TimeMs ms,
+		const QRect &geometry,
+		RectParts corners,
+		not_null<uint64*> cacheKey,
+		not_null<QPixmap*> cache) const {
+	_data->automaticLoad(_parent);
+
+	validateGroupedCache(geometry, corners, cacheKey, cache);
+
+	const auto selected = (selection == FullSelection);
+	const auto loaded = _data->loaded();
+	const auto displayLoading = _data->displayLoading();
+	const auto bubble = _parent->hasBubble();
+
+	if (displayLoading) {
+		ensureAnimation();
+		if (!_animation->radial.animating()) {
+			_animation->radial.start(_data->progress());
+		}
+	}
+	const auto radial = isRadialAnimation(ms);
+
+	if (!bubble) {
+//		App::roundShadow(p, 0, 0, width, height, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? InSelectedShadowCorners : InShadowCorners);
+	}
+	p.drawPixmap(geometry.topLeft(), *cache);
+	if (selected) {
+		const auto roundRadius = ImageRoundRadius::Large;
+		const auto roundCorners = ImageRoundCorner::None
+			| ((corners & RectPart::TopLeft) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None)
+			| ((corners & RectPart::TopRight) ? ImageRoundCorner::TopRight : ImageRoundCorner::None)
+			| ((corners & RectPart::BottomLeft) ? ImageRoundCorner::BottomLeft : ImageRoundCorner::None)
+			| ((corners & RectPart::BottomRight) ? ImageRoundCorner::BottomRight : ImageRoundCorner::None);
+		App::complexOverlayRect(p, geometry, roundRadius, roundCorners);
+	}
+
+	if (radial || (!loaded && !_data->loading())) {
+		const auto radialOpacity = (radial && loaded && !_data->uploading())
+			? _animation->radial.opacity()
+			: 1.;
+		const auto radialSize = st::historyGroupRadialSize;
+		const auto inner = QRect(
+			geometry.x() + (geometry.width() - radialSize) / 2,
+			geometry.y() + (geometry.height() - radialSize) / 2,
+			radialSize,
+			radialSize);
+		p.setPen(Qt::NoPen);
+		if (selected) {
+			p.setBrush(st::msgDateImgBgSelected);
+		} else if (isThumbAnimation(ms)) {
+			auto over = _animation->a_thumbOver.current();
+			p.setBrush(anim::brush(st::msgDateImgBg, st::msgDateImgBgOver, over));
+		} else {
+			auto over = ClickHandler::showAsActive(_data->loading() ? _cancell : _savel);
+			p.setBrush(over ? st::msgDateImgBgOver : st::msgDateImgBg);
+		}
+
+		p.setOpacity(radialOpacity * p.opacity());
+
+		{
+			PainterHighQualityEnabler hq(p);
+			p.drawEllipse(inner);
+		}
+
+		p.setOpacity(radialOpacity);
+		auto icon = ([radial, this, selected]() -> const style::icon*{
+			if (radial || _data->loading()) {
+				auto delayed = _data->full->toDelayedStorageImage();
+				if (!delayed || !delayed->location().isNull()) {
+					return &(selected ? st::historyFileThumbCancelSelected : st::historyFileThumbCancel);
+				}
+				return nullptr;
+			}
+			return &(selected ? st::historyFileThumbDownloadSelected : st::historyFileThumbDownload);
+		})();
+		if (icon) {
+			icon->paintInCenter(p, inner);
+		}
+		p.setOpacity(1);
+		if (radial) {
+			const auto line = st::historyGroupRadialLine;
+			const auto rinner = inner.marginsRemoved({ line, line, line, line });
+			const auto color = selected
+				? st::historyFileThumbRadialFgSelected
+				: st::historyFileThumbRadialFg;
+			_animation->radial.draw(p, rinner, line, color);
+		}
+	}
+}
+
+HistoryTextState HistoryPhoto::getStateGrouped(
+		const QRect &geometry,
+		QPoint point,
+		HistoryStateRequest request) const {
+	if (!geometry.contains(point)) {
+		return {};
+	}
+	const auto delayed = _data->full->toDelayedStorageImage();
+	return HistoryTextState(_parent, _data->uploading()
+		? _cancell
+		: _data->loaded()
+		? _openl
+		: _data->loading()
+		? ((!delayed || !delayed->location().isNull())
+			? _cancell
+			: ClickHandlerPtr())
+		: _savel);
+}
+
+void HistoryPhoto::validateGroupedCache(
+		const QRect &geometry,
+		RectParts corners,
+		not_null<uint64*> cacheKey,
+		not_null<QPixmap*> cache) const {
+	using Option = Images::Option;
+	const auto loaded = _data->loaded();
+	const auto loadLevel = loaded ? 2 : _data->thumb->loaded() ? 1 : 0;
+	const auto width = geometry.width();
+	const auto height = geometry.height();
+	const auto options = Option::Smooth
+		| Option::RoundedLarge
+		| (loaded ? Option::None : Option::Blurred)
+		| ((corners & RectPart::TopLeft) ? Option::RoundedTopLeft : Option::None)
+		| ((corners & RectPart::TopRight) ? Option::RoundedTopRight : Option::None)
+		| ((corners & RectPart::BottomLeft) ? Option::RoundedBottomLeft : Option::None)
+		| ((corners & RectPart::BottomRight) ? Option::RoundedBottomRight : Option::None);
+	const auto key = (uint64(width) << 48)
+		| (uint64(height) << 32)
+		| (uint64(options) << 16)
+		| (uint64(loadLevel));
+	if (*cacheKey == key) {
+		return;
+	}
+
+	const auto originalWidth = convertScale(_data->full->width());
+	const auto originalHeight = convertScale(_data->full->height());
+	const auto pixSize = CountPixSizeForSize(
+		{ originalWidth, originalHeight },
+		{ width, height });
+	const auto pixWidth = pixSize.width() * cIntRetinaFactor();
+	const auto pixHeight = pixSize.height() * cIntRetinaFactor();
+	const auto &image = loaded ? _data->full : _data->thumb;
+
+	*cacheKey = key;
+	*cache = image->pixNoCache(pixWidth, pixHeight, options, width, height);
 }
 
 void HistoryPhoto::updateSentMedia(const MTPMessageMedia &media) {
@@ -614,15 +837,18 @@ void HistoryPhoto::detachFromParent() {
 }
 
 QString HistoryPhoto::notificationText() const {
-	return captionedNotificationText(lang(lng_in_dlg_photo), _caption);
+	return WithCaptionNotificationText(lang(lng_in_dlg_photo), _caption);
 }
 
 QString HistoryPhoto::inDialogsText() const {
-	return captionedInDialogsText(lang(lng_in_dlg_photo), _caption);
+	return WithCaptionDialogsText(lang(lng_in_dlg_photo), _caption);
 }
 
 TextWithEntities HistoryPhoto::selectedText(TextSelection selection) const {
-	return captionedSelectedText(lang(lng_in_dlg_photo), _caption, selection);
+	return WithCaptionSelectedText(
+		lang(lng_in_dlg_photo),
+		_caption,
+		selection);
 }
 
 bool HistoryPhoto::needsBubble() const {
@@ -631,8 +857,8 @@ bool HistoryPhoto::needsBubble() const {
 	}
 	if (auto message = _parent->toHistoryMessage()) {
 		return message->viaBot()
-			|| message->Has<HistoryMessageForwarded>()
 			|| message->Has<HistoryMessageReply>()
+			|| message->displayForwardedFrom()
 			|| message->displayFromName();
 	}
 	return false;
@@ -649,26 +875,37 @@ ImagePtr HistoryPhoto::replyPreview() {
 	return _data->makeReplyPreview();
 }
 
-HistoryVideo::HistoryVideo(not_null<HistoryItem*> parent, DocumentData *document, const QString &caption) : HistoryFileMedia(parent)
+HistoryVideo::HistoryVideo(
+	not_null<HistoryItem*> parent,
+	not_null<DocumentData*> document,
+	const QString &caption)
+: HistoryFileMedia(parent)
 , _data(document)
 , _thumbw(1)
 , _caption(st::minPhotoSize - st::msgPadding.left() - st::msgPadding.right()) {
 	if (!caption.isEmpty()) {
-		_caption.setText(st::messageTextStyle, caption + _parent->skipBlock(), itemTextNoMonoOptions(_parent));
+		_caption.setText(
+			st::messageTextStyle,
+			caption + _parent->skipBlock(),
+			itemTextNoMonoOptions(_parent));
 	}
 
-	setDocumentLinks(_data);
+	setDocumentLinks(_data, parent);
 
 	setStatusSize(FileStatusSizeReady);
 
 	_data->thumb->load();
 }
 
-HistoryVideo::HistoryVideo(not_null<HistoryItem*> parent, const HistoryVideo &other) : HistoryFileMedia(parent)
+HistoryVideo::HistoryVideo(
+	not_null<HistoryItem*> parent,
+	not_null<HistoryItem*> realParent,
+	const HistoryVideo &other)
+: HistoryFileMedia(parent)
 , _data(other._data)
 , _thumbw(other._thumbw)
 , _caption(other._caption) {
-	setDocumentLinks(_data);
+	setDocumentLinks(_data, realParent);
 
 	setStatusSize(other._statusSize);
 }
@@ -864,10 +1101,11 @@ void HistoryVideo::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 }
 
 HistoryTextState HistoryVideo::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return {};
+	}
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
-
+	auto result = HistoryTextState(_parent);
 	bool loaded = _data->loaded();
 
 	int32 skipx = 0, skipy = 0, width = _width, height = _height;
@@ -883,7 +1121,10 @@ HistoryTextState HistoryVideo::getState(QPoint point, HistoryStateRequest reques
 				height -= st::msgPadding.bottom();
 			}
 			if (QRect(st::msgPadding.left(), height, captionw, _height - height).contains(point)) {
-				result = _caption.getState(point - QPoint(st::msgPadding.left(), height), captionw, request.forText());
+				result = HistoryTextState(_parent, _caption.getState(
+					point - QPoint(st::msgPadding.left(), height),
+					captionw,
+					request.forText()));
 			}
 			height -= st::mediaCaptionSkip;
 		}
@@ -914,20 +1155,176 @@ HistoryTextState HistoryVideo::getState(QPoint point, HistoryStateRequest reques
 	return result;
 }
 
+QSize HistoryVideo::sizeForGrouping() const {
+	const auto width = convertScale(_data->thumb->width());
+	const auto height = convertScale(_data->thumb->height());
+	return { std::max(width, 1), std::max(height, 1) };
+}
+
+void HistoryVideo::drawGrouped(
+		Painter &p,
+		const QRect &clip,
+		TextSelection selection,
+		TimeMs ms,
+		const QRect &geometry,
+		RectParts corners,
+		not_null<uint64*> cacheKey,
+		not_null<QPixmap*> cache) const {
+	_data->automaticLoad(_parent);
+
+	validateGroupedCache(geometry, corners, cacheKey, cache);
+
+	const auto selected = (selection == FullSelection);
+	const auto loaded = _data->loaded();
+	const auto displayLoading = _data->displayLoading();
+	const auto bubble = _parent->hasBubble();
+
+	if (displayLoading) {
+		ensureAnimation();
+		if (!_animation->radial.animating()) {
+			_animation->radial.start(_data->progress());
+		}
+	}
+	const auto radial = isRadialAnimation(ms);
+
+	if (!bubble) {
+//		App::roundShadow(p, 0, 0, width, height, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? InSelectedShadowCorners : InShadowCorners);
+	}
+	p.drawPixmap(geometry.topLeft(), *cache);
+	if (selected) {
+		const auto roundRadius = ImageRoundRadius::Large;
+		const auto roundCorners = ImageRoundCorner::None
+			| ((corners & RectPart::TopLeft) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None)
+			| ((corners & RectPart::TopRight) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None)
+			| ((corners & RectPart::BottomLeft) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None)
+			| ((corners & RectPart::BottomRight) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None);
+		App::complexOverlayRect(p, geometry, roundRadius, roundCorners);
+	}
+
+	const auto radialOpacity = (radial && loaded && !_data->uploading())
+		? _animation->radial.opacity()
+		: 1.;
+	const auto radialSize = st::historyGroupRadialSize;
+	const auto inner = QRect(
+		geometry.x() + (geometry.width() - radialSize) / 2,
+		geometry.y() + (geometry.height() - radialSize) / 2,
+		radialSize,
+		radialSize);
+	p.setPen(Qt::NoPen);
+	if (selected) {
+		p.setBrush(st::msgDateImgBgSelected);
+	} else if (isThumbAnimation(ms)) {
+		auto over = _animation->a_thumbOver.current();
+		p.setBrush(anim::brush(st::msgDateImgBg, st::msgDateImgBgOver, over));
+	} else {
+		auto over = ClickHandler::showAsActive(_data->loading() ? _cancell : _savel);
+		p.setBrush(over ? st::msgDateImgBgOver : st::msgDateImgBg);
+	}
+
+	p.setOpacity(radialOpacity * p.opacity());
+
+	{
+		PainterHighQualityEnabler hq(p);
+		p.drawEllipse(inner);
+	}
+
+	p.setOpacity(radialOpacity);
+	auto icon = ([this, radial, selected, loaded]() -> const style::icon * {
+		if (loaded && !radial) {
+			return &(selected ? st::historyFileThumbPlaySelected : st::historyFileThumbPlay);
+		} else if (radial || _data->loading()) {
+			if (_parent->id > 0 || _data->uploading()) {
+				return &(selected ? st::historyFileThumbCancelSelected : st::historyFileThumbCancel);
+			}
+			return nullptr;
+		}
+		return &(selected ? st::historyFileThumbDownloadSelected : st::historyFileThumbDownload);
+	})();
+	if (icon) {
+		icon->paintInCenter(p, inner);
+	}
+	p.setOpacity(1);
+	if (radial) {
+		const auto line = st::historyGroupRadialLine;
+		const auto rinner = inner.marginsRemoved({ line, line, line, line });
+		const auto color = selected
+			? st::historyFileThumbRadialFgSelected
+			: st::historyFileThumbRadialFg;
+		_animation->radial.draw(p, rinner, line, color);
+	}
+}
+
+HistoryTextState HistoryVideo::getStateGrouped(
+		const QRect &geometry,
+		QPoint point,
+		HistoryStateRequest request) const {
+	if (!geometry.contains(point)) {
+		return {};
+	}
+	return HistoryTextState(_parent, _data->uploading()
+		? _cancell
+		: _data->loaded()
+		? _openl
+		: _data->loading()
+		? _cancell
+		: _savel);
+}
+
+void HistoryVideo::validateGroupedCache(
+		const QRect &geometry,
+		RectParts corners,
+		not_null<uint64*> cacheKey,
+		not_null<QPixmap*> cache) const {
+	using Option = Images::Option;
+	const auto loaded = _data->thumb->loaded();
+	const auto loadLevel = loaded ? 1 : 0;
+	const auto width = geometry.width();
+	const auto height = geometry.height();
+	const auto options = Option::Smooth
+		| Option::RoundedLarge
+		| Option::Blurred
+		| ((corners & RectPart::TopLeft) ? Option::RoundedTopLeft : Option::None)
+		| ((corners & RectPart::TopRight) ? Option::RoundedTopRight : Option::None)
+		| ((corners & RectPart::BottomLeft) ? Option::RoundedBottomLeft : Option::None)
+		| ((corners & RectPart::BottomRight) ? Option::RoundedBottomRight : Option::None);
+	const auto key = (uint64(width) << 48)
+		| (uint64(height) << 32)
+		| (uint64(options) << 16)
+		| (uint64(loadLevel));
+	if (*cacheKey == key) {
+		return;
+	}
+
+	const auto originalWidth = convertScale(_data->thumb->width());
+	const auto originalHeight = convertScale(_data->thumb->height());
+	const auto pixSize = CountPixSizeForSize(
+		{ originalWidth, originalHeight },
+		{ width, height });
+	const auto pixWidth = pixSize.width();
+	const auto pixHeight = pixSize.height();
+	const auto &image = _data->thumb;
+
+	*cacheKey = key;
+	*cache = image->pixNoCache(pixWidth, pixHeight, options, width, height);
+}
+
 void HistoryVideo::setStatusSize(int32 newSize) const {
 	HistoryFileMedia::setStatusSize(newSize, _data->size, _data->duration(), 0);
 }
 
 QString HistoryVideo::notificationText() const {
-	return captionedNotificationText(lang(lng_in_dlg_video), _caption);
+	return WithCaptionNotificationText(lang(lng_in_dlg_video), _caption);
 }
 
 QString HistoryVideo::inDialogsText() const {
-	return captionedInDialogsText(lang(lng_in_dlg_video), _caption);
+	return WithCaptionDialogsText(lang(lng_in_dlg_video), _caption);
 }
 
 TextWithEntities HistoryVideo::selectedText(TextSelection selection) const {
-	return captionedSelectedText(lang(lng_in_dlg_video), _caption, selection);
+	return WithCaptionSelectedText(
+		lang(lng_in_dlg_video),
+		_caption,
+		selection);
 }
 
 bool HistoryVideo::needsBubble() const {
@@ -936,8 +1333,8 @@ bool HistoryVideo::needsBubble() const {
 	}
 	if (auto message = _parent->toHistoryMessage()) {
 		return message->viaBot()
-			|| message->Has<HistoryMessageForwarded>()
 			|| message->Has<HistoryMessageReply>()
+			|| message->displayForwardedFrom()
 			|| message->displayFromName();
 	}
 	return false;
@@ -1036,14 +1433,18 @@ void HistoryDocumentVoice::stopSeeking() {
 	Media::Player::instance()->stopSeeking(AudioMsgId::Type::Voice);
 }
 
-HistoryDocument::HistoryDocument(not_null<HistoryItem*> parent, DocumentData *document, const QString &caption) : HistoryFileMedia(parent)
+HistoryDocument::HistoryDocument(
+	not_null<HistoryItem*> parent,
+	not_null<DocumentData*> document,
+	const QString &caption)
+: HistoryFileMedia(parent)
 , _data(document) {
 	createComponents(!caption.isEmpty());
 	if (auto named = Get<HistoryDocumentNamed>()) {
 		fillNamedFromData(named);
 	}
 
-	setDocumentLinks(_data);
+	setDocumentLinks(_data, parent);
 
 	setStatusSize(FileStatusSizeReady);
 
@@ -1056,7 +1457,6 @@ HistoryDocument::HistoryDocument(
 	not_null<HistoryItem*> parent,
 	const HistoryDocument &other)
 : HistoryFileMedia(parent)
-, RuntimeComposer()
 , _data(other._data) {
 	auto captioned = other.Get<HistoryDocumentCaptioned>();
 	createComponents(captioned != 0);
@@ -1069,7 +1469,7 @@ HistoryDocument::HistoryDocument(
 		}
 	}
 
-	setDocumentLinks(_data);
+	setDocumentLinks(_data, parent);
 
 	setStatusSize(other._statusSize);
 
@@ -1151,7 +1551,7 @@ void HistoryDocument::initDimensions() {
 	} else {
 		_minh = st::msgFilePadding.top() + st::msgFileSize + st::msgFilePadding.bottom();
 	}
-	if (!captioned && (_parent->Has<HistoryMessageSigned>() || _parent->Has<HistoryMessageEdited>())) {
+	if (!captioned && (_parent->Has<HistoryMessageSigned>() || _parent->displayEditedBadge())) {
 		_minh += st::msgDateFont->height - st::msgDateDelta.y();
 	}
 	if (!isBubbleTop()) {
@@ -1440,9 +1840,11 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 }
 
 HistoryTextState HistoryDocument::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 
 	bool loaded = _data->loaded();
 
@@ -1501,7 +1903,10 @@ HistoryTextState HistoryDocument::getState(QPoint point, HistoryStateRequest req
 	auto height = _height;
 	if (auto captioned = Get<HistoryDocumentCaptioned>()) {
 		if (point.y() >= bottom) {
-			result = captioned->_caption.getState(point - QPoint(st::msgPadding.left(), bottom), _width - st::msgPadding.left() - st::msgPadding.right(), request.forText());
+			result = HistoryTextState(_parent, captioned->_caption.getState(
+				point - QPoint(st::msgPadding.left(), bottom),
+				_width - st::msgPadding.left() - st::msgPadding.right(),
+				request.forText()));
 			return result;
 		}
 		auto captionw = _width - st::msgPadding.left() - st::msgPadding.right();
@@ -1537,7 +1942,9 @@ void HistoryDocument::updatePressed(QPoint point) {
 QString HistoryDocument::notificationText() const {
 	QString result;
 	buildStringRepresentation([&result](const QString &type, const QString &fileName, const Text &caption) {
-		result = captionedNotificationText(fileName.isEmpty() ? type : fileName, caption);
+		result = WithCaptionNotificationText(
+			fileName.isEmpty() ? type : fileName,
+			caption);
 	});
 	return result;
 }
@@ -1545,7 +1952,9 @@ QString HistoryDocument::notificationText() const {
 QString HistoryDocument::inDialogsText() const {
 	QString result;
 	buildStringRepresentation([&result](const QString &type, const QString &fileName, const Text &caption) {
-		result = captionedInDialogsText(fileName.isEmpty() ? type : fileName, caption);
+		result = WithCaptionDialogsText(
+			fileName.isEmpty() ? type : fileName,
+			caption);
 	});
 	return result;
 }
@@ -1557,7 +1966,7 @@ TextWithEntities HistoryDocument::selectedText(TextSelection selection) const {
 		if (!fileName.isEmpty()) {
 			fullType.append(qstr(" : ")).append(fileName);
 		}
-		result = captionedSelectedText(fullType, caption, selection);
+		result = WithCaptionSelectedText(fullType, caption, selection);
 	});
 	return result;
 }
@@ -1771,10 +2180,14 @@ ImagePtr HistoryDocument::replyPreview() {
 	return _data->makeReplyPreview();
 }
 
-HistoryGif::HistoryGif(not_null<HistoryItem*> parent, DocumentData *document, const QString &caption) : HistoryFileMedia(parent)
+HistoryGif::HistoryGif(
+	not_null<HistoryItem*> parent,
+	not_null<DocumentData*> document,
+	const QString &caption)
+: HistoryFileMedia(parent)
 , _data(document)
 , _caption(st::minPhotoSize - st::msgPadding.left() - st::msgPadding.right()) {
-	setDocumentLinks(_data, true);
+	setDocumentLinks(_data, parent, true);
 
 	setStatusSize(FileStatusSizeReady);
 
@@ -1785,12 +2198,15 @@ HistoryGif::HistoryGif(not_null<HistoryItem*> parent, DocumentData *document, co
 	_data->thumb->load();
 }
 
-HistoryGif::HistoryGif(not_null<HistoryItem*> parent, const HistoryGif &other) : HistoryFileMedia(parent)
+HistoryGif::HistoryGif(
+	not_null<HistoryItem*> parent,
+	const HistoryGif &other)
+: HistoryFileMedia(parent)
 , _data(other._data)
 , _thumbw(other._thumbw)
 , _thumbh(other._thumbh)
 , _caption(other._caption) {
-	setDocumentLinks(_data, true);
+	setDocumentLinks(_data, parent, true);
 
 	setStatusSize(other._statusSize);
 }
@@ -2222,9 +2638,11 @@ void HistoryGif::draw(Painter &p, const QRect &r, TextSelection selection, TimeM
 }
 
 HistoryTextState HistoryGif::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 	int32 skipx = 0, skipy = 0, width = _width, height = _height;
 	bool bubble = _parent->hasBubble();
 
@@ -2238,7 +2656,10 @@ HistoryTextState HistoryGif::getState(QPoint point, HistoryStateRequest request)
 				height -= st::msgPadding.bottom();
 			}
 			if (QRect(st::msgPadding.left(), height, captionw, _height - height).contains(point)) {
-				result = _caption.getState(point - QPoint(st::msgPadding.left(), height), captionw, request.forText());
+				result = HistoryTextState(_parent, _caption.getState(
+					point - QPoint(st::msgPadding.left(), height),
+					captionw,
+					request.forText()));
 				return result;
 			}
 			height -= st::mediaCaptionSkip;
@@ -2287,7 +2708,10 @@ HistoryTextState HistoryGif::getState(QPoint point, HistoryStateRequest request)
 				if (breakEverywhere) {
 					textRequest.flags |= Text::StateRequest::Flag::BreakEverywhere;
 				}
-				result = forwarded->_text.getState(point - QPoint(rectx + st::msgReplyPadding.left(), recty + st::msgReplyPadding.top()), innerw, textRequest);
+				result = HistoryTextState(_parent, forwarded->_text.getState(
+					point - QPoint(rectx + st::msgReplyPadding.left(), recty + st::msgReplyPadding.top()),
+					innerw,
+					textRequest));
 				result.symbol = 0;
 				result.afterSymbol = false;
 				if (breakEverywhere) {
@@ -2365,15 +2789,15 @@ HistoryTextState HistoryGif::getState(QPoint point, HistoryStateRequest request)
 }
 
 QString HistoryGif::notificationText() const {
-	return captionedNotificationText(mediaTypeString(), _caption);
+	return WithCaptionNotificationText(mediaTypeString(), _caption);
 }
 
 QString HistoryGif::inDialogsText() const {
-	return captionedInDialogsText(mediaTypeString(), _caption);
+	return WithCaptionDialogsText(mediaTypeString(), _caption);
 }
 
 TextWithEntities HistoryGif::selectedText(TextSelection selection) const {
-	return captionedSelectedText(mediaTypeString(), _caption, selection);
+	return WithCaptionSelectedText(mediaTypeString(), _caption, selection);
 }
 
 bool HistoryGif::needsBubble() const {
@@ -2385,8 +2809,8 @@ bool HistoryGif::needsBubble() const {
 	}
 	if (auto message = _parent->toHistoryMessage()) {
 		return message->viaBot()
-			|| message->Has<HistoryMessageForwarded>()
 			|| message->Has<HistoryMessageReply>()
+			|| message->displayForwardedFrom()
 			|| message->displayFromName();
 	}
 	return false;
@@ -2600,7 +3024,10 @@ bool HistoryGif::dataLoaded() const {
 	return (!_parent || _parent->id > 0) ? _data->loaded() : false;
 }
 
-HistorySticker::HistorySticker(not_null<HistoryItem*> parent, DocumentData *document) : HistoryMedia(parent)
+HistorySticker::HistorySticker(
+	not_null<HistoryItem*> parent,
+	not_null<DocumentData*> document)
+: HistoryMedia(parent)
 , _data(document)
 , _emoji(_data->sticker()->alt) {
 	_data->thumb->load();
@@ -2743,8 +3170,10 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 }
 
 HistoryTextState HistorySticker::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	auto result = HistoryTextState(_parent);
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 
 	auto outbg = _parent->hasOutLayout();
 	auto childmedia = (_parent->getMedia() != this);
@@ -3013,7 +3442,7 @@ void HistoryContact::draw(Painter &p, const QRect &r, TextSelection selection, T
 }
 
 HistoryTextState HistoryContact::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
 	int32 nameleft = 0, nametop = 0, nameright = 0, statustop = 0, linktop = 0;
 	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
@@ -3161,7 +3590,7 @@ void HistoryCall::draw(Painter &p, const QRect &r, TextSelection selection, Time
 }
 
 HistoryTextState HistoryCall::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 	if (QRect(0, 0, _width, _height).contains(point)) {
 		result.link = _link;
 		return result;
@@ -3222,9 +3651,12 @@ HistoryWebPage::HistoryWebPage(not_null<HistoryItem*> parent, not_null<WebPageDa
 , _description(st::msgMinWidth - st::webPageLeft) {
 }
 
-HistoryWebPage::HistoryWebPage(not_null<HistoryItem*> parent, const HistoryWebPage &other) : HistoryMedia(parent)
+HistoryWebPage::HistoryWebPage(
+	not_null<HistoryItem*> parent,
+	const HistoryWebPage &other)
+: HistoryMedia(parent)
 , _data(other._data)
-, _attach(other._attach ? other._attach->clone(parent) : nullptr)
+, _attach(other._attach ? other._attach->clone(parent, parent) : nullptr)
 , _asArticle(other._asArticle)
 , _title(other._title)
 , _description(other._description)
@@ -3604,9 +4036,11 @@ void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, T
 }
 
 HistoryTextState HistoryWebPage::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 	int32 skipx = 0, skipy = 0, width = _width, height = _height;
 
 	QMargins bubble(_attach ? _attach->bubbleMargins() : QMargins());
@@ -3635,7 +4069,11 @@ HistoryTextState HistoryWebPage::getState(QPoint point, HistoryStateRequest requ
 		if (point.y() >= tshift && point.y() < tshift + _titleLines * lineHeight) {
 			Text::StateRequestElided titleRequest = request.forText();
 			titleRequest.lines = _titleLines;
-			result = _title.getStateElidedLeft(point - QPoint(padding.left(), tshift), width, _width, titleRequest);
+			result = HistoryTextState(_parent, _title.getStateElidedLeft(
+				point - QPoint(padding.left(), tshift),
+				width,
+				_width,
+				titleRequest));
 		} else if (point.y() >= tshift + _titleLines * lineHeight) {
 			symbolAdd += _title.length();
 		}
@@ -3647,9 +4085,17 @@ HistoryTextState HistoryWebPage::getState(QPoint point, HistoryStateRequest requ
 			if (_descriptionLines > 0) {
 				Text::StateRequestElided descriptionRequest = request.forText();
 				descriptionRequest.lines = _descriptionLines;
-				result = _description.getStateElidedLeft(point - QPoint(padding.left(), tshift), width, _width, descriptionRequest);
+				result = HistoryTextState(_parent, _description.getStateElidedLeft(
+					point - QPoint(padding.left(), tshift),
+					width,
+					_width,
+					descriptionRequest));
 			} else {
-				result = _description.getStateLeft(point - QPoint(padding.left(), tshift), width, _width, request.forText());
+				result = HistoryTextState(_parent, _description.getStateLeft(
+					point - QPoint(padding.left(), tshift),
+					width,
+					_width,
+					request.forText()));
 			}
 		} else if (point.y() >= tshift + descriptionHeight) {
 			symbolAdd += _description.length();
@@ -3769,15 +4215,21 @@ int HistoryWebPage::bottomInfoPadding() const {
 	return result;
 }
 
-HistoryGame::HistoryGame(not_null<HistoryItem*> parent, GameData *data) : HistoryMedia(parent)
+HistoryGame::HistoryGame(
+	not_null<HistoryItem*> parent,
+	not_null<GameData*> data)
+: HistoryMedia(parent)
 , _data(data)
 , _title(st::msgMinWidth - st::webPageLeft)
 , _description(st::msgMinWidth - st::webPageLeft) {
 }
 
-HistoryGame::HistoryGame(not_null<HistoryItem*> parent, const HistoryGame &other) : HistoryMedia(parent)
+HistoryGame::HistoryGame(
+	not_null<HistoryItem*> parent,
+	const HistoryGame &other)
+: HistoryMedia(parent)
 , _data(other._data)
-, _attach(other._attach ? other._attach->clone(parent) : nullptr)
+, _attach(other._attach ? other._attach->clone(parent, parent) : nullptr)
 , _title(other._title)
 , _description(other._description) {
 }
@@ -3994,9 +4446,11 @@ void HistoryGame::draw(Painter &p, const QRect &r, TextSelection selection, Time
 }
 
 HistoryTextState HistoryGame::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 	int32 width = _width, height = _height;
 
 	QMargins bubble(_attach ? _attach->bubbleMargins() : QMargins());
@@ -4015,7 +4469,11 @@ HistoryTextState HistoryGame::getState(QPoint point, HistoryStateRequest request
 		if (point.y() >= tshift && point.y() < tshift + _titleLines * lineHeight) {
 			Text::StateRequestElided titleRequest = request.forText();
 			titleRequest.lines = _titleLines;
-			result = _title.getStateElidedLeft(point - QPoint(padding.left(), tshift), width, _width, titleRequest);
+			result = HistoryTextState(_parent, _title.getStateElidedLeft(
+				point - QPoint(padding.left(), tshift),
+				width,
+				_width,
+				titleRequest));
 		} else if (point.y() >= tshift + _titleLines * lineHeight) {
 			symbolAdd += _title.length();
 		}
@@ -4025,7 +4483,11 @@ HistoryTextState HistoryGame::getState(QPoint point, HistoryStateRequest request
 		if (point.y() >= tshift && point.y() < tshift + _descriptionLines * lineHeight) {
 			Text::StateRequestElided descriptionRequest = request.forText();
 			descriptionRequest.lines = _descriptionLines;
-			result = _description.getStateElidedLeft(point - QPoint(padding.left(), tshift), width, _width, descriptionRequest);
+			result = HistoryTextState(_parent, _description.getStateElidedLeft(
+				point - QPoint(padding.left(), tshift),
+				width,
+				_width,
+				descriptionRequest));
 		} else if (point.y() >= tshift + _descriptionLines * lineHeight) {
 			symbolAdd += _description.length();
 		}
@@ -4175,7 +4637,7 @@ HistoryInvoice::HistoryInvoice(
 	not_null<HistoryItem*> parent,
 	const HistoryInvoice &other)
 : HistoryMedia(parent)
-, _attach(other._attach ? other._attach->clone(parent) : nullptr)
+, _attach(other._attach ? other._attach->clone(parent, parent) : nullptr)
 , _titleHeight(other._titleHeight)
 , _descriptionHeight(other._descriptionHeight)
 , _title(other._title)
@@ -4432,9 +4894,11 @@ void HistoryInvoice::draw(Painter &p, const QRect &r, TextSelection selection, T
 }
 
 HistoryTextState HistoryInvoice::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 	int32 width = _width, height = _height;
 
 	QMargins bubble(_attach ? _attach->bubbleMargins() : QMargins());
@@ -4452,7 +4916,11 @@ HistoryTextState HistoryInvoice::getState(QPoint point, HistoryStateRequest requ
 		if (point.y() >= tshift && point.y() < tshift + _titleHeight) {
 			Text::StateRequestElided titleRequest = request.forText();
 			titleRequest.lines = _titleHeight / lineHeight;
-			result = _title.getStateElidedLeft(point - QPoint(padding.left(), tshift), width, _width, titleRequest);
+			result = HistoryTextState(_parent, _title.getStateElidedLeft(
+				point - QPoint(padding.left(), tshift),
+				width,
+				_width,
+				titleRequest));
 		} else if (point.y() >= tshift + _titleHeight) {
 			symbolAdd += _title.length();
 		}
@@ -4460,7 +4928,11 @@ HistoryTextState HistoryInvoice::getState(QPoint point, HistoryStateRequest requ
 	}
 	if (_descriptionHeight) {
 		if (point.y() >= tshift && point.y() < tshift + _descriptionHeight) {
-			result = _description.getStateLeft(point - QPoint(padding.left(), tshift), width, _width, request.forText());
+			result = HistoryTextState(_parent, _description.getStateLeft(
+				point - QPoint(padding.left(), tshift),
+				width,
+				_width,
+				request.forText()));
 		} else if (point.y() >= tshift + _descriptionHeight) {
 			symbolAdd += _description.length();
 		}
@@ -4721,10 +5193,12 @@ void HistoryLocation::draw(Painter &p, const QRect &r, TextSelection selection, 
 }
 
 HistoryTextState HistoryLocation::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(_parent);
 	auto symbolAdd = 0;
 
-	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
+	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) {
+		return result;
+	}
 	int32 skipx = 0, skipy = 0, width = _width, height = _height;
 	bool bubble = _parent->hasBubble();
 
@@ -4744,7 +5218,11 @@ HistoryTextState HistoryLocation::getState(QPoint point, HistoryStateRequest req
 		if (!_title.isEmpty()) {
 			auto titleh = qMin(_title.countHeight(textw), 2 * st::webPageTitleFont->height);
 			if (point.y() >= skipy && point.y() < skipy + titleh) {
-				result = _title.getStateLeft(point - QPoint(skipx + st::msgPadding.left(), skipy), textw, _width, request.forText());
+				result = HistoryTextState(_parent, _title.getStateLeft(
+					point - QPoint(skipx + st::msgPadding.left(), skipy),
+					textw,
+					_width,
+					request.forText()));
 				return result;
 			} else if (point.y() >= skipy + titleh) {
 				symbolAdd += _title.length();
@@ -4754,7 +5232,11 @@ HistoryTextState HistoryLocation::getState(QPoint point, HistoryStateRequest req
 		if (!_description.isEmpty()) {
 			auto descriptionh = qMin(_description.countHeight(textw), 3 * st::webPageDescriptionFont->height);
 			if (point.y() >= skipy && point.y() < skipy + descriptionh) {
-				result = _description.getStateLeft(point - QPoint(skipx + st::msgPadding.left(), skipy), textw, _width, request.forText());
+				result = HistoryTextState(_parent, _description.getStateLeft(
+					point - QPoint(skipx + st::msgPadding.left(), skipy),
+					textw,
+					_width,
+					request.forText()));
 			} else if (point.y() >= skipy + descriptionh) {
 				symbolAdd += _description.length();
 			}
@@ -4799,11 +5281,11 @@ TextSelection HistoryLocation::adjustSelection(TextSelection selection, TextSele
 }
 
 QString HistoryLocation::notificationText() const {
-	return captionedNotificationText(lang(lng_maps_point), _title);
+	return WithCaptionNotificationText(lang(lng_maps_point), _title);
 }
 
 QString HistoryLocation::inDialogsText() const {
-	return captionedInDialogsText(lang(lng_maps_point), _title);
+	return WithCaptionDialogsText(lang(lng_maps_point), _title);
 }
 
 TextWithEntities HistoryLocation::selectedText(TextSelection selection) const {
@@ -4836,8 +5318,8 @@ bool HistoryLocation::needsBubble() const {
 	}
 	if (auto message = _parent->toHistoryMessage()) {
 		return message->viaBot()
-			|| message->Has<HistoryMessageForwarded>()
 			|| message->Has<HistoryMessageReply>()
+			|| message->displayForwardedFrom()
 			|| message->displayFromName();
 	}
 	return false;

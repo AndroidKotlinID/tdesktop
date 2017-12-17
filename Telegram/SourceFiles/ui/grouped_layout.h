@@ -20,11 +20,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/utils.h"
+namespace Data {
 
-#define BETA_VERSION_MACRO (0ULL)
+struct GroupMediaLayout {
+	QRect geometry;
+	RectParts sides = RectPart::None;
+};
 
-constexpr int AppVersion = 1002002;
-constexpr str_const AppVersionStr = "1.2.2";
-constexpr bool AppAlphaVersion = true;
-constexpr uint64 AppBetaVersion = BETA_VERSION_MACRO;
+std::vector<GroupMediaLayout> LayoutMediaGroup(
+	const std::vector<QSize> &sizes,
+	int maxWidth,
+	int minWidth,
+	int spacing);
+
+} // namespace Data
