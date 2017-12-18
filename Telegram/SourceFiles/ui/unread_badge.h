@@ -20,52 +20,23 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-namespace Core {
+#include "ui/rp_widget.h"
 
-class Launcher {
+namespace Ui {
+
+class UnreadBadge : public RpWidget {
 public:
-	Launcher(int argc, char *argv[]);
+	using RpWidget::RpWidget;
 
-	static std::unique_ptr<Launcher> Create(int argc, char *argv[]);
-
-	int exec();
-
-	QString argumentsString() const;
-	bool customWorkingDir() const {
-		return _customWorkingDir;
-	}
+	void setText(const QString &text, bool active);
 
 protected:
-	enum class UpdaterLaunch {
-		PerformUpdate,
-		JustRelaunch,
-	};
+	void paintEvent(QPaintEvent *e) override;
 
 private:
-	void prepareSettings();
-	void processArguments();
-
-	QStringList readArguments(int argc, char *argv[]) const;
-	virtual base::optional<QStringList> readArgumentsHook(
-			int argc,
-			char *argv[]) const {
-		return base::none;
-	}
-
-	void init();
-	virtual void initHook() {
-	}
-
-	virtual bool launchUpdater(UpdaterLaunch action) = 0;
-
-	int executeApplication();
-
-	int _argc;
-	char **_argv;
-	QStringList _arguments;
-
-	bool _customWorkingDir = false;
+	QString _text;
+	bool _active = false;
 
 };
 
-} // namespace Core
+} // namespace Ui

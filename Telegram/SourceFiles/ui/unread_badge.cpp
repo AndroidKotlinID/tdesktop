@@ -18,54 +18,35 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#pragma once
+#include "ui/unread_badge.h"
 
-namespace Core {
+#include "dialogs/dialogs_layout.h"
 
-class Launcher {
-public:
-	Launcher(int argc, char *argv[]);
+namespace Ui {
 
-	static std::unique_ptr<Launcher> Create(int argc, char *argv[]);
+void UnreadBadge::setText(const QString &text, bool active) {
+	_text = text;
+	_active = active;
+	update();
+}
 
-	int exec();
-
-	QString argumentsString() const;
-	bool customWorkingDir() const {
-		return _customWorkingDir;
+void UnreadBadge::paintEvent(QPaintEvent *e) {
+	if (_text.isEmpty()) {
+		return;
 	}
 
-protected:
-	enum class UpdaterLaunch {
-		PerformUpdate,
-		JustRelaunch,
-	};
+	Painter p(this);
 
-private:
-	void prepareSettings();
-	void processArguments();
+	Dialogs::Layout::UnreadBadgeStyle unreadSt;
+	unreadSt.muted = !_active;
+	auto unreadRight = width();
+	auto unreadTop = 0;
+	Dialogs::Layout::paintUnreadCount(
+		p,
+		_text,
+		unreadRight,
+		unreadTop,
+		unreadSt);
+}
 
-	QStringList readArguments(int argc, char *argv[]) const;
-	virtual base::optional<QStringList> readArgumentsHook(
-			int argc,
-			char *argv[]) const {
-		return base::none;
-	}
-
-	void init();
-	virtual void initHook() {
-	}
-
-	virtual bool launchUpdater(UpdaterLaunch action) = 0;
-
-	int executeApplication();
-
-	int _argc;
-	char **_argv;
-	QStringList _arguments;
-
-	bool _customWorkingDir = false;
-
-};
-
-} // namespace Core
+} // namespace Ui

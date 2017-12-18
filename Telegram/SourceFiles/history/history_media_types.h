@@ -63,6 +63,8 @@ public:
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
 	void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
 
+	void refreshParentId(not_null<HistoryItem*> realParent) override;
+
 	bool allowsFastShare() const override {
 		return true;
 	}
@@ -70,30 +72,35 @@ public:
 	~HistoryFileMedia();
 
 protected:
-	ClickHandlerPtr _openl, _savel, _cancell;
-	void setLinks(ClickHandlerPtr &&openl, ClickHandlerPtr &&savel, ClickHandlerPtr &&cancell);
+	using FileClickHandlerPtr = std::shared_ptr<FileClickHandler>;
+	FileClickHandlerPtr _openl, _savel, _cancell;
+
+	void setLinks(
+		FileClickHandlerPtr &&openl,
+		FileClickHandlerPtr &&savel,
+		FileClickHandlerPtr &&cancell);
 	void setDocumentLinks(
 			not_null<DocumentData*> document,
 			not_null<HistoryItem*> realParent,
 			bool inlinegif = false) {
-		ClickHandlerPtr open, save;
+		FileClickHandlerPtr open, save;
 		const auto context = realParent->fullId();
 		if (inlinegif) {
-			open = MakeShared<GifOpenClickHandler>(document, context);
+			open = std::make_shared<GifOpenClickHandler>(document, context);
 		} else {
-			open = MakeShared<DocumentOpenClickHandler>(document, context);
+			open = std::make_shared<DocumentOpenClickHandler>(document, context);
 		}
 		if (inlinegif) {
-			save = MakeShared<GifOpenClickHandler>(document, context);
+			save = std::make_shared<GifOpenClickHandler>(document, context);
 		} else if (document->isVoiceMessage()) {
-			save = MakeShared<DocumentOpenClickHandler>(document, context);
+			save = std::make_shared<DocumentOpenClickHandler>(document, context);
 		} else {
-			save = MakeShared<DocumentSaveClickHandler>(document, context);
+			save = std::make_shared<DocumentSaveClickHandler>(document, context);
 		}
 		setLinks(
 			std::move(open),
 			std::move(save),
-			MakeShared<DocumentCancelClickHandler>(document, context));
+			std::make_shared<DocumentCancelClickHandler>(document, context));
 	}
 
 	// >= 0 will contain download / upload string, _statusSize = loaded bytes
@@ -428,7 +435,7 @@ public:
 	void checkPlaybackFinished() const;
 
 	mutable std::unique_ptr<HistoryDocumentVoicePlayback> _playback;
-	QSharedPointer<VoiceSeekClickHandler> _seekl;
+	std::shared_ptr<VoiceSeekClickHandler> _seekl;
 	mutable int _lastDurationMs = 0;
 
 	bool seeking() const {
@@ -944,6 +951,7 @@ public:
 
 	void initDimensions() override;
 	int resizeGetHeight(int width) override;
+	void refreshParentId(not_null<HistoryItem*> realParent) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
@@ -1060,7 +1068,7 @@ public:
 
 	void initDimensions() override;
 	int resizeGetHeight(int width) override;
-	void updateMessageId() override;
+	void refreshParentId(not_null<HistoryItem*> realParent) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
@@ -1148,7 +1156,7 @@ private:
 	int bottomInfoPadding() const;
 
 	not_null<GameData*> _data;
-	ClickHandlerPtr _openl;
+	std::shared_ptr<ReplyMarkupClickHandler> _openl;
 	std::unique_ptr<HistoryMedia> _attach;
 
 	int32 _titleLines, _descriptionLines;
@@ -1181,6 +1189,7 @@ public:
 
 	void initDimensions() override;
 	int resizeGetHeight(int width) override;
+	void refreshParentId(not_null<HistoryItem*> realParent) override;
 
 	MsgId getReceiptMsgId() const {
 		return _receiptMsgId;

@@ -149,6 +149,8 @@
 <(src_loc)/core/file_utilities.h
 <(src_loc)/core/launcher.cpp
 <(src_loc)/core/launcher.h
+<(src_loc)/core/main_queue_processor.cpp
+<(src_loc)/core/main_queue_processor.h
 <(src_loc)/core/single_timer.cpp
 <(src_loc)/core/single_timer.h
 <(src_loc)/core/tl_help.h
@@ -622,6 +624,8 @@
 <(src_loc)/ui/special_buttons.h
 <(src_loc)/ui/twidget.cpp
 <(src_loc)/ui/twidget.h
+<(src_loc)/ui/unread_badge.cpp
+<(src_loc)/ui/unread_badge.h
 <(src_loc)/window/layer_widget.cpp
 <(src_loc)/window/layer_widget.h
 <(src_loc)/window/main_window.cpp

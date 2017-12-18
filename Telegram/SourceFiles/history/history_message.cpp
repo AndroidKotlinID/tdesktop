@@ -190,12 +190,13 @@ void FastShareMessage(not_null<HistoryItem*> item) {
 		MessageIdsList msgIds;
 		base::flat_set<mtpRequestId> requests;
 	};
-	const auto data = MakeShared<ShareData>(item->history()->peer, [&] {
+	const auto data = std::make_shared<ShareData>(item->history()->peer, [&] {
 		if (const auto group = item->getFullGroup()) {
 			return Auth().data().groupToIds(group);
 		}
 		return MessageIdsList(1, item->fullId());
 	}());
+	const auto isGroup = (item->getFullGroup() != nullptr);
 	const auto isGame = item->getMessageBot()
 		&& item->getMedia()
 		&& (item->getMedia()->type() == MediaTypeGame);
@@ -222,7 +223,7 @@ void FastShareMessage(not_null<HistoryItem*> item) {
 			}
 		}
 	};
-	auto submitCallback = [data](const QVector<PeerData*> &result) {
+	auto submitCallback = [data, isGroup](const QVector<PeerData*> &result) {
 		if (!data->requests.empty()) {
 			return; // Share clicked already.
 		}
@@ -263,8 +264,11 @@ void FastShareMessage(not_null<HistoryItem*> item) {
 			}
 		};
 
-		auto sendFlags = MTPmessages_ForwardMessages::Flag::f_with_my_score
-			| MTPmessages_ForwardMessages::Flag::f_grouped;
+		const auto sendFlags = MTPmessages_ForwardMessages::Flag(0)
+			| MTPmessages_ForwardMessages::Flag::f_with_my_score
+			| (isGroup
+				? MTPmessages_ForwardMessages::Flag::f_grouped
+				: MTPmessages_ForwardMessages::Flag(0));
 		auto msgIds = QVector<MTPint>();
 		msgIds.reserve(data->msgIds.size());
 		for (const auto fullId : data->msgIds) {
@@ -362,7 +366,7 @@ QString GetErrorTextForForward(
 void HistoryMessageVia::create(UserId userId) {
 	_bot = App::user(peerFromUser(userId));
 	_maxWidth = st::msgServiceNameFont->width(lng_inline_bot_via(lt_inline_bot, '@' + _bot->username));
-	_lnk = MakeShared<LambdaClickHandler>([bot = _bot] {
+	_lnk = std::make_shared<LambdaClickHandler>([bot = _bot] {
 		App::insertBotCommand('@' + bot->username);
 	});
 }
@@ -2401,7 +2405,7 @@ ClickHandlerPtr HistoryMessage::rightActionLink() const {
 		const auto forwarded = Get<HistoryMessageForwarded>();
 		const auto savedFromPeer = forwarded ? forwarded->_savedFromPeer : nullptr;
 		const auto savedFromMsgId = forwarded ? forwarded->_savedFromMsgId : 0;
-		_rightActionLink = MakeShared<LambdaClickHandler>([=] {
+		_rightActionLink = std::make_shared<LambdaClickHandler>([=] {
 			if (auto item = App::histItemById(itemId)) {
 				if (savedFromPeer && savedFromMsgId) {
 					App::wnd()->controller()->showPeerHistory(
