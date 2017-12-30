@@ -20,11 +20,31 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/utils.h"
+#include "base/weak_ptr.h"
 
-#define BETA_VERSION_MACRO (0ULL)
+class AuthSession;
 
-constexpr int AppVersion = 1002005;
-constexpr str_const AppVersionStr = "1.2.5";
-constexpr bool AppAlphaVersion = true;
-constexpr uint64 AppBetaVersion = BETA_VERSION_MACRO;
+namespace Core {
+
+class Changelogs : public base::has_weak_ptr, private base::Subscriber {
+public:
+	Changelogs(not_null<AuthSession*> session, int oldVersion);
+
+	static std::unique_ptr<Changelogs> Create(
+		not_null<AuthSession*> session);
+
+private:
+	void requestCloudLogs();
+	void addLocalLogs();
+	void addLocalLog(const QString &text);
+	void addAlphaLogs();
+	void addAlphaLog(int changeVersion, const char *changes);
+
+	const not_null<AuthSession*> _session;
+	const int _oldVersion = 0;
+	int _chatsSubscription = 0;
+	bool _addedSomeLocal = false;
+
+};
+
+} // namespace Core
