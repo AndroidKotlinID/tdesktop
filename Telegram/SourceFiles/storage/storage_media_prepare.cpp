@@ -21,7 +21,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/storage_media_prepare.h"
 
 #include "platform/platform_file_utilities.h"
-#include "base/task_queue.h"
 #include "storage/localimageloader.h"
 
 namespace Storage {
@@ -58,8 +57,8 @@ bool PrepareAlbumMediaIsWaiting(
 		QSemaphore &semaphore,
 		PreparedFile &file,
 		int previewWidth) {
-	// Use some special thread queue, like a separate QThreadPool.
-	base::TaskQueue::Normal().Put([&, previewWidth] {
+	// TODO: Use some special thread queue, like a separate QThreadPool.
+	crl::async([=, &semaphore, &file] {
 		const auto guard = gsl::finally([&] { semaphore.release(); });
 		if (!file.path.isEmpty()) {
 			file.mime = mimeTypeForFile(QFileInfo(file.path)).name();
@@ -82,17 +81,17 @@ bool PrepareAlbumMediaIsWaiting(
 		if (const auto image = base::get_if<Image>(
 				&file.information->media)) {
 			if (ValidPhotoForAlbum(*image)) {
-				file.preview = image->data.scaledToWidth(
+				file.preview = Images::prepareOpaque(image->data.scaledToWidth(
 					std::min(previewWidth, convertScale(image->data.width()))
 						* cIntRetinaFactor(),
-					Qt::SmoothTransformation);
+					Qt::SmoothTransformation));
 				file.preview.setDevicePixelRatio(cRetinaFactor());
 				file.type = PreparedFile::AlbumType::Photo;
 			}
 		} else if (const auto video = base::get_if<Video>(
 				&file.information->media)) {
 			if (ValidVideoForAlbum(*video)) {
-				auto blurred = Images::prepareBlur(video->thumbnail);
+				auto blurred = Images::prepareBlur(Images::prepareOpaque(video->thumbnail));
 				file.preview = std::move(blurred).scaledToWidth(
 					previewWidth * cIntRetinaFactor(),
 					Qt::SmoothTransformation);
