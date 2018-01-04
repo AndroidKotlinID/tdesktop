@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mainwidget.h"
 
@@ -4925,24 +4912,29 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updateMessageID: {
-		auto &d = update.c_updateMessageID();
-		auto msg = App::histItemByRandom(d.vrandom_id.v);
-		if (msg.msg) {
-			if (auto msgRow = App::histItemById(msg)) {
-				if (App::histItemById(msg.channel, d.vid.v)) {
-					auto history = msgRow->history();
-					auto wasLast = (history->lastMsg == msgRow);
-					msgRow->destroy();
+		const auto &d = update.c_updateMessageID();
+		if (const auto fullId = App::histItemByRandom(d.vrandom_id.v)) {
+			const auto channel = fullId.channel;
+			const auto newId = d.vid.v;
+			if (const auto local = App::histItemById(fullId)) {
+				const auto existing = App::histItemById(channel, newId);
+				if (existing && local->detached()) {
+					const auto history = local->history();
+					const auto wasLast = (history->lastMsg == local);
+					local->destroy();
 					if (wasLast && !history->lastMsg) {
 						checkPeerHistory(history->peer);
 					}
 					_history->peerMessagesUpdated();
 				} else {
-					App::historyUnregItem(msgRow);
-					Auth().messageIdChanging.notify({ msgRow, d.vid.v }, true);
-					msgRow->setId(d.vid.v);
-					App::historyRegItem(msgRow);
-					Auth().data().requestItemRepaint(msgRow);
+					if (existing) {
+						existing->destroy();
+					}
+					App::historyUnregItem(local);
+					Auth().messageIdChanging.notify({ local, newId }, true);
+					local->setId(d.vid.v);
+					App::historyRegItem(local);
+					Auth().data().requestItemRepaint(local);
 				}
 			}
 			App::historyUnregRandom(d.vrandom_id.v);

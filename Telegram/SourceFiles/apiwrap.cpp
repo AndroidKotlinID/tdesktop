@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
 
@@ -2960,7 +2947,15 @@ void ApiWrap::sendAlbumWithCancelled(
 		const MessageGroupId &groupId) {
 	const auto localId = item->fullId();
 	const auto albumIt = _sendingAlbums.find(groupId.raw());
-	Assert(albumIt != _sendingAlbums.end());
+	if (albumIt != _sendingAlbums.end()) {
+		// Sometimes we destroy item being sent already after the album
+		// was sent successfully. For example the message could be loaded
+		// from server (by messages.getHistory or updateNewMessage) and
+		// added to history and after that updateMessageID was received with
+		// the same message id, in this case we destroy a detached local
+		// item and sendAlbumWithCancelled is called for already sent album.
+		return;
+	}
 	const auto &album = albumIt->second;
 
 	const auto proj = [](const SendingAlbum::Item &item) {

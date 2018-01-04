@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_shared_media.h"
 
@@ -31,6 +18,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "info/info_controller.h"
 #include "window/window_controller.h"
 #include "mainwindow.h"
+#include "core/crash_reports.h"
 
 namespace {
 
@@ -224,7 +212,57 @@ base::optional<int> SharedMediaWithLastSlice::indexOfImpl(Value value) const {
 }
 
 base::optional<int> SharedMediaWithLastSlice::indexOf(Value value) const {
-	auto result = indexOfImpl(value);
+	const auto result = indexOfImpl(value);
+	if (result && (*result < 0 || *result >= size())) {
+		// Should not happen.
+		auto info = QStringList();
+		info.push_back("slice:" + QString::number(_slice.size()));
+		info.push_back(_slice.fullCount()
+			? QString::number(*_slice.fullCount())
+			: QString("-"));
+		info.push_back(_slice.skippedBefore()
+			? QString::number(*_slice.skippedBefore())
+			: QString("-"));
+		info.push_back(_slice.skippedAfter()
+			? QString::number(*_slice.skippedAfter())
+			: QString("-"));
+		info.push_back("ending:" + (_ending
+			? QString::number(_ending->size())
+			: QString("-")));
+		info.push_back((_ending && _ending->fullCount())
+			? QString::number(*_ending->fullCount())
+			: QString("-"));
+		info.push_back((_ending && _ending->skippedBefore())
+			? QString::number(*_ending->skippedBefore())
+			: QString("-"));
+		info.push_back((_ending && _ending->skippedAfter())
+			? QString::number(*_ending->skippedAfter())
+			: QString("-"));
+		if (const auto msgId = base::get_if<FullMsgId>(&value)) {
+			info.push_back("value:" + QString::number(msgId->channel));
+			info.push_back(QString::number(msgId->msg));
+			const auto index = _slice.indexOf(*base::get_if<FullMsgId>(&value));
+			info.push_back("index:" + (index
+				? QString::number(*index)
+				: QString("-")));
+		} else if (const auto photo = base::get_if<not_null<PhotoData*>>(&value)) {
+			info.push_back("value:" + QString::number((*photo)->id));
+		} else {
+			info.push_back("value:bad");
+		}
+		info.push_back("isolated:" + QString(Logs::b(isolatedInSlice())));
+		info.push_back("last:" + (_lastPhotoId
+			? QString::number(*_lastPhotoId)
+			: QString("-")));
+		info.push_back("isolated_last:" + (_isolatedLastPhoto
+			? QString(Logs::b(*_isolatedLastPhoto))
+			: QString("-")));
+		info.push_back("skip:" + (lastPhotoSkip()
+			? QString::number(*lastPhotoSkip())
+			: QString("-")));
+		CrashReports::SetAnnotation("DebugInfo", info.join(','));
+		Unexpected("Result in SharedMediaWithLastSlice::indexOf");
+	}
 	return _reversed
 		? (result | func::negate | func::add(size() - 1))
 		: result;

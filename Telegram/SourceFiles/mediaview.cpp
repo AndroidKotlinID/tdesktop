@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mediaview.h"
 
@@ -1710,14 +1697,16 @@ void MediaView::initThemePreview() {
 
 		Window::Theme::CurrentData current;
 		current.backgroundId = Window::Theme::Background()->id();
-		current.backgroundImage = Window::Theme::Background()->pixmap();
+		current.backgroundImage = Window::Theme::Background()->pixmap().toImage();
 		current.backgroundTiled = Window::Theme::Background()->tile();
 
 		const auto path = _doc->location().name();
 		const auto id = _themePreviewId = rand_value<uint64>();
 		const auto weak = make_weak(this);
-		crl::async([=] {
-			auto preview = Window::Theme::GeneratePreview(path, current);
+		crl::async([=, data = std::move(current)]() mutable {
+			auto preview = Window::Theme::GeneratePreview(
+				path,
+				std::move(data));
 			crl::on_main(weak, [=, result = std::move(preview)]() mutable {
 				if (id != _themePreviewId) {
 					return;
@@ -2261,12 +2250,19 @@ void MediaView::paintThemePreview(Painter &p, QRect clip) {
 	auto fill = _themePreviewRect.intersected(clip);
 	if (!fill.isEmpty()) {
 		if (_themePreview) {
-			p.drawPixmapLeft(_themePreviewRect.x(), _themePreviewRect.y(), width(), _themePreview->preview);
+			p.drawImage(
+				myrtlrect(_themePreviewRect).topLeft(),
+				_themePreview->preview);
 		} else {
 			p.fillRect(fill, st::themePreviewBg);
 			p.setFont(st::themePreviewLoadingFont);
 			p.setPen(st::themePreviewLoadingFg);
-			p.drawText(_themePreviewRect, lang(_themePreviewId ? lng_theme_preview_generating : lng_theme_preview_invalid), QTextOption(style::al_center));
+			p.drawText(
+				_themePreviewRect,
+				lang(_themePreviewId
+					? lng_theme_preview_generating
+					: lng_theme_preview_invalid),
+				QTextOption(style::al_center));
 		}
 	}
 
@@ -3028,18 +3024,12 @@ void MediaView::findCurrent() {
 			? (_index | func::add(*_sharedMediaData->skippedBefore()))
 			: base::none;
 		_fullCount = _sharedMediaData->fullCount();
-		if (_index) {
-			Assert(*_index >= 0 && *_index < _sharedMediaData->size());
-		}
 	} else if (_userPhotosData) {
 		_index = _photo ? _userPhotosData->indexOf(_photo->id) : base::none;
 		_fullIndex = _userPhotosData->skippedBefore()
 			? (_index | func::add(*_userPhotosData->skippedBefore()))
 			: base::none;
 		_fullCount = _userPhotosData->fullCount();
-		if (_index) {
-			Assert(*_index >= 0 && *_index < _userPhotosData->size());
-		}
 	} else {
 		_index = _fullIndex = _fullCount = base::none;
 	}
