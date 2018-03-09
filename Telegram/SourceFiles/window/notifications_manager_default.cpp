@@ -20,6 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "storage/file_download.h"
 #include "auth_session.h"
+#include "history/history.h"
+#include "history/history_item.h"
 #include "platform/platform_specific.h"
 
 namespace Window {
@@ -61,6 +63,16 @@ Manager::Manager(System *system) : Notifications::Manager(system) {
 		settingsChanged(change);
 	});
 	_inputCheckTimer.setTimeoutHandler([this] { checkLastInput(); });
+}
+
+Manager::QueuedNotification::QueuedNotification(
+	not_null<HistoryItem*> item
+	, int forwardedCount)
+: history(item->history())
+, peer(history->peer)
+, author((!peer->isUser() && !item->isPost()) ? item->author().get() : nullptr)
+, item((forwardedCount < 2) ? item.get() : nullptr)
+, forwardedCount(forwardedCount) {
 }
 
 QPixmap Manager::hiddenUserpicPlaceholder() const {
@@ -639,7 +651,7 @@ void Notification::updateNotifyDisplay() {
 
 		QRect rectForName(st::notifyPhotoPos.x() + st::notifyPhotoSize + st::notifyTextLeft, st::notifyTextTop, itemWidth, st::msgNameFont->height);
 		if (!options.hideNameAndPhoto) {
-			if (auto chatTypeIcon = Dialogs::Layout::ChatTypeIcon(_history->peer, false, false)) {
+			if (const auto chatTypeIcon = Dialogs::Layout::ChatTypeIcon(_history->peer, false, false)) {
 				chatTypeIcon->paint(p, rectForName.topLeft(), w);
 				rectForName.setLeft(rectForName.left() + st::dialogsChatTypeSkip);
 			}

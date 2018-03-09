@@ -5,16 +5,20 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#include "history/history_admin_log_item.h"
+#include "history/admin_log/history_admin_log_item.h"
 
+#include "history/admin_log/history_admin_log_inner.h"
+#include "history/view/history_view_element.h"
 #include "history/history_service.h"
 #include "history/history_message.h"
-#include "history/history_admin_log_inner.h"
+#include "history/history.h"
+#include "data/data_session.h"
 #include "lang/lang_keys.h"
 #include "boxes/sticker_set_box.h"
 #include "core/tl_help.h"
 #include "base/overload.h"
 #include "messenger.h"
+#include "auth_session.h"
 
 namespace AdminLog {
 namespace {
@@ -94,20 +98,14 @@ TextWithEntities ExtractEditedText(const MTPMessage &message) {
 		return TextWithEntities();
 	}
 	auto &data = message.c_message();
-	auto mediaType = data.has_media() ? data.vmedia.type() : mtpc_messageMediaEmpty;
-	if (mediaType == mtpc_messageMediaDocument) {
-		auto &document = data.vmedia.c_messageMediaDocument();
-		return PrepareText(document.has_caption() ? qs(document.vcaption) : QString(), QString());
-	} else if (mediaType == mtpc_messageMediaPhoto) {
-		auto &photo = data.vmedia.c_messageMediaPhoto();
-		return PrepareText(photo.has_caption() ? qs(photo.vcaption) : QString(), QString());
-	}
 	auto text = TextUtilities::Clean(qs(data.vmessage));
-	auto entities = data.has_entities() ? TextUtilities::EntitiesFromMTP(data.ventities.v) : EntitiesInText();
+	auto entities = data.has_entities()
+		? TextUtilities::EntitiesFromMTP(data.ventities.v)
+		: EntitiesInText();
 	return { text, entities };
 }
 
-PhotoData *GenerateChatPhoto(ChannelId channelId, uint64 logEntryId, MTPint date, const MTPDchatPhoto &photo) {
+PhotoData *GenerateChatPhoto(ChannelId channelId, uint64 logEntryId, TimeId date, const MTPDchatPhoto &photo) {
 	// We try to make a unique photoId that will stay the same for each pair (channelId, logEntryId).
 	static const auto RandomIdPart = rand_value<uint64>();
 	auto mixinIdPart = (static_cast<uint64>(static_cast<uint32>(channelId)) << 32) ^ logEntryId;
@@ -117,7 +115,12 @@ PhotoData *GenerateChatPhoto(ChannelId channelId, uint64 logEntryId, MTPint date
 	photoSizes.reserve(2);
 	photoSizes.push_back(MTP_photoSize(MTP_string("a"), photo.vphoto_small, MTP_int(160), MTP_int(160), MTP_int(0)));
 	photoSizes.push_back(MTP_photoSize(MTP_string("c"), photo.vphoto_big, MTP_int(640), MTP_int(640), MTP_int(0)));
-	return App::feedPhoto(MTP_photo(MTP_flags(0), MTP_long(photoId), MTP_long(0), date, MTP_vector<MTPPhotoSize>(photoSizes)));
+	return Auth().data().photo(MTP_photo(
+		MTP_flags(0),
+		MTP_long(photoId),
+		MTP_long(0),
+		MTP_int(date),
+		MTP_vector<MTPPhotoSize>(photoSizes)));
 }
 
 const auto CollectChanges = [](auto &phraseMap, auto plusFlags, auto minusFlags) {
@@ -181,13 +184,21 @@ auto GenerateBannedChangeText(const TextWithEntities &user, const MTPChannelBann
 	Expects(!prevRights || prevRights->type() == mtpc_channelBannedRights);
 	auto newFlags = newRights ? newRights->c_channelBannedRights().vflags.v : MTPDchannelBannedRights::Flags(0);
 	auto prevFlags = prevRights ? prevRights->c_channelBannedRights().vflags.v : MTPDchannelBannedRights::Flags(0);
-	auto newUntil = newRights ? newRights->c_channelBannedRights().vuntil_date : MTP_int(0);
-	auto indefinitely = ChannelData::IsRestrictedForever(newUntil.v);
+	auto newUntil = newRights ? newRights->c_channelBannedRights().vuntil_date.v : TimeId(0);
+	auto indefinitely = ChannelData::IsRestrictedForever(newUntil);
 	if (newFlags & Flag::f_view_messages) {
 		return lng_admin_log_banned__generic(lt_user, user);
 	}
-	auto untilText = indefinitely ? lang(lng_admin_log_restricted_forever) : lng_admin_log_restricted_until(lt_date, langDateTime(::date(newUntil)));
-	auto result = lng_admin_log_restricted__generic(lt_user, user, lt_until, TextWithEntities { untilText });
+	auto untilText = indefinitely
+		? lang(lng_admin_log_restricted_forever)
+		: lng_admin_log_restricted_until(
+			lt_date,
+			langDateTime(ParseDateTime(newUntil)));
+	auto result = lng_admin_log_restricted__generic(
+		lt_user, 
+		user, 
+		lt_until, 
+		TextWithEntities { untilText });
 
 	static auto phraseMap = std::map<Flags, LangKey> {
 		{ Flag::f_view_messages, lng_admin_log_banned_view_messages },
@@ -281,16 +292,46 @@ TextWithEntities GenerateParticipantChangeText(not_null<ChannelData*> channel, c
 
 } // namespace
 
-void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const MTPDchannelAdminLogEvent &event, base::lambda<void(HistoryItemOwned item)> callback) {
+OwnedItem::OwnedItem(
+	not_null<HistoryView::ElementDelegate*> delegate,
+	not_null<HistoryItem*> data)
+: _data(data)
+, _view(_data->createView(delegate)) {
+}
+
+OwnedItem::OwnedItem(OwnedItem &&other)
+: _data(base::take(other._data))
+, _view(base::take(other._view)) {
+}
+
+OwnedItem &OwnedItem::operator=(OwnedItem &&other) {
+	_data = base::take(other._data);
+	_view = base::take(other._view);
+	return *this;
+}
+
+OwnedItem::~OwnedItem() {
+	_view = nullptr;
+	if (_data) {
+		_data->destroy();
+	}
+}
+
+void GenerateItems(
+		not_null<HistoryView::ElementDelegate*> delegate,
+		not_null<History*> history,
+		not_null<LocalIdManager*> idManager,
+		const MTPDchannelAdminLogEvent &event,
+		base::lambda<void(OwnedItem item)> callback) {
 	Expects(history->peer->isChannel());
 
 	auto id = event.vid.v;
 	auto from = App::user(event.vuser_id.v);
 	auto channel = history->peer->asChannel();
 	auto &action = event.vaction;
-	auto date = event.vdate;
-	auto addPart = [&callback](not_null<HistoryItem*> item) {
-		return callback(HistoryItemOwned(item));
+	auto date = event.vdate.v;
+	auto addPart = [&](not_null<HistoryItem*> item) {
+		return callback(OwnedItem(delegate, item));
 	};
 
 	using Flag = MTPDmessage::Flag;
@@ -301,7 +342,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 	auto addSimpleServiceMessage = [&](const QString &text, PhotoData *photo = nullptr) {
 		auto message = HistoryService::PreparedText { text };
 		message.links.push_back(fromLink);
-		addPart(HistoryService::create(history, idManager.next(), ::date(date), message, 0, peerToUser(from->id), photo));
+		addPart(new HistoryService(history, idManager->next(), date, message, 0, peerToUser(from->id), photo));
 	};
 
 	auto createChangeTitle = [&](const MTPDchannelAdminLogEventActionChangeTitle &action) {
@@ -322,7 +363,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		auto bodyReplyTo = 0;
 		auto bodyViaBotId = 0;
 		auto newDescription = PrepareText(newValue, QString());
-		auto body = HistoryMessage::create(history, idManager.next(), bodyFlags, bodyReplyTo, bodyViaBotId, ::date(date), peerToUser(from->id), QString(), newDescription);
+		auto body = new HistoryMessage(history, idManager->next(), bodyFlags, bodyReplyTo, bodyViaBotId, date, peerToUser(from->id), QString(), newDescription);
 		if (!oldValue.isEmpty()) {
 			auto oldDescription = PrepareText(oldValue, QString());
 			body->addLogEntryOriginal(id, lang(lng_admin_log_previous_description), oldDescription);
@@ -343,7 +384,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		auto bodyReplyTo = 0;
 		auto bodyViaBotId = 0;
 		auto newLink = newValue.isEmpty() ? TextWithEntities() : PrepareText(Messenger::Instance().createInternalLinkFull(newValue), QString());
-		auto body = HistoryMessage::create(history, idManager.next(), bodyFlags, bodyReplyTo, bodyViaBotId, ::date(date), peerToUser(from->id), QString(), newLink);
+		auto body = new HistoryMessage(history, idManager->next(), bodyFlags, bodyReplyTo, bodyViaBotId, date, peerToUser(from->id), QString(), newLink);
 		if (!oldValue.isEmpty()) {
 			auto oldLink = PrepareText(Messenger::Instance().createInternalLinkFull(oldValue), QString());
 			body->addLogEntryOriginal(id, lang(lng_admin_log_previous_link), oldLink);
@@ -390,9 +431,13 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 			auto text = lng_admin_log_pinned_message(lt_from, fromLinkText);
 			addSimpleServiceMessage(text);
 
-			auto applyServiceAction = false;
 			auto detachExistingItem = false;
-			addPart(history->createItem(PrepareLogMessage(action.vmessage, idManager.next(), date.v), applyServiceAction, detachExistingItem));
+			addPart(history->createItem(
+				PrepareLogMessage(
+					action.vmessage,
+					idManager->next(),
+					date),
+				detachExistingItem));
 		}
 	};
 
@@ -406,9 +451,13 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		addSimpleServiceMessage(text);
 
 		auto oldValue = ExtractEditedText(action.vprev_message);
-		auto applyServiceAction = false;
 		auto detachExistingItem = false;
-		auto body = history->createItem(PrepareLogMessage(action.vnew_message, idManager.next(), date.v), applyServiceAction, detachExistingItem);
+		auto body = history->createItem(
+			PrepareLogMessage(
+				action.vnew_message,
+				idManager->next(),
+				date),
+			detachExistingItem);
 		if (oldValue.text.isEmpty()) {
 			oldValue = PrepareText(QString(), lang(lng_admin_log_empty_text));
 		}
@@ -420,9 +469,10 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		auto text = lng_admin_log_deleted_message(lt_from, fromLinkText);
 		addSimpleServiceMessage(text);
 
-		auto applyServiceAction = false;
 		auto detachExistingItem = false;
-		addPart(history->createItem(PrepareLogMessage(action.vmessage, idManager.next(), date.v), applyServiceAction, detachExistingItem));
+		addPart(history->createItem(
+			PrepareLogMessage(action.vmessage, idManager->next(), date),
+			detachExistingItem));
 	};
 
 	auto createParticipantJoin = [&]() {
@@ -444,7 +494,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		auto bodyReplyTo = 0;
 		auto bodyViaBotId = 0;
 		auto bodyText = GenerateParticipantChangeText(channel, action.vparticipant);
-		addPart(HistoryMessage::create(history, idManager.next(), bodyFlags, bodyReplyTo, bodyViaBotId, ::date(date), peerToUser(from->id), QString(), bodyText));
+		addPart(new HistoryMessage(history, idManager->next(), bodyFlags, bodyReplyTo, bodyViaBotId, date, peerToUser(from->id), QString(), bodyText));
 	};
 
 	auto createParticipantToggleBan = [&](const MTPDchannelAdminLogEventActionParticipantToggleBan &action) {
@@ -452,7 +502,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		auto bodyReplyTo = 0;
 		auto bodyViaBotId = 0;
 		auto bodyText = GenerateParticipantChangeText(channel, action.vnew_participant, &action.vprev_participant);
-		addPart(HistoryMessage::create(history, idManager.next(), bodyFlags, bodyReplyTo, bodyViaBotId, ::date(date), peerToUser(from->id), QString(), bodyText));
+		addPart(new HistoryMessage(history, idManager->next(), bodyFlags, bodyReplyTo, bodyViaBotId, date, peerToUser(from->id), QString(), bodyText));
 	};
 
 	auto createParticipantToggleAdmin = [&](const MTPDchannelAdminLogEventActionParticipantToggleAdmin &action) {
@@ -460,7 +510,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		auto bodyReplyTo = 0;
 		auto bodyViaBotId = 0;
 		auto bodyText = GenerateParticipantChangeText(channel, action.vnew_participant, &action.vprev_participant);
-		addPart(HistoryMessage::create(history, idManager.next(), bodyFlags, bodyReplyTo, bodyViaBotId, ::date(date), peerToUser(from->id), QString(), bodyText));
+		addPart(new HistoryMessage(history, idManager->next(), bodyFlags, bodyReplyTo, bodyViaBotId, date, peerToUser(from->id), QString(), bodyText));
 	};
 
 	auto createChangeStickerSet = [&](const MTPDchannelAdminLogEventActionChangeStickerSet &action) {
@@ -481,7 +531,7 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 			auto message = HistoryService::PreparedText { text };
 			message.links.push_back(fromLink);
 			message.links.push_back(setLink);
-			addPart(HistoryService::create(history, idManager.next(), ::date(date), message, 0, peerToUser(from->id)));
+			addPart(new HistoryService(history, idManager->next(), date, message, 0, peerToUser(from->id)));
 		}
 	};
 

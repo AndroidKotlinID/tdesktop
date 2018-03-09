@@ -7,12 +7,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "history/history_admin_log_item.h"
-#include "history/history_admin_log_section.h"
+#include "history/view/history_view_element.h"
+#include "history/admin_log/history_admin_log_item.h"
+#include "history/admin_log/history_admin_log_section.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/rp_widget.h"
 #include "mtproto/sender.h"
 #include "base/timer.h"
+
+namespace HistoryView {
+class Element;
+struct TextState;
+struct StateRequest;
+enum class CursorState : char;
+enum class PointState : char;
+} // namespace HistoryView
 
 namespace Ui {
 class PopupMenu;
@@ -29,6 +38,7 @@ class SectionMemento;
 class InnerWidget final
 	: public Ui::RpWidget
 	, public Ui::AbstractTooltipShower
+	, public HistoryView::ElementDelegate
 	, private MTP::Sender
 	, private base::Subscriber {
 public:
@@ -61,9 +71,23 @@ public:
 	void applySearch(const QString &query);
 	void showFilter(base::lambda<void(FilterValue &&filter)> callback);
 
-	// AbstractTooltipShower interface
+	// Ui::AbstractTooltipShower interface.
 	QString tooltipText() const override;
 	QPoint tooltipPos() const override;
+
+	// HistoryView::ElementDelegate interface.
+	HistoryView::Context elementContext() override;
+	std::unique_ptr<HistoryView::Element> elementCreate(
+		not_null<HistoryMessage*> message) override;
+	std::unique_ptr<HistoryView::Element> elementCreate(
+		not_null<HistoryService*> message) override;
+	bool elementUnderCursor(
+		not_null<const HistoryView::Element*> view) override;
+	void elementAnimationAutoplayAsync(
+		not_null<const HistoryView::Element*> view) override;
+	TimeMs elementHighlightTime(
+		not_null<const HistoryView::Element*> element) override;
+	bool elementInSelectionMode() override;
 
 	~InnerWidget();
 
@@ -86,6 +110,7 @@ protected:
 	int resizeGetHeight(int newWidth) override;
 
 private:
+	using Element = HistoryView::Element;
 	enum class Direction {
 		Up,
 		Down,
@@ -100,6 +125,10 @@ private:
 		TopToBottom,
 		BottomToTop,
 	};
+	using TextState = HistoryView::TextState;
+	using CursorState = HistoryView::CursorState;
+	using PointState = HistoryView::PointState;
+	using StateRequest = HistoryView::StateRequest;
 
 	void mouseActionStart(const QPoint &screenPos, Qt::MouseButton button);
 	void mouseActionUpdate(const QPoint &screenPos);
@@ -107,24 +136,23 @@ private:
 	void mouseActionCancel();
 	void updateSelected();
 	void performDrag();
-	int itemTop(not_null<const HistoryItem*> item) const;
-	void repaintItem(const HistoryItem *item);
-	QPoint mapPointToItem(QPoint point, const HistoryItem *item) const;
-	void handlePendingHistoryResize();
+	int itemTop(not_null<const Element*> view) const;
+	void repaintItem(const Element *view);
+	void refreshItem(not_null<const Element*> view);
+	void resizeItem(not_null<Element*> view);
+	QPoint mapPointToItem(QPoint point, const Element *view) const;
 
 	void showContextMenu(QContextMenuEvent *e, bool showFromTouch = false);
 	void savePhotoToFile(PhotoData *photo);
 	void saveDocumentToFile(DocumentData *document);
 	void copyContextImage(PhotoData *photo);
-	void showStickerPackInfo();
-	void copyContextUrl();
-	void cancelContextDownload();
-	void showContextInFolder();
-	void openContextGif();
-	void copyContextText();
+	void showStickerPackInfo(not_null<DocumentData*> document);
+	void cancelContextDownload(not_null<DocumentData*> document);
+	void showContextInFolder(not_null<DocumentData*> document);
+	void openContextGif(FullMsgId itemId);
+	void copyContextText(FullMsgId itemId);
 	void copySelectedText();
 	TextWithEntities getSelectedText() const;
-	void setToClipboard(const TextWithEntities &forClipboard, QClipboard::Mode mode = QClipboard::Clipboard);
 	void suggestRestrictUser(not_null<UserData*> user);
 	void restrictUser(not_null<UserData*> user, const MTPChannelBannedRights &oldRights, const MTPChannelBannedRights &newRights);
 	void restrictUserDone(not_null<UserData*> user, const MTPChannelBannedRights &rights);
@@ -141,6 +169,7 @@ private:
 	void clearAfterFilterChange();
 	void clearAndRequestLog();
 	void addEvents(Direction direction, const QVector<MTPChannelAdminLogEvent> &events);
+	Element *viewForItem(const HistoryItem *item);
 
 	void toggleScrollDateShown();
 	void repaintScrollDateCallback();
@@ -152,7 +181,7 @@ private:
 	// This function finds all history items that are displayed and calls template method
 	// for each found message (in given direction) in the passed history with passed top offset.
 	//
-	// Method has "bool (*Method)(HistoryItem *item, int itemtop, int itembottom)" signature
+	// Method has "bool (*Method)(not_null<Element*> view, int itemtop, int itembottom)" signature
 	// if it returns false the enumeration stops immidiately.
 	template <EnumItemsDirection direction, typename Method>
 	void enumerateItems(Method method);
@@ -160,7 +189,7 @@ private:
 	// This function finds all userpics on the left that are displayed and calls template method
 	// for each found userpic (from the top to the bottom) using enumerateItems() method.
 	//
-	// Method has "bool (*Method)(not_null<HistoryMessage*> message, int userpicTop)" signature
+	// Method has "bool (*Method)(not_null<Element*> view, int userpicTop)" signature
 	// if it returns false the enumeration stops immidiately.
 	template <typename Method>
 	void enumerateUserpics(Method method);
@@ -176,23 +205,24 @@ private:
 	not_null<Window::Controller*> _controller;
 	not_null<ChannelData*> _channel;
 	not_null<History*> _history;
-	std::vector<HistoryItemOwned> _items;
-	std::map<uint64, HistoryItem*> _itemsByIds;
+	std::vector<OwnedItem> _items;
+	std::map<uint64, not_null<Element*>> _itemsByIds;
+	std::map<not_null<HistoryItem*>, not_null<Element*>, std::less<>> _itemsByData;
 	int _itemsTop = 0;
+	int _itemsWidth = 0;
 	int _itemsHeight = 0;
 
-	LocalIdManager _idManager;
 	int _minHeight = 0;
 	int _visibleTop = 0;
 	int _visibleBottom = 0;
-	HistoryItem *_visibleTopItem = nullptr;
+	Element *_visibleTopItem = nullptr;
 	int _visibleTopFromItem = 0;
 
 	bool _scrollDateShown = false;
 	Animation _scrollDateOpacity;
 	SingleQueuedInvokation _scrollDateCheck;
 	base::Timer _scrollDateHideTimer;
-	HistoryItem *_scrollDateLastItem = nullptr;
+	Element *_scrollDateLastItem = nullptr;
 	int _scrollDateLastItemTop = 0;
 
 	// Up - max, Down - min.
@@ -211,29 +241,28 @@ private:
 	TextSelectType _mouseSelectType = TextSelectType::Letters;
 	QPoint _dragStartPosition;
 	QPoint _mousePosition;
-	HistoryItem *_mouseActionItem = nullptr;
-	HistoryCursorState _mouseCursorState = HistoryDefaultCursorState;
+	Element *_mouseActionItem = nullptr;
+	CursorState _mouseCursorState = CursorState();
 	uint16 _mouseTextSymbol = 0;
 	bool _pressWasInactive = false;
 
-	HistoryItem *_selectedItem = nullptr;
+	Element *_selectedItem = nullptr;
 	TextSelection _selectedText;
 	bool _wasSelectedText = false; // was some text selected in current drag action
 	Qt::CursorShape _cursor = style::cur_default;
 
-	// context menu
-	Ui::PopupMenu *_menu = nullptr;
+	base::unique_qptr<Ui::PopupMenu> _menu;
 
 	QPoint _trippleClickPoint;
 	base::Timer _trippleClickTimer;
-
-	ClickHandlerPtr _contextMenuLink;
 
 	FilterValue _filter;
 	QString _searchQuery;
 	std::vector<not_null<UserData*>> _admins;
 	std::vector<not_null<UserData*>> _adminsCanEdit;
 	base::lambda<void(FilterValue &&filter)> _showFilterCallback;
+
+	std::shared_ptr<LocalIdManager> _idManager;
 
 };
 

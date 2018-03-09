@@ -9,9 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/rp_widget.h"
 #include "base/timer.h"
+#include "dialogs/dialogs_key.h"
 
 namespace Ui {
-class UserpicButton;
+class AbstractButton;
 class RoundButton;
 class IconButton;
 class DropdownMenu;
@@ -22,9 +23,11 @@ namespace Window {
 class Controller;
 } // namespace Window
 
-class HistoryTopBarWidget : public Ui::RpWidget, private base::Subscriber {
+namespace HistoryView {
+
+class TopBarWidget : public Ui::RpWidget, private base::Subscriber {
 public:
-	HistoryTopBarWidget(
+	TopBarWidget(
 		QWidget *parent,
 		not_null<Window::Controller*> controller);
 
@@ -41,14 +44,19 @@ public:
 	rpl::producer<bool> membersShowAreaActive() const {
 		return _membersShowAreaActive.events();
 	}
-	void setAnimationMode(bool enabled);
+	void setAnimatingMode(bool enabled);
 
-	void setHistoryPeer(PeerData *historyPeer);
+	void setActiveChat(Dialogs::Key chat);
 
-	static void paintUnreadCounter(
-		Painter &p,
-		int outerWidth,
-		PeerData *substractPeer = nullptr);
+	rpl::producer<> forwardSelectionRequest() const {
+		return _forwardSelection.events();
+	}
+	rpl::producer<> deleteSelectionRequest() const {
+		return _deleteSelection.events();
+	}
+	rpl::producer<> clearSelectionRequest() const {
+		return _clearSelection.events();
+	}
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -56,15 +64,15 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
+	int resizeGetHeight(int newWidth) override;
+
 private:
+	void refreshInfoButton();
 	void refreshLang();
 	void updateControlsGeometry();
 	void selectedShowCallback();
 	void updateInfoToggleActive();
 
-	void onForwardSelection();
-	void onDeleteSelection();
-	void onClearSelection();
 	void onCall();
 	void onSearch();
 	void showMenu();
@@ -87,7 +95,7 @@ private:
 	void updateUnreadBadge();
 
 	not_null<Window::Controller*> _controller;
-	PeerData *_historyPeer = nullptr;
+	Dialogs::Key _activeChat;
 
 	int _selectedCount = 0;
 	bool _canDelete = false;
@@ -95,12 +103,12 @@ private:
 
 	Animation _selectedShown;
 
-	object_ptr<Ui::RoundButton> _clearSelection;
+	object_ptr<Ui::RoundButton> _clear;
 	object_ptr<Ui::RoundButton> _forward, _delete;
 
 	object_ptr<Ui::IconButton> _back;
 	object_ptr<Ui::UnreadBadge> _unreadBadge = { nullptr };
-	object_ptr<Ui::UserpicButton> _info = { nullptr };
+	object_ptr<Ui::AbstractButton> _info = { nullptr };
 
 	object_ptr<Ui::IconButton> _call;
 	object_ptr<Ui::IconButton> _search;
@@ -116,9 +124,15 @@ private:
 	int _titlePeerTextWidth = 0;
 	int _leftTaken = 0;
 	int _rightTaken = 0;
-	bool _animationMode = false;
+	bool _animatingMode = false;
 
 	int _unreadCounterSubscription = 0;
 	base::Timer _onlineUpdater;
 
+	rpl::event_stream<> _forwardSelection;
+	rpl::event_stream<> _deleteSelection;
+	rpl::event_stream<> _clearSelection;
+
 };
+
+} // namespace HistoryView

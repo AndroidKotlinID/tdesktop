@@ -9,7 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "window/section_widget.h"
 #include "window/section_memento.h"
-#include "history/history_admin_log_item.h"
+#include "history/admin_log/history_admin_log_item.h"
 #include "mtproto/sender.h"
 
 namespace Notify {
@@ -52,12 +52,6 @@ public:
 	LocalIdManager() = default;
 	LocalIdManager(const LocalIdManager &other) = delete;
 	LocalIdManager &operator=(const LocalIdManager &other) = delete;
-	LocalIdManager(LocalIdManager &&other) : _counter(std::exchange(other._counter, ServerMaxMsgId)) {
-	}
-	LocalIdManager &operator=(LocalIdManager &&other) {
-		_counter = std::exchange(other._counter, ServerMaxMsgId);
-		return *this;
-	}
 	MsgId next() {
 		return ++_counter;
 	}
@@ -72,9 +66,7 @@ public:
 	Widget(QWidget *parent, not_null<Window::Controller*> controller, not_null<ChannelData*> channel);
 
 	not_null<ChannelData*> channel() const;
-	PeerData *activePeer() const override {
-		return channel();
-	}
+	Dialogs::RowDescriptor activeChat() const override;
 
 	bool hasTopBarShadow() const override {
 		return true;
@@ -123,6 +115,8 @@ private:
 
 class SectionMemento : public Window::SectionMemento {
 public:
+	using Element = HistoryView::Element;
+
 	SectionMemento(not_null<ChannelData*> channel) : _channel(channel) {
 	}
 
@@ -155,7 +149,11 @@ public:
 		return std::move(_adminsCanEdit);
 	}
 
-	void setItems(std::vector<HistoryItemOwned> &&items, std::map<uint64, HistoryItem*> &&itemsByIds, bool upLoaded, bool downLoaded) {
+	void setItems(
+			std::vector<OwnedItem> &&items,
+			std::map<uint64, not_null<Element*>> &&itemsByIds,
+			bool upLoaded,
+			bool downLoaded) {
 		_items = std::move(items);
 		_itemsByIds = std::move(itemsByIds);
 		_upLoaded = upLoaded;
@@ -167,16 +165,16 @@ public:
 	void setSearchQuery(QString &&query) {
 		_searchQuery = std::move(query);
 	}
-	void setIdManager(LocalIdManager &&manager) {
+	void setIdManager(std::shared_ptr<LocalIdManager> &&manager) {
 		_idManager = std::move(manager);
 	}
-	std::vector<HistoryItemOwned> takeItems() {
+	std::vector<OwnedItem> takeItems() {
 		return std::move(_items);
 	}
-	std::map<uint64, HistoryItem*> takeItemsByIds() {
+	std::map<uint64, not_null<Element*>> takeItemsByIds() {
 		return std::move(_itemsByIds);
 	}
-	LocalIdManager takeIdManager() {
+	std::shared_ptr<LocalIdManager> takeIdManager() {
 		return std::move(_idManager);
 	}
 	bool upLoaded() const {
@@ -197,11 +195,11 @@ private:
 	int _scrollTop = 0;
 	std::vector<not_null<UserData*>> _admins;
 	std::vector<not_null<UserData*>> _adminsCanEdit;
-	std::vector<HistoryItemOwned> _items;
-	std::map<uint64, HistoryItem*> _itemsByIds;
+	std::vector<OwnedItem> _items;
+	std::map<uint64, not_null<Element*>> _itemsByIds;
 	bool _upLoaded = false;
 	bool _downLoaded = true;
-	LocalIdManager _idManager;
+	std::shared_ptr<LocalIdManager> _idManager;
 	FilterValue _filter;
 	QString _searchQuery;
 

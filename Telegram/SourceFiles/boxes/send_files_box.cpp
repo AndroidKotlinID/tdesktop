@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
+#include "layout.h"
 
 namespace {
 
@@ -783,7 +784,11 @@ void SingleFilePreview::preparePreview(const Storage::PreparedFile &file) {
 	prepareThumb(preview);
 	const auto filepath = file.path;
 	if (filepath.isEmpty()) {
-		auto filename = filedialogDefaultName(qsl("image"), qsl(".png"), QString(), true);
+		auto filename = filedialogDefaultName(
+			qsl("image"),
+			qsl(".png"),
+			QString(),
+			true);
 		_nameText.setText(
 			st::semiboldTextStyle,
 			filename,
@@ -1433,7 +1438,7 @@ void SendFilesBox::initSendWay() {
 				? SendFilesWay::Album
 				: SendFilesWay::Photos;
 		}
-		const auto currentWay = Auth().data().sendFilesWay();
+		const auto currentWay = Auth().settings().sendFilesWay();
 		if (currentWay == SendFilesWay::Files) {
 			return currentWay;
 		} else if (currentWay == SendFilesWay::Album) {
@@ -1756,7 +1761,7 @@ void SendFilesBox::send(bool ctrlShiftEnter) {
 	const auto way = _sendWay ? _sendWay->value() : Way::Files;
 
 	if (_compressConfirm == CompressConfirm::Auto) {
-		const auto oldWay = Auth().data().sendFilesWay();
+		const auto oldWay = Auth().settings().sendFilesWay();
 		if (way != oldWay) {
 			// Check if the user _could_ use the old value, but didn't.
 			if ((oldWay == Way::Album && _sendAlbum)
@@ -1764,8 +1769,8 @@ void SendFilesBox::send(bool ctrlShiftEnter) {
 				|| (oldWay == Way::Files && _sendFiles)
 				|| (way == Way::Files && (_sendAlbum || _sendPhotos))) {
 				// And in that case save it to settings.
-				Auth().data().setSendFilesWay(way);
-				Auth().saveDataDelayed();
+				Auth().settings().setSendFilesWay(way);
+				Auth().saveSettingsDelayed();
 			}
 		}
 	}

@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 #include "styles/style_window.h"
 #include "styles/style_boxes.h"
+#include "history/history.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
@@ -152,14 +153,14 @@ void MainWindow::firstShow() {
 		: lng_enable_notifications_from_tray);
 
 	if (isLinux) {
-		trayIconMenu->addAction(lang(lng_open_from_tray), this, SLOT(showFromTray()))->setEnabled(true);
-		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()))->setEnabled(true);
-		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()))->setEnabled(true);
-		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()))->setEnabled(true);
+		trayIconMenu->addAction(lang(lng_open_from_tray), this, SLOT(showFromTray()));
+		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()));
+		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()));
+		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()));
 	} else {
-		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()))->setEnabled(true);
-		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()))->setEnabled(true);
-		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()))->setEnabled(true);
+		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()));
+		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()));
+		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()));
 	}
 	Global::RefWorkMode().setForced(Global::WorkMode().value(), true);
 
@@ -222,7 +223,9 @@ void MainWindow::setupPasscode() {
 }
 
 void MainWindow::setupIntro() {
-	if (_intro && !_intro->isHidden() && !_main) return;
+	if (_intro && !_intro->isHidden() && !_main) {
+		return;
+	}
 
 	Ui::hideSettingsAndLayer(anim::type::instant);
 
@@ -890,10 +893,6 @@ void MainWindow::onClearFailed(int task, void *manager) {
 		_clearManager = nullptr;
 	}
 	emit tempDirClearFailed(task);
-}
-
-void MainWindow::app_activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button) {
-	handler->onClick(button);
 }
 
 void MainWindow::placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) {
