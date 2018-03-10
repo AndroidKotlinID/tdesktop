@@ -139,10 +139,14 @@ HistoryInner::HistoryInner(
 	) | rpl::start_with_next(
 		[this](auto item) { itemRemoved(item); },
 		lifetime());
+	Auth().data().viewRemoved(
+	) | rpl::start_with_next(
+		[this](auto view) { viewRemoved(view); },
+		lifetime());
 	Auth().data().itemViewRefreshRequest(
-	) | rpl::start_with_next([this](auto item) {
-		refreshView(item);
-	}, lifetime());
+	) | rpl::start_with_next(
+		[this](auto item) { refreshView(item); },
+		lifetime());
 	rpl::merge(
 		Auth().data().historyUnloaded(),
 		Auth().data().historyCleared()
@@ -1222,6 +1226,18 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 	mouseActionUpdate();
 }
 
+void HistoryInner::viewRemoved(not_null<const Element*> view) {
+	if (_dragSelFrom == view) {
+		_dragSelFrom = nullptr;
+	}
+	if (_dragSelTo == view) {
+		_dragSelTo = nullptr;
+	}
+	if (_scrollDateLastItem == view) {
+		_scrollDateLastItem = nullptr;
+	}
+}
+
 void HistoryInner::refreshView(not_null<HistoryItem*> item) {
 	const auto dragSelFrom = (_dragSelFrom && _dragSelFrom->data() == item);
 	const auto dragSelTo = (_dragSelTo && _dragSelTo->data() == item);
@@ -1378,7 +1394,8 @@ void HistoryInner::mouseDoubleClickEvent(QMouseEvent *e) {
 	}
 	if (!ClickHandler::getActive()
 		&& !ClickHandler::getPressed()
-		&& _mouseCursorState == CursorState::None
+		&& (_mouseCursorState == CursorState::None
+			|| _mouseCursorState == CursorState::Date)
 		&& !inSelectionMode()) {
 		if (const auto item = _mouseActionItem) {
 			mouseActionCancel();
