@@ -573,6 +573,14 @@ HistoryWidget::HistoryWidget(
 			updateHistoryGeometry();
 		}
 	}, lifetime());
+	Auth().data().itemViewRefreshRequest(
+	) | rpl::start_with_next([this](auto item) {
+		// While HistoryInner doesn't own item views we must refresh them
+		// even if the list is not yet created / was destroyed.
+		if (!_list) {
+			item->refreshMainView();
+		}
+	}, lifetime());
 	Auth().data().animationPlayInlineRequest(
 	) | rpl::start_with_next([this](auto item) {
 		if (const auto view = item->mainView()) {
@@ -2995,6 +3003,8 @@ bool HistoryWidget::joinFail(const RPCError &error, mtpRequestId req) {
 		return true;
 	} else if (error.type() == qstr("CHANNELS_TOO_MUCH")) {
 		Ui::show(Box<InformBox>(lang(lng_join_channel_error)));
+	} else if (error.type() == qstr("USERS_TOO_MUCH")) {
+		Ui::show(Box<InformBox>(lang(lng_group_full)));
 	}
 
 	return false;
