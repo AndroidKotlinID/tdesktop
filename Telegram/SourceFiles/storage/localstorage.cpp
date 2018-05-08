@@ -1218,6 +1218,13 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		if (connectionType == dbictProxiesList) {
 			qint32 count = 0, index = 0;
 			stream >> count >> index;
+			if (std::abs(index) > count) {
+				Global::SetUseProxyForCalls(true);
+				index -= (index > 0 ? count : -count);
+			} else {
+				Global::SetUseProxyForCalls(false);
+			}
+
 			auto list = std::vector<ProxyData>();
 			for (auto i = 0; i < count; ++i) {
 				const auto proxy = readProxy();
@@ -2485,7 +2492,9 @@ void writeSettings() {
 
 	data.stream << quint32(dbiConnectionType) << qint32(dbictProxiesList);
 	data.stream << qint32(proxies.size());
-	const auto index = qint32(proxyIt - begin(proxies)) + 1;
+	const auto index = qint32(proxyIt - begin(proxies))
+		+ qint32(Global::UseProxyForCalls() ? proxies.size() : 0)
+		+ 1;
 	data.stream << (Global::UseProxy() ? index : -index);
 	for (const auto &proxy : proxies) {
 		data.stream << qint32(kProxyTypeShift + int(proxy.type));
@@ -2517,6 +2526,7 @@ void writeMtpData() {
 	_writeMtpData();
 }
 
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 const QString &AutoupdatePrefix(const QString &replaceWith = {}) {
 	static auto value = QString();
 	if (!replaceWith.isEmpty()) {
@@ -2543,8 +2553,10 @@ const QString &readAutoupdatePrefixRaw() {
 	}
 	return AutoupdatePrefix("http://updates.tdesktop.com");
 }
+#endif // TDESKTOP_DISABLE_AUTOUPDATE
 
 void writeAutoupdatePrefix(const QString &prefix) {
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	const auto current = readAutoupdatePrefixRaw();
 	if (current != prefix) {
 		AutoupdatePrefix(prefix);
@@ -2558,12 +2570,15 @@ void writeAutoupdatePrefix(const QString &prefix) {
 			checker.start();
 		}
 	}
+#endif // TDESKTOP_DISABLE_AUTOUPDATE
 }
 
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 QString readAutoupdatePrefix() {
 	auto result = readAutoupdatePrefixRaw();
 	return result.replace(QRegularExpression("/+$"), QString());
 }
+#endif // TDESKTOP_DISABLE_AUTOUPDATE
 
 void reset() {
 	if (_localLoader) {
