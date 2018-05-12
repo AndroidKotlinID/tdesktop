@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/widgets/buttons.h"
 #include "ui/effects/radial_animation.h"
+#include "window/themes/window_theme.h"
 #include "boxes/connection_box.h"
 #include "lang/lang_keys.h"
 #include "styles/style_window.h"
@@ -65,7 +66,9 @@ void Progress::step(TimeMs ms, bool timer) {
 
 } // namespace
 
-class ConnectingWidget::ProxyIcon : public Ui::RpWidget {
+class ConnectingWidget::ProxyIcon
+	: public Ui::RpWidget
+	, private base::Subscriber {
 public:
 	ProxyIcon(QWidget *parent);
 
@@ -76,6 +79,8 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 private:
+	void refreshCacheImages();
+
 	float64 _opacity = 1.;
 	QPixmap _cacheOn;
 	QPixmap _cacheOff;
@@ -92,10 +97,22 @@ ConnectingWidget::ProxyIcon::ProxyIcon(QWidget *parent) : RpWidget(parent) {
 			st::connectingRadial.size.height(),
 			st::connectingProxyOn.height()));
 
+	using namespace Window::Theme;
+	subscribe(Background(), [=](const BackgroundUpdate &update) {
+		if (update.paletteChanged()) {
+			refreshCacheImages();
+		}
+	});
+
+	refreshCacheImages();
+}
+
+void ConnectingWidget::ProxyIcon::refreshCacheImages() {
 	const auto prepareCache = [&](const style::icon &icon) {
 		auto image = QImage(
 			size() * cIntRetinaFactor(),
 			QImage::Format_ARGB32_Premultiplied);
+		image.setDevicePixelRatio(cRetinaFactor());
 		image.fill(st::windowBg->c);
 		{
 			Painter p(&image);
@@ -205,10 +222,9 @@ base::unique_qptr<ConnectingWidget> ConnectingWidget::CreateDefaultWidget(
 	const auto weak = result.get();
 	rpl::combine(
 		result->visibility(),
-		parent->heightValue(),
-		std::move(shown)
-	) | rpl::start_with_next([=](float64 visible, int height, bool shown) {
-		const auto hidden = (visible == 0.) || !shown;
+		parent->heightValue()
+	) | rpl::start_with_next([=](float64 visible, int height) {
+		const auto hidden = (visible == 0.);
 		if (weak->isHidden() != hidden) {
 			weak->setVisible(!hidden);
 		}
@@ -217,6 +233,11 @@ base::unique_qptr<ConnectingWidget> ConnectingWidget::CreateDefaultWidget(
 			height - st::connectingMargin.top(),
 			height - weak->height(),
 			visible));
+	}, weak->lifetime());
+	std::move(
+		shown
+	) | rpl::start_with_next([=](bool shown) {
+		weak->setForceHidden(!shown);
 	}, weak->lifetime());
 	result->finishAnimating();
 	return result;
