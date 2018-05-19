@@ -278,13 +278,42 @@ bool Messenger::eventFilter(QObject *object, QEvent *e) {
 	return QObject::eventFilter(object, e);
 }
 
+void Messenger::setCurrentProxy(
+		const ProxyData &proxy,
+		bool enabled) {
+	const auto key = [&](const ProxyData &proxy) {
+		if (proxy.type == ProxyData::Type::Mtproto) {
+			return std::make_pair(proxy.host, proxy.port);
+		}
+		return std::make_pair(QString(), uint32(0));
+	};
+	const auto previousKey = key(Global::UseProxy()
+		? Global::SelectedProxy()
+		: ProxyData());
+	Global::SetSelectedProxy(proxy);
+	Global::SetUseProxy(enabled);
+	Sandbox::refreshGlobalProxy();
+	if (_mtproto) {
+		_mtproto->restart();
+		if (previousKey != key(proxy)) {
+			_mtproto->reInitConnection(_mtproto->mainDcId());
+		}
+	}
+	if (_mtprotoForKeysDestroy) {
+		_mtprotoForKeysDestroy->restart();
+	}
+	Global::RefConnectionTypeChanged().notify();
+}
+
 void Messenger::setMtpMainDcId(MTP::DcId mainDcId) {
 	Expects(!_mtproto);
+
 	_private->mtpConfig.mainDcId = mainDcId;
 }
 
 void Messenger::setMtpKey(MTP::DcId dcId, const MTP::AuthKey::Data &keyData) {
 	Expects(!_mtproto);
+
 	_private->mtpConfig.keys.push_back(std::make_shared<MTP::AuthKey>(MTP::AuthKey::Type::ReadFromFile, dcId, keyData));
 }
 
@@ -856,11 +885,11 @@ bool Messenger::openLocalUrl(const QString &url) {
 		}
 	} else if (auto socksMatch = regex_match(qsl("^socks/?\\?(.+)(#|$)"), command, matchOptions)) {
 		auto params = url_parse_params(socksMatch->captured(1), UrlParamNameTransform::ToLower);
-		ConnectionBox::ShowApplyProxyConfirmation(ProxyData::Type::Socks5, params);
+		ProxiesBoxController::ShowApplyConfirmation(ProxyData::Type::Socks5, params);
 		return true;
 	} else if (auto proxyMatch = regex_match(qsl("^proxy/?\\?(.+)(#|$)"), command, matchOptions)) {
 		auto params = url_parse_params(proxyMatch->captured(1), UrlParamNameTransform::ToLower);
-		ConnectionBox::ShowApplyProxyConfirmation(ProxyData::Type::Mtproto, params);
+		ProxiesBoxController::ShowApplyConfirmation(ProxyData::Type::Mtproto, params);
 		return true;
 	}
 	return false;

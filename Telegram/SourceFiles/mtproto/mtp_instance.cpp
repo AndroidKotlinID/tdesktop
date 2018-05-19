@@ -11,11 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/dc_options.h"
 #include "mtproto/dcenter.h"
 #include "mtproto/config_loader.h"
+#include "mtproto/special_config_request.h"
 #include "mtproto/connection.h"
 #include "mtproto/sender.h"
 #include "mtproto/rsa_public_key.h"
 #include "storage/localstorage.h"
 #include "auth_session.h"
+#include "application.h"
 #include "apiwrap.h"
 #include "messenger.h"
 #include "lang/lang_instance.h"
@@ -36,6 +38,8 @@ public:
 
 	void start(Config &&config);
 
+	void resolveProxyDomain(const QString &host);
+	void setGoodProxyDomain(const QString &host, const QString &ip);
 	void suggestMainDcId(DcId mainDcId);
 	void setMainDcId(DcId mainDcId);
 	DcId mainDcId() const;
@@ -124,6 +128,11 @@ private:
 	bool exportFail(const RPCError &error, mtpRequestId requestId);
 	bool onErrorDefault(mtpRequestId requestId, const RPCError &error);
 
+	void applyDomainIps(
+		const QString &host,
+		const QStringList &ips,
+		TimeMs expireAt);
+
 	void logoutGuestDcs();
 	bool logoutGuestDone(mtpRequestId requestId);
 
@@ -159,6 +168,7 @@ private:
 	base::set_of_unique_ptr<internal::Connection> _quittingConnections;
 
 	std::unique_ptr<internal::ConfigLoader> _configLoader;
+	std::unique_ptr<DomainResolver> _domainResolver;
 	QString _userPhone;
 	mtpRequestId _cdnConfigLoadRequestId = 0;
 	TimeMs _lastConfigLoadedTime = 0;
@@ -201,7 +211,11 @@ private:
 
 };
 
-Instance::Private::Private(not_null<Instance*> instance, not_null<DcOptions*> options, Instance::Mode mode) : Sender()
+Instance::Private::Private(
+	not_null<Instance*> instance,
+	not_null<DcOptions*> options,
+	Instance::Mode mode)
+: Sender()
 , _instance(instance)
 , _dcOptions(options)
 , _mode(mode) {
@@ -257,6 +271,85 @@ void Instance::Private::start(Config &&config) {
 
 	Assert((_mainDcId == Config::kNoneMainDc) == isKeysDestroyer());
 	requestConfig();
+}
+
+void Instance::Private::resolveProxyDomain(const QString &host) {
+	if (!_domainResolver) {
+		_domainResolver = std::make_unique<DomainResolver>([=](
+				const QString &host,
+				const QStringList &ips,
+				TimeMs expireAt) {
+			applyDomainIps(host, ips, expireAt);
+		});
+	}
+	_domainResolver->resolve(host);
+}
+
+void Instance::Private::applyDomainIps(
+		const QString &host,
+		const QStringList &ips,
+		TimeMs expireAt) {
+	const auto applyToProxy = [&](ProxyData &proxy) {
+		if (!proxy.tryCustomResolve() || proxy.host != host) {
+			return false;
+		}
+		proxy.resolvedExpireAt = expireAt;
+		auto copy = ips;
+		auto &current = proxy.resolvedIPs;
+		const auto i = ranges::remove_if(current, [&](const QString &ip) {
+			const auto index = copy.indexOf(ip);
+			if (index < 0) {
+				return true;
+			}
+			copy.removeAt(index);
+			return false;
+		});
+		if (i == end(current) && copy.isEmpty()) {
+			// Even if the proxy was changed already, we still want
+			// to refreshOptions in all sessions across all instances.
+			return true;
+		}
+		current.erase(i, end(current));
+		for (const auto &ip : copy) {
+			proxy.resolvedIPs.push_back(ip);
+		}
+		return true;
+	};
+	for (auto &proxy : Global::RefProxiesList()) {
+		applyToProxy(proxy);
+	}
+	if (applyToProxy(Global::RefSelectedProxy()) && Global::UseProxy()) {
+		for (auto &session : _sessions) {
+			session.second->refreshOptions();
+		}
+	}
+	emit _instance->proxyDomainResolved(host, ips, expireAt);
+}
+
+void Instance::Private::setGoodProxyDomain(
+		const QString &host,
+		const QString &ip) {
+	const auto applyToProxy = [&](ProxyData &proxy) {
+		if (!proxy.tryCustomResolve() || proxy.host != host) {
+			return false;
+		}
+		auto &current = proxy.resolvedIPs;
+		auto i = ranges::find(current, ip);
+		if (i == end(current) || i == begin(current)) {
+			return false;
+		}
+		while (i != begin(current)) {
+			const auto j = i--;
+			std::swap(*i, *j);
+		}
+		return true;
+	};
+	for (auto &proxy : Global::RefProxiesList()) {
+		applyToProxy(proxy);
+	}
+	if (applyToProxy(Global::RefSelectedProxy()) && Global::UseProxy()) {
+		Sandbox::refreshGlobalProxy();
+	}
 }
 
 void Instance::Private::suggestMainDcId(DcId mainDcId) {
@@ -479,8 +572,11 @@ void Instance::Private::stopSession(ShiftedDcId shiftedDcId) {
 }
 
 void Instance::Private::reInitConnection(DcId dcId) {
-	killSession(dcId);
-	getSession(dcId)->notifyLayerInited(false);
+	for (auto &session : _sessions) {
+		if (bareDcId(session.second->getDcWithShift()) == dcId) {
+			session.second->reInitConnection();
+		}
+	}
 }
 
 void Instance::Private::logout(
@@ -1262,13 +1358,17 @@ internal::Session *Instance::Private::getSession(ShiftedDcId shiftedDcId) {
 void Instance::Private::scheduleKeyDestroy(ShiftedDcId shiftedDcId) {
 	Expects(isKeysDestroyer());
 
-	_instance->send(MTPauth_LogOut(), rpcDone([this, shiftedDcId](const MTPBool &result) {
+	if (dcOptions()->dcType(shiftedDcId) == DcType::Cdn) {
 		performKeyDestroy(shiftedDcId);
-	}), rpcFail([this, shiftedDcId](const RPCError &error) {
-		if (isDefaultHandledError(error)) return false;
-		performKeyDestroy(shiftedDcId);
-		return true;
-	}), shiftedDcId);
+	} else {
+		_instance->send(MTPauth_LogOut(), rpcDone([=](const MTPBool &) {
+			performKeyDestroy(shiftedDcId);
+		}), rpcFail([=](const RPCError &error) {
+			if (isDefaultHandledError(error)) return false;
+			performKeyDestroy(shiftedDcId);
+			return true;
+		}), shiftedDcId);
+	}
 }
 
 void Instance::Private::performKeyDestroy(ShiftedDcId shiftedDcId) {
@@ -1342,9 +1442,18 @@ void Instance::Private::prepareToDestroy() {
 	MustNotCreateSessions = true;
 }
 
-Instance::Instance(not_null<DcOptions*> options, Mode mode, Config &&config) : QObject()
+Instance::Instance(not_null<DcOptions*> options, Mode mode, Config &&config)
+: QObject()
 , _private(std::make_unique<Private>(this, options, mode)) {
 	_private->start(std::move(config));
+}
+
+void Instance::resolveProxyDomain(const QString &host) {
+	_private->resolveProxyDomain(host);
+}
+
+void Instance::setGoodProxyDomain(const QString &host, const QString &ip) {
+	_private->setGoodProxyDomain(host, ip);
 }
 
 void Instance::suggestMainDcId(DcId mainDcId) {
