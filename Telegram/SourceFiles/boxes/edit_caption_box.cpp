@@ -194,13 +194,9 @@ void EditCaptionBox::prepare() {
 	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 
 	updateBoxSize();
-	connect(_field, &Ui::InputField::submitted, this, [this] { save(); });
-	connect(_field, &Ui::InputField::cancelled, this, [this] {
-		closeBox();
-	});
-	connect(_field, &Ui::InputField::resized, this, [this] {
-		captionResized();
-	});
+	connect(_field, &Ui::InputField::submitted, [=] { save(); });
+	connect(_field, &Ui::InputField::cancelled, [=] { closeBox(); });
+	connect(_field, &Ui::InputField::resized, [=] { captionResized(); });
 
 	auto cursor = _field->textCursor();
 	cursor.movePosition(QTextCursor::End);
@@ -349,7 +345,7 @@ void EditCaptionBox::save() {
 	if (_previewCancelled) {
 		flags |= MTPmessages_EditMessage::Flag::f_no_webpage;
 	}
-	const auto textWithTags = _field->getTextWithTags();
+	const auto textWithTags = _field->getTextWithAppliedMarkdown();
 	auto sending = TextWithEntities{
 		textWithTags.text,
 		ConvertTextTagsToEntities(textWithTags.tags)
@@ -372,6 +368,7 @@ void EditCaptionBox::save() {
 			item->history()->peer->input,
 			MTP_int(item->id),
 			MTP_string(sending.text),
+			MTPInputMedia(),
 			MTPnullMarkup,
 			sentEntities,
 			MTP_inputGeoPointEmpty()),

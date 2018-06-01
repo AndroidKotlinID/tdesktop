@@ -77,6 +77,10 @@ public:
 		bool hasRecovery = false;
 		QString pwdHint;
 
+		TextWithEntities termsText;
+		bool termsPopup = false;
+		int termsAge = 0;
+
 		base::Observable<void> updated;
 
 	};
@@ -90,12 +94,19 @@ public:
 	public:
 		Step(QWidget *parent, Data *data, bool hasCover = false);
 
+		virtual void finishInit() {
+		}
 		virtual void setInnerFocus() {
 			setFocus();
 		}
 
-		void setGoCallback(base::lambda<void(Step *step, Direction direction)> callback);
+		void setGoCallback(
+			base::lambda<void(Step *step, Direction direction)> callback);
 		void setShowResetCallback(base::lambda<void()> callback);
+		void setShowTermsCallback(
+			base::lambda<void()> callback);
+		void setAcceptTermsCallback(
+			base::lambda<void(base::lambda<void()> callback)> callback);
 
 		void prepareShowAnimated(Step *after);
 		void showAnimated(Direction direction);
@@ -131,7 +142,7 @@ public:
 		void setDescriptionText(base::lambda<QString()> richDescriptionTextFactory);
 		bool paintAnimated(Painter &p, QRect clip);
 
-		void fillSentCodeData(const MTPauth_SentCodeType &type);
+		void fillSentCodeData(const MTPDauth_sentCode &type);
 
 		void showDescription();
 		void hideDescription();
@@ -152,6 +163,14 @@ public:
 		}
 		void showResetButton() {
 			if (_showResetCallback) _showResetCallback();
+		}
+		void showTerms() {
+			if (_showTermsCallback) _showTermsCallback();
+		}
+		void acceptTerms(base::lambda<void()> callback) {
+			if (_acceptTermsCallback) {
+				_acceptTermsCallback(callback);
+			}
 		}
 
 	private:
@@ -187,6 +206,9 @@ public:
 		bool _hasCover = false;
 		base::lambda<void(Step *step, Direction direction)> _goCallback;
 		base::lambda<void()> _showResetCallback;
+		base::lambda<void()> _showTermsCallback;
+		base::lambda<void(
+			base::lambda<void()> callback)> _acceptTermsCallback;
 
 		object_ptr<Ui::FlatLabel> _title;
 		base::lambda<QString()> _titleTextFactory;
@@ -224,6 +246,10 @@ private:
 	void showResetButton();
 	void resetAccount();
 
+	void showTerms();
+	void acceptTerms(base::lambda<void()> callback);
+	void hideAndDestroy(object_ptr<Ui::FadeWrap<Ui::RpWidget>> widget);
+
 	Step *getStep(int skip = 0) {
 		Assert(_stepHistory.size() + skip > 0);
 		return _stepHistory.at(_stepHistory.size() - skip - 1);
@@ -233,6 +259,7 @@ private:
 	void appendStep(Step *step);
 
 	void getNearestDC();
+	void showTerms(base::lambda<void()> callback);
 
 	Animation _a_show;
 	bool _showBack = false;
@@ -253,6 +280,7 @@ private:
 	object_ptr<Ui::RoundButton> _next;
 	object_ptr<Ui::FadeWrap<Ui::LinkButton>> _changeLanguage = { nullptr };
 	object_ptr<Ui::FadeWrap<Ui::RoundButton>> _resetAccount = { nullptr };
+	object_ptr<Ui::FadeWrap<Ui::FlatLabel>> _terms = { nullptr };
 
 	base::unique_qptr<Window::ConnectingWidget> _connecting;
 
