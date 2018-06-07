@@ -93,7 +93,7 @@ void PhoneWidget::updateSignupGeometry() {
 	}
 }
 
-void PhoneWidget::showPhoneError(base::lambda<QString()> textFactory) {
+void PhoneWidget::showPhoneError(Fn<QString()> textFactory) {
 	_phone->showError();
 	showError(std::move(textFactory));
 }
@@ -254,7 +254,7 @@ bool PhoneWidget::phoneSubmitFail(const RPCError &error) {
 			[phone] { SendToBannedHelp(phone); Ui::hideLayer(); }));
 		return true;
 	}
-	if (cDebug()) { // internal server error
+	if (Logs::DebugEnabled()) { // internal server error
 		auto text = err + ": " + error.description();
 		showPhoneError([text] { return text; });
 	} else {

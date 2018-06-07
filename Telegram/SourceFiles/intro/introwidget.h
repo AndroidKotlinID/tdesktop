@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/sender.h"
 #include "ui/rp_widget.h"
+#include "window/window_lock_widgets.h"
 
 namespace Ui {
 class IconButton;
@@ -76,10 +77,9 @@ public:
 		QByteArray pwdSalt;
 		bool hasRecovery = false;
 		QString pwdHint;
+		bool pwdNotEmptyPassport = false;
 
-		TextWithEntities termsText;
-		bool termsPopup = false;
-		int termsAge = 0;
+		Window::TermsLock termsLock;
 
 		base::Observable<void> updated;
 
@@ -101,12 +101,12 @@ public:
 		}
 
 		void setGoCallback(
-			base::lambda<void(Step *step, Direction direction)> callback);
-		void setShowResetCallback(base::lambda<void()> callback);
+			Fn<void(Step *step, Direction direction)> callback);
+		void setShowResetCallback(Fn<void()> callback);
 		void setShowTermsCallback(
-			base::lambda<void()> callback);
+			Fn<void()> callback);
 		void setAcceptTermsCallback(
-			base::lambda<void(base::lambda<void()> callback)> callback);
+			Fn<void(Fn<void()> callback)> callback);
 
 		void prepareShowAnimated(Step *after);
 		void showAnimated(Direction direction);
@@ -127,9 +127,9 @@ public:
 
 		void setErrorCentered(bool centered);
 		void setErrorBelowLink(bool below);
-		void showError(base::lambda<QString()> textFactory);
+		void showError(Fn<QString()> textFactory);
 		void hideError() {
-			showError(base::lambda<QString()>());
+			showError(Fn<QString()>());
 		}
 
 		~Step();
@@ -138,8 +138,8 @@ public:
 		void paintEvent(QPaintEvent *e) override;
 		void resizeEvent(QResizeEvent *e) override;
 
-		void setTitleText(base::lambda<QString()> richTitleTextFactory);
-		void setDescriptionText(base::lambda<QString()> richDescriptionTextFactory);
+		void setTitleText(Fn<QString()> richTitleTextFactory);
+		void setDescriptionText(Fn<QString()> richDescriptionTextFactory);
 		bool paintAnimated(Painter &p, QRect clip);
 
 		void fillSentCodeData(const MTPDauth_sentCode &type);
@@ -167,7 +167,7 @@ public:
 		void showTerms() {
 			if (_showTermsCallback) _showTermsCallback();
 		}
-		void acceptTerms(base::lambda<void()> callback) {
+		void acceptTerms(Fn<void()> callback) {
 			if (_acceptTermsCallback) {
 				_acceptTermsCallback(callback);
 			}
@@ -204,20 +204,20 @@ public:
 
 		Data *_data = nullptr;
 		bool _hasCover = false;
-		base::lambda<void(Step *step, Direction direction)> _goCallback;
-		base::lambda<void()> _showResetCallback;
-		base::lambda<void()> _showTermsCallback;
-		base::lambda<void(
-			base::lambda<void()> callback)> _acceptTermsCallback;
+		Fn<void(Step *step, Direction direction)> _goCallback;
+		Fn<void()> _showResetCallback;
+		Fn<void()> _showTermsCallback;
+		Fn<void(
+			Fn<void()> callback)> _acceptTermsCallback;
 
 		object_ptr<Ui::FlatLabel> _title;
-		base::lambda<QString()> _titleTextFactory;
+		Fn<QString()> _titleTextFactory;
 		object_ptr<Ui::FadeWrap<Ui::FlatLabel>> _description;
-		base::lambda<QString()> _descriptionTextFactory;
+		Fn<QString()> _descriptionTextFactory;
 
 		bool _errorCentered = false;
 		bool _errorBelowLink = false;
-		base::lambda<QString()> _errorTextFactory;
+		Fn<QString()> _errorTextFactory;
 		object_ptr<Ui::FadeWrap<Ui::FlatLabel>> _error = { nullptr };
 
 		Animation _a_show;
@@ -247,7 +247,7 @@ private:
 	void resetAccount();
 
 	void showTerms();
-	void acceptTerms(base::lambda<void()> callback);
+	void acceptTerms(Fn<void()> callback);
 	void hideAndDestroy(object_ptr<Ui::FadeWrap<Ui::RpWidget>> widget);
 
 	Step *getStep(int skip = 0) {
@@ -259,7 +259,7 @@ private:
 	void appendStep(Step *step);
 
 	void getNearestDC();
-	void showTerms(base::lambda<void()> callback);
+	void showTerms(Fn<void()> callback);
 
 	Animation _a_show;
 	bool _showBack = false;

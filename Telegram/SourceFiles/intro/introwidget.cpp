@@ -24,13 +24,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
-#include "ui/widgets/checkbox.h"
 #include "ui/wrap/fade_wrap.h"
-#include "ui/wrap/vertical_layout.h"
 #include "ui/effects/slide_animation.h"
 #include "core/update_checker.h"
 #include "window/window_slide_animation.h"
 #include "window/window_connecting_widget.h"
+#include "window/window_lock_widgets.h"
 #include "styles/style_boxes.h"
 #include "styles/style_intro.h"
 #include "styles/style_window.h"
@@ -43,114 +42,6 @@ namespace {
 
 constexpr str_const kDefaultCountry = "US";
 
-class TermsBox : public BoxContent {
-public:
-	TermsBox(
-		QWidget*,
-		const TextWithEntities &text,
-		base::lambda<QString()> agree,
-		base::lambda<QString()> cancel,
-		int age = 0);
-
-	rpl::producer<> agreeClicks() const;
-	rpl::producer<> cancelClicks() const;
-
-protected:
-	void prepare() override;
-
-	void keyPressEvent(QKeyEvent *e) override;
-
-private:
-	TextWithEntities _text;
-	base::lambda<QString()> _agree;
-	base::lambda<QString()> _cancel;
-	int _age = 0;
-	rpl::event_stream<> _agreeClicks;
-	rpl::event_stream<> _cancelClicks;
-
-};
-
-TermsBox::TermsBox(
-	QWidget*,
-	const TextWithEntities &text,
-	base::lambda<QString()> agree,
-	base::lambda<QString()> cancel,
-	int age)
-: _text(text)
-, _agree(agree)
-, _cancel(cancel)
-, _age(age) {
-}
-
-rpl::producer<> TermsBox::agreeClicks() const {
-	return _agreeClicks.events();
-}
-
-rpl::producer<> TermsBox::cancelClicks() const {
-	return _cancelClicks.events();
-}
-
-void TermsBox::prepare() {
-	setTitle(langFactory(lng_terms_header));
-
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	content->add(
-		object_ptr<Ui::FlatLabel> (
-			this,
-			rpl::single(_text),
-			st::introTermsContent),
-		st::introTermsPadding);
-	const auto age = (_age > 0)
-		? content->add(
-			object_ptr<Ui::Checkbox>(
-				this,
-				lng_terms_age(lt_count, _age)),
-			st::introTermsAgePadding)
-		: nullptr;
-
-	const auto refreshButtons = [=] {
-		clearButtons();
-		if (age && !age->checked()) {
-			addButton(langFactory(lng_cancel), [=] { closeBox(); });
-		} else {
-			addButton(_agree, [=] {})->clicks(
-			) | rpl::filter([=] {
-				if (age && !age->checked()) {
-					return false;
-				}
-				return true;
-			}) | rpl::start_to_stream(_agreeClicks, lifetime());
-
-			if (_cancel) {
-				addButton(_cancel, [=] {})->clicks(
-				) | rpl::start_to_stream(_cancelClicks, lifetime());
-			}
-		}
-	};
-	if (age) {
-		base::ObservableViewer(
-			age->checkedChanged
-		) | rpl::start_with_next([=] {
-			refreshButtons();
-		}, lifetime());
-	}
-	refreshButtons();
-
-	content->resizeToWidth(st::boxWideWidth);
-	content->heightValue(
-	) | rpl::start_with_next([=](int height) {
-		setDimensions(st::boxWideWidth, height);
-	}, content->lifetime());
-}
-
-void TermsBox::keyPressEvent(QKeyEvent *e) {
-	if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return) {
-		_agreeClicks.fire({});
-	} else {
-		BoxContent::keyPressEvent(e);
-	}
-}
-
 } // namespace
 
 Widget::Widget(QWidget *parent) : RpWidget(parent)
@@ -161,7 +52,7 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 		this,
 		langFactory(lng_menu_settings),
 		st::defaultBoxButton))
-, _next(this, base::lambda<QString()>(), st::introNextButton) {
+, _next(this, Fn<QString()>(), st::introNextButton) {
 	auto country = Platform::SystemCountry();
 	if (country.isEmpty()) {
 		country = str_const_toString(kDefaultCountry);
@@ -392,7 +283,7 @@ void Widget::appendStep(Step *step) {
 	step->setShowTermsCallback([=]() {
 		showTerms();
 	});
-	step->setAcceptTermsCallback([=](base::lambda<void()> callback) {
+	step->setAcceptTermsCallback([=](Fn<void()> callback) {
 		acceptTerms(callback);
 	});
 }
@@ -412,7 +303,7 @@ void Widget::showResetButton() {
 }
 
 void Widget::showTerms() {
-	if (getData()->termsText.text.isEmpty()) {
+	if (getData()->termsLock.text.text.isEmpty()) {
 		_terms.destroy();
 	} else if (!_terms) {
 		auto entity = object_ptr<Ui::FlatLabel>(
@@ -438,14 +329,14 @@ void Widget::showTerms() {
 	}
 }
 
-void Widget::acceptTerms(base::lambda<void()> callback) {
+void Widget::acceptTerms(Fn<void()> callback) {
 	showTerms(callback);
 }
 
 void Widget::resetAccount() {
 	if (_resetRequest) return;
 
-	Ui::show(Box<ConfirmBox>(lang(lng_signin_sure_reset), lang(lng_signin_reset), st::attentionBoxButton, base::lambda_guarded(this, [this] {
+	Ui::show(Box<ConfirmBox>(lang(lng_signin_sure_reset), lang(lng_signin_reset), st::attentionBoxButton, crl::guard(this, [this] {
 		if (_resetRequest) return;
 		_resetRequest = request(MTPaccount_DeleteAccount(MTP_string("Forgot password"))).done([this](const MTPBool &result) {
 			_resetRequest = 0;
@@ -497,16 +388,23 @@ void Widget::getNearestDC() {
 	}).send();
 }
 
-void Widget::showTerms(base::lambda<void()> callback) {
-	if (getData()->termsText.text.isEmpty()) {
+void Widget::showTerms(Fn<void()> callback) {
+	if (getData()->termsLock.text.text.isEmpty()) {
 		return;
 	}
 	const auto weak = make_weak(this);
-	const auto box = Ui::show(Box<TermsBox>(
-		getData()->termsText,
-		langFactory(callback ? lng_terms_agree : lng_box_ok),
-		callback ? langFactory(lng_terms_decline) : nullptr,
-		getData()->termsAge));
+	const auto box = Ui::show(callback
+		? Box<Window::TermsBox>(
+			getData()->termsLock,
+			langFactory(lng_terms_agree),
+			langFactory(lng_terms_decline))
+		: Box<Window::TermsBox>(
+			getData()->termsLock.text,
+			langFactory(lng_box_ok),
+			nullptr));
+
+	box->setCloseByEscape(false);
+	box->setCloseByOutsideClick(false);
 
 	box->agreeClicks(
 	) | rpl::start_with_next([=] {
@@ -520,7 +418,7 @@ void Widget::showTerms(base::lambda<void()> callback) {
 
 	box->cancelClicks(
 	) | rpl::start_with_next([=] {
-		const auto box = Ui::show(Box<TermsBox>(
+		const auto box = Ui::show(Box<Window::TermsBox>(
 			TextWithEntities{ lang(lng_terms_signup_sorry) },
 			langFactory(lng_intro_finish),
 			langFactory(lng_terms_decline)));
@@ -755,7 +653,7 @@ void Widget::Step::updateLabelsPosition() {
 	}
 }
 
-void Widget::Step::setTitleText(base::lambda<QString()> richTitleTextFactory) {
+void Widget::Step::setTitleText(Fn<QString()> richTitleTextFactory) {
 	_titleTextFactory = std::move(richTitleTextFactory);
 	refreshTitle();
 	updateLabelsPosition();
@@ -765,7 +663,7 @@ void Widget::Step::refreshTitle() {
 	_title->setRichText(_titleTextFactory());
 }
 
-void Widget::Step::setDescriptionText(base::lambda<QString()> richDescriptionTextFactory) {
+void Widget::Step::setDescriptionText(Fn<QString()> richDescriptionTextFactory) {
 	_descriptionTextFactory = std::move(richDescriptionTextFactory);
 	refreshDescription();
 	updateLabelsPosition();
@@ -836,16 +734,9 @@ bool Widget::Step::paintAnimated(Painter &p, QRect clip) {
 void Widget::Step::fillSentCodeData(const MTPDauth_sentCode &data) {
 	if (data.has_terms_of_service()) {
 		const auto &terms = data.vterms_of_service.c_help_termsOfService();
-		getData()->termsText = TextWithEntities{
-			TextUtilities::Clean(qs(terms.vtext)),
-			TextUtilities::EntitiesFromMTP(terms.ventities.v) };
-		getData()->termsPopup = terms.is_popup();
-		getData()->termsAge = terms.has_min_age_confirm()
-			? terms.vmin_age_confirm.v
-			: 0;
+		getData()->termsLock = Window::TermsLock::FromMTP(terms);
 	} else {
-		getData()->termsText = TextWithEntities();
-		getData()->termsAge = 0;
+		getData()->termsLock = Window::TermsLock();
 	}
 
 	const auto &type = data.vtype;
@@ -967,7 +858,7 @@ void Widget::Step::setErrorBelowLink(bool below) {
 	}
 }
 
-void Widget::Step::showError(base::lambda<QString()> textFactory) {
+void Widget::Step::showError(Fn<QString()> textFactory) {
 	_errorTextFactory = std::move(textFactory);
 	refreshError();
 	updateLabelsPosition();
@@ -1074,20 +965,20 @@ void Widget::Step::showAnimated(Direction direction) {
 	}
 }
 
-void Widget::Step::setGoCallback(base::lambda<void(Step *step, Direction direction)> callback) {
+void Widget::Step::setGoCallback(Fn<void(Step *step, Direction direction)> callback) {
 	_goCallback = std::move(callback);
 }
 
-void Widget::Step::setShowResetCallback(base::lambda<void()> callback) {
+void Widget::Step::setShowResetCallback(Fn<void()> callback) {
 	_showResetCallback = std::move(callback);
 }
 
-void Widget::Step::setShowTermsCallback(base::lambda<void()> callback) {
+void Widget::Step::setShowTermsCallback(Fn<void()> callback) {
 	_showTermsCallback = std::move(callback);
 }
 
 void Widget::Step::setAcceptTermsCallback(
-		base::lambda<void(base::lambda<void()> callback)> callback) {
+		Fn<void(Fn<void()> callback)> callback) {
 	_acceptTermsCallback = std::move(callback);
 }
 

@@ -161,7 +161,7 @@ bool SignupWidget::nameSubmitFail(const RPCError &error) {
 		_last->setFocus();
 		return true;
 	}
-	if (cDebug()) { // internal server error
+	if (Logs::DebugEnabled()) { // internal server error
 		auto text = err + ": " + error.description();
 		showError([text] { return text; });
 	} else {
@@ -217,11 +217,11 @@ void SignupWidget::submit() {
 			rpcFail(&SignupWidget::nameSubmitFail));
 	};
 	if (_termsAccepted
-		|| getData()->termsText.text.isEmpty()
-		|| !getData()->termsPopup) {
+		|| getData()->termsLock.text.text.isEmpty()
+		|| !getData()->termsLock.popup) {
 		send();
 	} else {
-		acceptTerms(base::lambda_guarded(this, [=] {
+		acceptTerms(crl::guard(this, [=] {
 			_termsAccepted = true;
 			send();
 		}));
