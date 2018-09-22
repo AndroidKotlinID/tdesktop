@@ -12,9 +12,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace bytes {
 
-using span = gsl::span<gsl::byte>;
-using const_span = gsl::span<const gsl::byte>;
-using vector = std::vector<gsl::byte>;
+using type = gsl::byte;
+using span = gsl::span<type>;
+using const_span = gsl::span<const type>;
+using vector = std::vector<type>;
+
+template <gsl::index Size>
+using array = std::array<type, Size>;
 
 template <
 	typename Container,
@@ -48,6 +52,16 @@ inline const_span make_span(const Type *value, std::size_t count) {
 	return gsl::as_bytes(gsl::make_span(value, count));
 }
 
+template <typename Type>
+inline span object_as_span(Type *value) {
+	return bytes::make_span(value, 1);
+}
+
+template <typename Type>
+inline const_span object_as_span(const Type *value) {
+	return bytes::make_span(value, 1);
+}
+
 template <typename Container>
 inline vector make_vector(const Container &container) {
 	const auto buffer = bytes::make_span(container);
@@ -66,7 +80,7 @@ inline void move(span destination, const_span source) {
 	memmove(destination.data(), source.data(), source.size());
 }
 
-inline void set_with_const(span destination, gsl::byte value) {
+inline void set_with_const(span destination, type value) {
 	memset(
 		destination.data(),
 		gsl::to_integer<unsigned char>(value),

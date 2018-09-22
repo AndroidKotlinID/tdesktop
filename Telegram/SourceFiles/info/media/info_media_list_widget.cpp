@@ -217,6 +217,7 @@ void ListWidget::Section::setHeader(not_null<BaseLayout*> item) {
 bool ListWidget::Section::belongsHere(
 		not_null<BaseLayout*> item) const {
 	Expects(!_items.empty());
+
 	auto date = item->dateTime().date();
 	auto myDate = _items.back().second->dateTime().date();
 
@@ -1220,10 +1221,11 @@ void ListWidget::showContextMenu(
 
 	auto link = ClickHandler::getActive();
 
+	const auto itemFullId = item->fullId();
 	_contextMenu = base::make_unique_q<Ui::PopupMenu>(this);
 	_contextMenu->addAction(
 		lang(lng_context_to_msg),
-		[itemFullId = item->fullId()] {
+		[itemFullId] {
 			if (auto item = App::histItemById(itemFullId)) {
 				Ui::showPeerHistoryAtItem(item);
 			}
@@ -1271,8 +1273,11 @@ void ListWidget::showContextMenu(
 					auto handler = App::LambdaDelayed(
 						st::defaultDropdownMenu.menu.ripple.hideDuration,
 						this,
-						[document] {
-							DocumentSaveClickHandler::doSave(document, true);
+						[=] {
+							DocumentSaveClickHandler::Save(
+								itemFullId,
+								document,
+								true);
 						});
 					_contextMenu->addAction(
 						lang(isVideo

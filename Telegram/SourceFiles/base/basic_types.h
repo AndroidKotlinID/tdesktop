@@ -7,6 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/build_config.h"
+#include "base/ordered_set.h"
+#include "base/unique_function.h"
+#include "base/functors.h"
+
+#include <QtGlobal>
+
 #include <string>
 #include <exception>
 #include <memory>
@@ -14,14 +21,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <functional>
 #include <gsl/gsl>
 
-#include "base/build_config.h"
-#include "base/ordered_set.h"
-#include "base/unique_function.h"
-#include "base/functors.h"
-
 namespace func = base::functors;
 
 using gsl::not_null;
+using index_type = gsl::index;
+using size_type = gsl::index;
 
 template <typename Signature>
 using Fn = std::function<Signature>;
@@ -30,6 +34,8 @@ template <typename Signature>
 using FnMut = base::unique_function<Signature>;
 
 //using uchar = unsigned char; // Qt has uchar
+using int8 = qint8;
+using uint8 = quint8;
 using int16 = qint16;
 using uint16 = quint16;
 using int32 = qint32;
@@ -42,5 +48,20 @@ using float64 = double;
 using TimeMs = int64;
 using TimeId = int32;
 
-#define qsl(s) QStringLiteral(s)
-#define qstr(s) QLatin1String((s), sizeof(s) - 1)
+// Define specializations for QByteArray for Qt 5.3.2, because
+// QByteArray in Qt 5.3.2 doesn't declare "pointer" subtype.
+#ifdef OS_MAC_OLD
+namespace gsl {
+
+template <>
+inline span<char> make_span<QByteArray>(QByteArray &cont) {
+	return span<char>(cont.data(), cont.size());
+}
+
+template <>
+inline span<const char> make_span(const QByteArray &cont) {
+	return span<const char>(cont.constData(), cont.size());
+}
+
+} // namespace gsl
+#endif // OS_MAC_OLD

@@ -8,6 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/value_ordering.h"
+#include "ui/text/text.h" // For QFIXED_MAX
+
+namespace Storage {
+namespace Cache {
+struct Key;
+} // namespace Cache
+} // namespace Storage
 
 class HistoryItem;
 using HistoryItemsList = std::vector<not_null<HistoryItem*>>;
@@ -15,6 +22,9 @@ using HistoryItemsList = std::vector<not_null<HistoryItem*>>;
 namespace Ui {
 class InputField;
 } // namespace Ui
+
+class StorageImageLocation;
+class WebFileLocation;
 
 namespace Data {
 
@@ -25,6 +35,17 @@ struct UploadState {
 	int size = 0;
 	bool waitingForAlbum = false;
 };
+
+Storage::Cache::Key DocumentCacheKey(int32 dcId, uint64 id);
+Storage::Cache::Key StorageCacheKey(const StorageImageLocation &location);
+Storage::Cache::Key WebDocumentCacheKey(const WebFileLocation &location);
+Storage::Cache::Key UrlCacheKey(const QString &location);
+
+constexpr auto kImageCacheTag = uint8(0x01);
+constexpr auto kStickerCacheTag = uint8(0x02);
+constexpr auto kVoiceMessageCacheTag = uint8(0x03);
+constexpr auto kVideoMessageCacheTag = uint8(0x04);
+constexpr auto kAnimationCacheTag = uint8(0x05);
 
 } // namespace Data
 
