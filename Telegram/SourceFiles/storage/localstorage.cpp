@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/send_files_box.h"
 #include "window/themes/window_theme.h"
 #include "ui/widgets/input_fields.h"
+#include "ui/emoji_config.h"
 #include "export/export_settings.h"
 #include "core/crash_reports.h"
 #include "core/update_checker.h"
@@ -540,7 +541,7 @@ enum {
 	dbiReplaceEmoji = 0x13,
 	dbiAskDownloadPath = 0x14,
 	dbiDownloadPathOld = 0x15,
-	dbiScale = 0x16,
+	dbiScaleOld = 0x16,
 	dbiEmojiTabOld = 0x17,
 	dbiRecentEmojiOldOld = 0x18,
 	dbiLoggedPhoneNumber = 0x19,
@@ -596,6 +597,7 @@ enum {
 	dbiTileBackground = 0x55,
 	dbiCacheSettings = 0x56,
 	dbiAnimationsDisabled = 0x57,
+	dbiScalePercent = 0x58,
 
 	dbiEncryptedWithSalt = 333,
 	dbiEncrypted = 444,
@@ -1363,22 +1365,34 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		cSetLastUpdateCheck(v);
 	} break;
 
-	case dbiScale: {
+	case dbiScaleOld: {
 		qint32 v;
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		DBIScale s = cRealScale();
-		switch (v) {
-		case dbisAuto: s = dbisAuto; break;
-		case dbisOne: s = dbisOne; break;
-		case dbisOneAndQuarter: s = dbisOneAndQuarter; break;
-		case dbisOneAndHalf: s = dbisOneAndHalf; break;
-		case dbisTwo: s = dbisTwo; break;
-		}
-		if (cRetina()) s = dbisOne;
-		cSetConfigScale(s);
-		cSetRealScale(s);
+		SetScaleChecked([&] {
+			constexpr auto kAuto = 0;
+			constexpr auto kOne = 1;
+			constexpr auto kOneAndQuarter = 2;
+			constexpr auto kOneAndHalf = 3;
+			constexpr auto kTwo = 4;
+			switch (v) {
+			case kAuto: return kInterfaceScaleAuto;
+			case kOne: return 100;
+			case kOneAndQuarter: return 125;
+			case kOneAndHalf: return 150;
+			case kTwo: return 200;
+			}
+			return cRealScale();
+		}());
+	} break;
+
+	case dbiScalePercent: {
+		qint32 v;
+		stream >> v;
+		if (!_checkStreamStatus(stream)) return false;
+
+		SetScaleChecked(v);
 	} break;
 
 	case dbiLangOld: {
@@ -2554,7 +2568,7 @@ void writeSettings() {
 	data.stream << quint32(dbiSeenTrayTooltip) << qint32(cSeenTrayTooltip());
 	data.stream << quint32(dbiAutoUpdate) << qint32(cAutoUpdate());
 	data.stream << quint32(dbiLastUpdateCheck) << qint32(cLastUpdateCheck());
-	data.stream << quint32(dbiScale) << qint32(cConfigScale());
+	data.stream << quint32(dbiScalePercent) << qint32(cConfigScale());
 	data.stream << quint32(dbiDcOptions) << dcOptionsSerialized;
 	data.stream << quint32(dbiLoggedPhoneNumber) << cLoggedPhoneNumber();
 	data.stream << quint32(dbiTxtDomainString) << Global::TxtDomainString();
@@ -4536,8 +4550,13 @@ void writeSelf() {
 
 void readSelf(const QByteArray &serialized, int32 streamVersion) {
 	QDataStream stream(serialized);
+	const auto user = Auth().user();
+	const auto wasLoadedStatus = std::exchange(
+		user->loadedStatus,
+		PeerData::NotLoaded);
 	const auto self = Serialize::readPeer(streamVersion, stream);
-	if (!self || !self->isSelf() || self != Auth().user()) {
+	if (!self || !self->isSelf() || self != user) {
+		user->loadedStatus = wasLoadedStatus;
 		return;
 	}
 

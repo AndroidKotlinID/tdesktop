@@ -43,6 +43,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_location_manager.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/text_options.h"
+#include "ui/emoji_config.h"
 #include "storage/serialize_common.h"
 #include "window/window_controller.h"
 #include "base/qthelp_regex.h"
@@ -107,17 +108,13 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 		return;
 	}
 
-	if (cRetina()) {
-		cSetConfigScale(dbisOne);
-		cSetRealScale(dbisOne);
-	}
-
 	_translator = std::make_unique<Lang::Translator>();
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
 	style::startManager();
 	anim::startManager();
 	Ui::InitTextOptions();
+	Ui::Emoji::Init();
 	Media::Player::start();
 
 	DEBUG_LOG(("Application Info: inited..."));
@@ -1024,6 +1021,8 @@ Messenger::~Messenger() {
 	_mtprotoForKeysDestroy.reset();
 
 	Shortcuts::finish();
+
+	Ui::Emoji::Clear();
 
 	anim::stopManager();
 

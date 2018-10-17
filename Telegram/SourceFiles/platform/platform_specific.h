@@ -12,6 +12,16 @@ namespace Platform {
 void start();
 void finish();
 
+enum class PermissionStatus {
+	Granted,
+	CanRequest,
+	Denied,
+};
+
+enum class PermissionType {
+	Microphone,
+};
+
 void SetWatchingMediaKeys(bool watching);
 bool IsApplicationActive();
 bool TranslucentWindowsSupported(QPoint globalPosition);
@@ -20,6 +30,9 @@ void InitOnTopPanel(QWidget *panel);
 void DeInitOnTopPanel(QWidget *panel);
 void ReInitOnTopPanel(QWidget *panel);
 void RegisterCustomScheme();
+PermissionStatus GetPermissionStatus(PermissionType type);
+void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
+void OpenSystemSettingsForPermission(PermissionType type);
 
 QString SystemLanguage();
 QString SystemCountry();

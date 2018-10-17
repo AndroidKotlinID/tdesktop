@@ -1455,8 +1455,8 @@ void MediaView::displayPhoto(not_null<PhotoData*> photo, HistoryItem *item) {
 	_full = -1;
 	_current = QPixmap();
 	_down = OverNone;
-	_w = convertScale(photo->full->width());
-	_h = convertScale(photo->full->height());
+	_w = ConvertScale(photo->full->width());
+	_h = ConvertScale(photo->full->height());
 	if (isHidden()) {
 		moveToScreen();
 	}
@@ -1600,11 +1600,11 @@ void MediaView::displayDocument(DocumentData *doc, HistoryItem *item) { // empty
 		updateThemePreviewGeometry();
 	} else if (!_current.isNull()) {
 		_current.setDevicePixelRatio(cRetinaFactor());
-		_w = convertScale(_current.width());
-		_h = convertScale(_current.height());
+		_w = ConvertScale(_current.width());
+		_h = ConvertScale(_current.height());
 	} else {
-		_w = convertScale(_gif->width());
-		_h = convertScale(_gif->height());
+		_w = ConvertScale(_gif->width());
+		_h = ConvertScale(_gif->height());
 	}
 	if (isHidden()) {
 		moveToScreen();
@@ -1701,7 +1701,7 @@ void MediaView::initAnimation() {
 		auto w = _doc->dimensions.width();
 		auto h = _doc->dimensions.height();
 		_current = _doc->thumb->pixNoCache(fileOrigin(), w, h, videoThumbOptions(), w / cIntRetinaFactor(), h / cIntRetinaFactor());
-		if (cRetina()) _current.setDevicePixelRatio(cRetinaFactor());
+		_current.setDevicePixelRatio(cRetinaFactor());
 	} else {
 		_current = _doc->thumb->pixNoCache(fileOrigin(), _doc->thumb->width(), _doc->thumb->height(), videoThumbOptions(), st::mediaviewFileIconSize, st::mediaviewFileIconSize);
 	}
@@ -1717,7 +1717,7 @@ void MediaView::createClipReader() {
 		int w = _doc->dimensions.width();
 		int h = _doc->dimensions.height();
 		_current = _doc->thumb->pixNoCache(fileOrigin(), w, h, videoThumbOptions(), w / cIntRetinaFactor(), h / cIntRetinaFactor());
-		if (cRetina()) _current.setDevicePixelRatio(cRetinaFactor());
+		_current.setDevicePixelRatio(cRetinaFactor());
 	} else {
 		_current = _doc->thumb->pixNoCache(fileOrigin(), _doc->thumb->width(), _doc->thumb->height(), videoThumbOptions(), st::mediaviewFileIconSize, st::mediaviewFileIconSize);
 	}
@@ -1985,17 +1985,17 @@ void MediaView::paintEvent(QPaintEvent *e) {
 		if (_full <= 0 && _photo->loaded()) {
 			int32 h = int((_photo->full->height() * (qreal(w) / qreal(_photo->full->width()))) + 0.9999);
 			_current = _photo->full->pixNoCache(fileOrigin(), w, h, Images::Option::Smooth);
-			if (cRetina()) _current.setDevicePixelRatio(cRetinaFactor());
+			_current.setDevicePixelRatio(cRetinaFactor());
 			_full = 1;
 		} else if (_full < 0 && _photo->medium->loaded()) {
 			int32 h = int((_photo->full->height() * (qreal(w) / qreal(_photo->full->width()))) + 0.9999);
 			_current = _photo->medium->pixNoCache(fileOrigin(), w, h, Images::Option::Smooth | Images::Option::Blurred);
-			if (cRetina()) _current.setDevicePixelRatio(cRetinaFactor());
+			_current.setDevicePixelRatio(cRetinaFactor());
 			_full = 0;
 		} else if (_current.isNull() && _photo->thumb->loaded()) {
 			int32 h = int((_photo->full->height() * (qreal(w) / qreal(_photo->full->width()))) + 0.9999);
 			_current = _photo->thumb->pixNoCache(fileOrigin(), w, h, Images::Option::Smooth | Images::Option::Blurred);
-			if (cRetina()) _current.setDevicePixelRatio(cRetinaFactor());
+			_current.setDevicePixelRatio(cRetinaFactor());
 		} else if (_current.isNull()) {
 			_current = _photo->thumb->pix(fileOrigin());
 		}
@@ -2437,8 +2437,8 @@ void MediaView::setZoomLevel(int newZoom) {
 	if (_zoom == newZoom) return;
 
 	float64 nx, ny, z = (_zoom == ZoomToScreenLevel) ? _zoomToScreen : _zoom;
-	_w = gifShown() ? convertScale(_gif->width()) : (convertScale(_current.width()) / cIntRetinaFactor());
-	_h = gifShown() ? convertScale(_gif->height()) : (convertScale(_current.height()) / cIntRetinaFactor());
+	_w = gifShown() ? ConvertScale(_gif->width()) : (ConvertScale(_current.width()) / cIntRetinaFactor());
+	_h = gifShown() ? ConvertScale(_gif->height()) : (ConvertScale(_current.height()) / cIntRetinaFactor());
 	if (z >= 0) {
 		nx = (_x - width() / 2.) / (z + 1);
 		ny = (_y - height() / 2.) / (z + 1);

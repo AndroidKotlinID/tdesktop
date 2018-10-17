@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/empty_userpic.h"
 #include "ui/grouped_layout.h"
 #include "ui/text_options.h"
+#include "ui/emoji_config.h"
 #include "data/data_session.h"
 #include "data/data_media_types.h"
 
@@ -41,7 +42,6 @@ namespace {
 
 constexpr auto kMaxGifForwardedBarLines = 4;
 constexpr auto kMaxOriginalEntryLines = 8192;
-const auto kMapPointFg = QColor(64, 167, 227);
 
 using TextState = HistoryView::TextState;
 
@@ -310,8 +310,8 @@ QSize HistoryPhoto::countOptimalSize() {
 	auto maxWidth = 0;
 	auto minHeight = 0;
 
-	auto tw = convertScale(_data->full->width());
-	auto th = convertScale(_data->full->height());
+	auto tw = ConvertScale(_data->full->width());
+	auto th = ConvertScale(_data->full->height());
 	if (!tw || !th) {
 		tw = th = 1;
 	}
@@ -342,7 +342,7 @@ QSize HistoryPhoto::countOptimalSize() {
 }
 
 QSize HistoryPhoto::countCurrentSize(int newWidth) {
-	int tw = convertScale(_data->full->width()), th = convertScale(_data->full->height());
+	int tw = ConvertScale(_data->full->width()), th = ConvertScale(_data->full->height());
 	if (tw > st::maxMediaSize) {
 		th = (st::maxMediaSize * th) / tw;
 		tw = st::maxMediaSize;
@@ -714,8 +714,8 @@ void HistoryPhoto::validateGroupedCache(
 		return;
 	}
 
-	const auto originalWidth = convertScale(_data->full->width());
-	const auto originalHeight = convertScale(_data->full->height());
+	const auto originalWidth = ConvertScale(_data->full->width());
+	const auto originalHeight = ConvertScale(_data->full->height());
 	const auto pixSize = Ui::GetImageScaleSizeForGeometry(
 		{ originalWidth, originalHeight },
 		{ width, height });
@@ -778,8 +778,8 @@ QSize HistoryVideo::countOptimalSize() {
 			_parent->skipBlockHeight());
 	}
 
-	auto tw = convertScale(_data->thumb->width());
-	auto th = convertScale(_data->thumb->height());
+	auto tw = ConvertScale(_data->thumb->width());
+	auto th = ConvertScale(_data->thumb->height());
 	if (!tw || !th) {
 		tw = th = 1;
 	}
@@ -809,7 +809,7 @@ QSize HistoryVideo::countOptimalSize() {
 }
 
 QSize HistoryVideo::countCurrentSize(int newWidth) {
-	int tw = convertScale(_data->thumb->width()), th = convertScale(_data->thumb->height());
+	int tw = ConvertScale(_data->thumb->width()), th = ConvertScale(_data->thumb->height());
 	if (!tw || !th) {
 		tw = th = 1;
 	}
@@ -1154,8 +1154,8 @@ void HistoryVideo::validateGroupedCache(
 		return;
 	}
 
-	const auto originalWidth = convertScale(_data->thumb->width());
-	const auto originalHeight = convertScale(_data->thumb->height());
+	const auto originalWidth = ConvertScale(_data->thumb->width());
+	const auto originalHeight = ConvertScale(_data->thumb->height());
 	const auto pixSize = Ui::GetImageScaleSizeForGeometry(
 		{ originalWidth, originalHeight },
 		{ width, height });
@@ -1303,8 +1303,8 @@ QSize HistoryDocument::countOptimalSize() {
 	auto thumbed = Get<HistoryDocumentThumbed>();
 	if (thumbed) {
 		_data->thumb->load(_realParent->fullId());
-		auto tw = convertScale(_data->thumb->width());
-		auto th = convertScale(_data->thumb->height());
+		auto tw = ConvertScale(_data->thumb->width());
+		auto th = ConvertScale(_data->thumb->height());
 		if (tw > th) {
 			thumbed->_thumbw = (tw * st::msgFileThumbSize) / th;
 		} else {
@@ -1978,13 +1978,13 @@ QSize HistoryGif::countOptimalSize() {
 
 	const auto reader = currentReader();
 	if (reader) {
-		tw = convertScale(reader->width());
-		th = convertScale(reader->height());
+		tw = ConvertScale(reader->width());
+		th = ConvertScale(reader->height());
 	} else {
-		tw = convertScale(_data->dimensions.width()), th = convertScale(_data->dimensions.height());
+		tw = ConvertScale(_data->dimensions.width()), th = ConvertScale(_data->dimensions.height());
 		if (!tw || !th) {
-			tw = convertScale(_data->thumb->width());
-			th = convertScale(_data->thumb->height());
+			tw = ConvertScale(_data->thumb->width());
+			th = ConvertScale(_data->thumb->height());
 		}
 	}
 	if (tw > st::maxGifSize) {
@@ -2033,13 +2033,13 @@ QSize HistoryGif::countCurrentSize(int newWidth) {
 	int tw = 0, th = 0;
 	const auto reader = currentReader();
 	if (reader) {
-		tw = convertScale(reader->width());
-		th = convertScale(reader->height());
+		tw = ConvertScale(reader->width());
+		th = ConvertScale(reader->height());
 	} else {
-		tw = convertScale(_data->dimensions.width()), th = convertScale(_data->dimensions.height());
+		tw = ConvertScale(_data->dimensions.width()), th = ConvertScale(_data->dimensions.height());
 		if (!tw || !th) {
-			tw = convertScale(_data->thumb->width());
-			th = convertScale(_data->thumb->height());
+			tw = ConvertScale(_data->thumb->width());
+			th = ConvertScale(_data->thumb->height());
 		}
 	}
 	if (tw > st::maxGifSize) {
@@ -3635,7 +3635,7 @@ void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, T
 		auto pw = qMax(_pixw, lineHeight);
 		auto ph = _pixh;
 		auto pixw = _pixw, pixh = articleThumbHeight(_data->photo, _pixw);
-		auto maxw = convertScale(_data->photo->medium->width()), maxh = convertScale(_data->photo->medium->height());
+		auto maxw = ConvertScale(_data->photo->medium->width()), maxh = ConvertScale(_data->photo->medium->height());
 		if (pixw * ph != pixh * pw) {
 			float64 coef = (pixw * ph > pixh * pw) ? qMin(ph / float64(pixh), maxh / float64(pixh)) : qMin(pw / float64(pixw), maxw / float64(pixw));
 			pixh = qRound(pixh * coef);
@@ -4829,28 +4829,20 @@ void HistoryLocation::draw(Painter &p, const QRect &r, TextSelection selection, 
 		| (isBubbleBottom() ? (RectPart::BottomLeft | RectPart::BottomRight) : RectPart::None);
 	auto rthumb = QRect(paintx, painty, paintw, painth);
 	if (_data && !_data->thumb->isNull()) {
-		auto w = _data->thumb->width(), h = _data->thumb->height();
-		QPixmap pix;
-		if (paintw * h == painth * w || (w == fullWidth() && h == fullHeight())) {
-			pix = _data->thumb->pixSingle(contextId, paintw, painth, paintw, painth, roundRadius, roundCorners);
-		} else if (paintw * h > painth * w) {
-			auto nw = painth * w / h;
-			pix = _data->thumb->pixSingle(contextId, nw, painth, paintw, painth, roundRadius, roundCorners);
-		} else {
-			auto nh = paintw * h / w;
-			pix = _data->thumb->pixSingle(contextId, paintw, nh, paintw, painth, roundRadius, roundCorners);
-		}
+		const auto &pix = _data->thumb->pixSingle(contextId, paintw, painth, paintw, painth, roundRadius, roundCorners);
 		p.drawPixmap(rthumb.topLeft(), pix);
 	} else {
 		App::complexLocationRect(p, rthumb, roundRadius, roundCorners);
 	}
-	const auto &point = st::historyMapPoint;
-	point.paint(
-		p,
-		rthumb.x() + ((rthumb.width() - point.width()) / 2),
-		rthumb.y() + (rthumb.height() / 2) - point.height(),
-		width(),
-		kMapPointFg);
+	const auto paintMarker = [&](const style::icon &icon) {
+		icon.paint(
+			p,
+			rthumb.x() + ((rthumb.width() - icon.width()) / 2),
+			rthumb.y() + (rthumb.height() / 2) - icon.height(),
+			width());
+	};
+	paintMarker(st::historyMapPoint);
+	paintMarker(st::historyMapPointInner);
 	if (selected) {
 		App::complexOverlayRect(p, rthumb, roundRadius, roundCorners);
 	}
