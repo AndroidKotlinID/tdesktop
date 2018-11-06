@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "history/view/history_view_cursor_state.h"
 #include "ui/effects/round_checkbox.h"
+#include "ui/image/image.h"
 #include "ui/text_options.h"
 
 namespace Overview {
@@ -341,7 +342,7 @@ void Photo::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 				img = img.copy(0, (img.height() - img.width()) / 2, img.width(), img.width()).scaled(size, size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
 			}
 			img.setDevicePixelRatio(cRetinaFactor());
-			_data->forget();
+			_data->unload();
 
 			_pix = App::pixmapFromImageInPlace(std::move(img));
 		} else if (!_pix.isNull()) {
@@ -385,7 +386,7 @@ Video::Video(
 }
 
 void Video::initDimensions() {
-	_maxw = 2 * st::minPhotoSize;
+	_maxw = 2 * st::overviewPhotoMinSize;
 	_minh = _maxw;
 }
 
@@ -425,7 +426,7 @@ void Video::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 				img = img.copy(0, (img.height() - img.width()) / 2, img.width(), img.width()).scaled(size, size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
 			}
 			img.setDevicePixelRatio(cRetinaFactor());
-			_data->forget();
+			_data->unload();
 
 			_pix = App::pixmapFromImageInPlace(std::move(img));
 		} else if (!_pix.isNull()) {
@@ -1245,9 +1246,11 @@ Link::Link(
 				_page->document,
 				parent->fullId());
 		} else if (_page->photo) {
-			if (_page->type == WebPageProfile || _page->type == WebPageVideo) {
+			if (_page->type == WebPageType::Profile || _page->type == WebPageType::Video) {
 				_photol = std::make_shared<UrlClickHandler>(_page->url);
-			} else if (_page->type == WebPagePhoto || _page->siteName == qstr("Twitter") || _page->siteName == qstr("Facebook")) {
+			} else if (_page->type == WebPageType::Photo
+				|| _page->siteName == qstr("Twitter")
+				|| _page->siteName == qstr("Facebook")) {
 				_photol = std::make_shared<PhotoOpenClickHandler>(
 					_page->photo,
 					parent->fullId());

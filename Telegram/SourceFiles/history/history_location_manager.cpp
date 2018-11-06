@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mainwidget.h"
 #include "lang/lang_keys.h"
+#include "ui/image/image.h"
 #include "platform/platform_specific.h"
 
 namespace {
@@ -56,7 +57,7 @@ void LocationClickHandler::setup() {
 
 LocationData::LocationData(const LocationCoords &coords)
 : coords(coords)
-, thumb(ComputeLocation(coords)) {
+, thumb(Images::Create(ComputeLocation(coords))) {
 }
 
 void LocationData::load(Data::FileOrigin origin) {

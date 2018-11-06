@@ -42,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_lock_widgets.h"
 #include "history/history_location_manager.h"
 #include "ui/widgets/tooltip.h"
+#include "ui/image/image.h"
 #include "ui/text_options.h"
 #include "ui/emoji_config.h"
 #include "storage/serialize_common.h"
@@ -584,7 +585,7 @@ void Messenger::startLocalStorage() {
 			if (_mtproto) {
 				_mtproto->requestConfig();
 			}
-			qApp->setWindowIcon(Window::CreateIcon());
+			Platform::SetApplicationIcon(Window::CreateIcon());
 		});
 	});
 }
@@ -1123,7 +1124,7 @@ void Messenger::loggedOut() {
 	Local::reset();
 
 	cSetOtherOnline(0);
-	clearStorageImages();
+	Images::ClearRemote();
 }
 
 QPoint Messenger::getPointForCallPanelCenter() const {

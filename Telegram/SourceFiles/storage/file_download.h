@@ -84,6 +84,7 @@ public:
 	bool finished() const {
 		return _finished;
 	}
+	void finishWithBytes(const QByteArray &data);
 	bool cancelled() const {
 		return _cancelled;
 	}
@@ -94,7 +95,7 @@ public:
 		return 0;
 	}
 	QByteArray imageFormat(const QSize &shrinkBox = QSize()) const;
-	QPixmap imagePixmap(const QSize &shrinkBox = QSize()) const;
+	QImage imageData(const QSize &shrinkBox = QSize()) const;
 	QString fileName() const {
 		return _filename;
 	}
@@ -134,8 +135,8 @@ public:
 
 	void localLoaded(
 		const StorageImageSaved &result,
-		const QByteArray &imageFormat = QByteArray(),
-		const QPixmap &imagePixmap = QPixmap());
+		const QByteArray &imageFormat,
+		const QImage &imageData);
 
 signals:
 	void progress(FileLoader *loader);
@@ -191,15 +192,13 @@ protected:
 
 	base::binary_guard _localLoading;
 	mutable QByteArray _imageFormat;
-	mutable QPixmap _imagePixmap;
+	mutable QImage _imageData;
 
 };
 
 class StorageImageLocation;
 class WebFileLocation;
 class mtpFileLoader : public FileLoader, public RPCSender {
-	Q_OBJECT
-
 public:
 	mtpFileLoader(
 		not_null<StorageImageLocation*> location,
@@ -329,8 +328,6 @@ private:
 class webFileLoaderPrivate;
 
 class webFileLoader : public FileLoader {
-	Q_OBJECT
-
 public:
 	webFileLoader(
 		const QString &url,
@@ -421,10 +418,7 @@ private:
 class WebLoadMainManager : public QObject {
 	Q_OBJECT
 
-public:
-
 public slots:
-
 	void progress(webFileLoader *loader, qint64 already, qint64 size);
 	void finished(webFileLoader *loader, QByteArray data);
 	void error(webFileLoader *loader);

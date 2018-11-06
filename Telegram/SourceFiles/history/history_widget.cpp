@@ -21,6 +21,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/special_buttons.h"
+#include "ui/image/image.h"
 #include "inline_bots/inline_bot_result.h"
 #include "data/data_drafts.h"
 #include "data/data_session.h"
@@ -1920,9 +1922,6 @@ void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool re
 	_nonEmptySelection = false;
 
 	if (_peer) {
-		App::forgetMedia();
-		Auth().data().forgetMedia();
-		_serviceImageCacheSize = imageCacheSize();
 		Auth().downloader().clearPriorities();
 
 		_history = App::history(_peer);
@@ -2856,7 +2855,6 @@ void HistoryWidget::delayedShowAt(MsgId showAtMsgId) {
 }
 
 void HistoryWidget::onScroll() {
-	App::checkImageCacheSize();
 	preloadHistoryIfNeeded();
 	visibleAreaUpdated();
 	if (!_synteticScrollEvent) {
