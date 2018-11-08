@@ -491,7 +491,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_connection_save" = "Save";
 
 "lng_proxy_settings" = "Proxy settings";
-"lng_proxy_use" = "Use proxy";
+"lng_proxy_disable" = "Disable proxy";
+"lng_proxy_use_system_settings" = "Use system proxy settings";
+"lng_proxy_use_custom" = "Use custom proxy";
 "lng_proxy_use_for_calls" = "Use proxy for calls";
 "lng_proxy_about" = "Proxy servers may be helpful in accessing Telegram if there is no connection in a specific region.";
 "lng_proxy_add" = "Add proxy";
@@ -844,7 +846,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_action_kick_user" = "{from} removed {user}";
 "lng_action_user_left" = "{from} left the group";
 "lng_action_user_joined" = "{from} joined the group";
-"lng_action_user_joined_by_link" = "{from} joined the group via invite link";
+"lng_action_user_joined_by_link_from" = "{from} joined the group via invite link from {user}";
 "lng_action_user_registered" = "{from} just joined Telegram";
 "lng_action_removed_photo" = "{from} removed group photo";
 "lng_action_removed_photo_channel" = "Channel photo removed";
