@@ -89,9 +89,13 @@ Go to ***BuildPath*** and run
 
     git clone git://repo.or.cz/openal-soft.git
     cd openal-soft
-    git checkout v1.18
+    git checkout openal-soft-1.19.1
     cd build
+    if [ `uname -p` == "i686" ]; then
+    cmake -D LIBTYPE:STRING=STATIC -D ALSOFT_UTILS:BOOL=OFF ..
+    else
     cmake -D LIBTYPE:STRING=STATIC ..
+    fi
     make $MAKE_THREADS_CNT
     sudo make install
     cd ../..

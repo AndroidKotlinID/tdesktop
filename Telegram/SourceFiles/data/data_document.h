@@ -47,7 +47,7 @@ struct DocumentAdditionalData {
 struct StickerData : public DocumentAdditionalData {
 	Data::FileOrigin setOrigin() const;
 
-	ImagePtr img;
+	std::unique_ptr<Image> image;
 	QString alt;
 	MTPInputStickerSet set = MTP_inputStickerSetEmpty();
 	StorageImageLocation loc; // doc thumb location
@@ -126,12 +126,13 @@ public:
 	void performActionOnLoad();
 
 	void unload();
-	ImagePtr makeReplyPreview(Data::FileOrigin origin);
+	Image *getReplyPreview(Data::FileOrigin origin);
 
 	StickerData *sticker() const;
 	void checkSticker();
 	void checkStickerThumb();
-	ImagePtr getStickerThumb();
+	Image *getStickerThumb();
+	Image *getStickerImage();
 	Data::FileOrigin stickerSetOrigin() const;
 	Data::FileOrigin stickerOrGifOrigin() const;
 	bool isStickerSetInstalled() const;
@@ -152,6 +153,7 @@ public:
 	int32 duration() const;
 	bool isImage() const;
 	void recountIsImage();
+	bool supportsStreaming() const;
 	void setData(const QByteArray &data) {
 		_data = data;
 	}
@@ -205,7 +207,7 @@ public:
 	DocumentType type = FileDocument;
 	QSize dimensions;
 	int32 date = 0;
-	ImagePtr thumb, replyPreview;
+	ImagePtr thumb;
 	int32 size = 0;
 
 	FileStatus status = FileReady;
@@ -230,6 +232,7 @@ private:
 	WebFileLocation _urlLocation;
 
 	std::unique_ptr<Image> _goodThumbnail;
+	std::unique_ptr<Image> _replyPreview;
 
 	not_null<AuthSession*> _session;
 
@@ -237,6 +240,8 @@ private:
 	QByteArray _data;
 	std::unique_ptr<DocumentAdditionalData> _additional;
 	int32 _duration = -1;
+	bool _isImage = false;
+	bool _supportsStreaming = false;
 
 	ActionOnLoad _actionOnLoad = ActionOnLoadNone;
 	FullMsgId _actionOnLoadMsgId;

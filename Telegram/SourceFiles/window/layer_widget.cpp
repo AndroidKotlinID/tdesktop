@@ -666,7 +666,7 @@ void LayerStackWidget::showSpecialLayer(
 		object_ptr<LayerWidget> layer,
 		anim::type animated) {
 	startAnimation([this, layer = std::move(layer)]() mutable {
-		_specialLayer.destroyDelayed();
+		_specialLayer.destroy();
 		_specialLayer = std::move(layer);
 		initChildLayer(_specialLayer);
 	}, [this] {
@@ -699,7 +699,7 @@ void LayerStackWidget::showMainMenu(
 		_mainMenu->setParent(this);
 	}, [this] {
 		clearLayers();
-		_specialLayer.destroyDelayed();
+		_specialLayer.destroy();
 	}, Action::ShowMainMenu, animated);
 }
 
@@ -1009,17 +1009,14 @@ QPixmap MediaPreviewWidget::currentImage() const {
 	if (_document) {
 		if (_document->sticker()) {
 			if (_cacheStatus != CacheLoaded) {
-				_document->checkSticker();
-				if (_document->sticker()->img->isNull()) {
-					if (_cacheStatus != CacheThumbLoaded && _document->thumb->loaded()) {
-						QSize s = currentDimensions();
-						_cache = _document->thumb->pixBlurred(_origin, s.width(), s.height());
-						_cacheStatus = CacheThumbLoaded;
-					}
-				} else {
+				if (const auto image = _document->getStickerImage()) {
 					QSize s = currentDimensions();
-					_cache = _document->sticker()->img->pix(_origin, s.width(), s.height());
+					_cache = image->pix(_origin, s.width(), s.height());
 					_cacheStatus = CacheLoaded;
+				} else if (_cacheStatus != CacheThumbLoaded && _document->thumb->loaded()) {
+					QSize s = currentDimensions();
+					_cache = _document->thumb->pixBlurred(_origin, s.width(), s.height());
+					_cacheStatus = CacheThumbLoaded;
 				}
 			}
 		} else {
