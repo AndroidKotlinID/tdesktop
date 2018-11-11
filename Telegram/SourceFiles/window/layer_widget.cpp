@@ -400,7 +400,7 @@ void LayerStackWidget::hideLayers(anim::type animated) {
 }
 
 void LayerStackWidget::hideAll(anim::type animated) {
-	startAnimation([] {}, [this] {
+	startAnimation([] {}, [=] {
 		clearLayers();
 		clearSpecialLayer();
 		_mainMenu.destroyDelayed();
