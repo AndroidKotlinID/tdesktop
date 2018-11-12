@@ -1069,14 +1069,11 @@ void DocumentData::checkSticker() {
 			const auto &loc = location(true);
 			if (loc.accessEnable()) {
 				data->image = std::make_unique<Image>(
-					std::make_unique<Images::LocalFileSource>(
-						loc.name(),
-						QByteArray(),
-						"WEBP"));
+					std::make_unique<Images::LocalFileSource>(loc.name()));
 				loc.accessDisable();
 			}
 		} else {
-			auto format = QByteArray("WEBP");
+			auto format = QByteArray();
 			auto image = App::readImage(_data, &format, false);
 			data->image = std::make_unique<Image>(
 				std::make_unique<Images::LocalFileSource>(
@@ -1382,6 +1379,7 @@ DocumentData::~DocumentData() {
 		destroyLoaderDelayed();
 	}
 	unload();
+	ActiveCache().remove(this);
 }
 
 QString DocumentData::ComposeNameString(
