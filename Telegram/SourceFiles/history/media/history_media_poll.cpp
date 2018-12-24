@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_instance.h"
 #include "ui/text_options.h"
 #include "ui/effects/radial_animation.h"
+#include "ui/effects/ripple_animation.h"
 #include "data/data_media_types.h"
 #include "data/data_poll.h"
 #include "data/data_session.h"
@@ -95,6 +96,7 @@ struct HistoryPoll::Answer {
 	mutable QString votesPercent;
 	mutable bool chosen = false;
 	ClickHandlerPtr handler;
+	mutable std::unique_ptr<Ui::RippleAnimation> ripple;
 };
 
 HistoryPoll::SendingAnimation::SendingAnimation(
@@ -167,6 +169,34 @@ QSize HistoryPoll::countOptimalSize() {
 
 bool HistoryPoll::canVote() const {
 	return !_voted && !_closed;
+}
+
+int HistoryPoll::countAnswerTop(
+		const Answer &answer,
+		int innerWidth) const {
+	auto tshift = st::historyPollQuestionTop;
+	if (!isBubbleTop()) {
+		tshift -= st::msgFileTopMinus;
+	}
+	tshift += _question.countHeight(innerWidth) + st::historyPollSubtitleSkip;
+	tshift += st::msgDateFont->height + st::historyPollAnswersSkip;
+	auto &&answers = ranges::view::zip(
+		_answers,
+		ranges::view::ints(0, int(_answers.size())));
+	const auto i = ranges::find(
+		_answers,
+		&answer,
+		[](const Answer &answer) { return &answer; });
+	const auto countHeight = [&](const Answer &answer) {
+		return countAnswerHeight(answer, innerWidth);
+	};
+	tshift += ranges::accumulate(
+		begin(_answers),
+		i,
+		0,
+		ranges::plus(),
+		countHeight);
+	return tshift;
 }
 
 int HistoryPoll::countAnswerHeight(
@@ -308,7 +338,7 @@ void HistoryPoll::updateVotesCheckAnimations() const {
 }
 
 void HistoryPoll::updateTotalVotes() const {
-	if (_totalVotes == _poll->totalVoters) {
+	if (_totalVotes == _poll->totalVoters && !_totalVotesLabel.isEmpty()) {
 		return;
 	}
 	_totalVotes = _poll->totalVoters;
@@ -425,7 +455,14 @@ void HistoryPoll::draw(Painter &p, const QRect &r, TextSelection selection, Time
 	if (!_totalVotesLabel.isEmpty()) {
 		tshift += st::msgPadding.bottom();
 		p.setPen(regular);
-		_totalVotesLabel.drawLeftElided(p, padding.left(), tshift, paintw, width());
+		_totalVotesLabel.drawLeftElided(
+			p,
+			padding.left(),
+			tshift,
+			std::min(
+				_totalVotesLabel.maxWidth(),
+				paintw - _parent->infoWidth()),
+			width());
 	}
 }
 
@@ -458,6 +495,15 @@ int HistoryPoll::paintAnswer(
 	const auto awidth = width
 		- st::historyPollAnswerPadding.left()
 		- st::historyPollAnswerPadding.right();
+
+	if (answer.ripple) {
+		p.setOpacity(st::historyPollRippleOpacity);
+		answer.ripple->paint(p, left - st::msgPadding.left(), top, outerWidth, ms);
+		if (answer.ripple->empty()) {
+			answer.ripple.reset();
+		}
+		p.setOpacity(1.);
+	}
 
 	if (animation) {
 		const auto opacity = animation->opacity.current();
@@ -684,10 +730,11 @@ void HistoryPoll::startAnswersAnimation() const {
 
 TextState HistoryPoll::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
-	if (!canVote() || !_poll->sendingVote.isEmpty()) {
+	if (!_poll->sendingVote.isEmpty()) {
 		return result;
 	}
 
+	const auto can = canVote();
 	const auto padding = st::msgPadding;
 	auto paintw = width();
 	auto tshift = st::historyPollQuestionTop;
@@ -704,12 +751,63 @@ TextState HistoryPoll::textState(QPoint point, StateRequest request) const {
 	for (const auto &answer : _answers) {
 		const auto height = countAnswerHeight(answer, paintw);
 		if (point.y() >= tshift && point.y() < tshift + height) {
-			result.link = answer.handler;
+			if (can) {
+				_lastLinkPoint = point;
+				result.link = answer.handler;
+			} else {
+				result.customTooltip = true;
+				using Flag = Text::StateRequest::Flag;
+				if (request.flags & Flag::LookupCustomTooltip) {
+					result.customTooltipText = answer.votes
+						? lng_polls_votes_count(lt_count, answer.votes)
+						: lang(lng_polls_votes_none);
+				}
+			}
 			return result;
 		}
 		tshift += height;
 	}
 	return result;
+}
+
+void HistoryPoll::clickHandlerPressedChanged(
+		const ClickHandlerPtr &handler,
+		bool pressed) {
+	if (!handler) return;
+
+	const auto i = ranges::find(
+		_answers,
+		handler,
+		&Answer::handler);
+	if (i != end(_answers)) {
+		toggleRipple(*i, pressed);
+	}
+}
+
+void HistoryPoll::toggleRipple(Answer &answer, bool pressed) {
+	if (pressed) {
+		const auto outerWidth = width();
+		const auto innerWidth = outerWidth
+			- st::msgPadding.left()
+			- st::msgPadding.right();
+		if (!answer.ripple) {
+			auto mask = Ui::RippleAnimation::rectMask(QSize(
+				outerWidth,
+				countAnswerHeight(answer, innerWidth)));
+			answer.ripple = std::make_unique<Ui::RippleAnimation>(
+				(_parent->hasOutLayout()
+					? st::historyPollRippleOut
+					: st::historyPollRippleIn),
+				std::move(mask),
+				[=] { Auth().data().requestViewRepaint(_parent); });
+		}
+		const auto top = countAnswerTop(answer, innerWidth);
+		answer.ripple->add(_lastLinkPoint - QPoint(0, top));
+	} else {
+		if (answer.ripple) {
+			answer.ripple->lastStop();
+		}
+	}
 }
 
 HistoryPoll::~HistoryPoll() {
