@@ -103,10 +103,13 @@ Application::Application(
 		char **argv)
 : QApplication(argc, argv)
 , _mainThreadId(QThread::currentThreadId())
-, _launcher(launcher)
-, _updateChecker(Core::UpdaterDisabled()
-	? nullptr
-	: std::make_unique<Core::UpdateChecker>()) {
+, _launcher(launcher) {
+}
+
+int Application::execute() {
+	if (!Core::UpdaterDisabled()) {
+		_updateChecker = std::make_unique<Core::UpdateChecker>();
+	}
 	const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
 	char h[33] = { 0 };
 	hashMd5Hex(d.constData(), d.size(), h);
@@ -134,6 +137,8 @@ Application::Application(
         LOG(("Connecting local socket to %1...").arg(_localServerName));
 		_localSocket.connectToServer(_localServerName);
 	}
+
+	return exec();
 }
 
 Application::~Application() = default;
@@ -448,6 +453,30 @@ bool Application::nativeEventFilter(
 		_loopNestingLevel = _eventNestingLevel;
 	}
 	return false;
+}
+
+void Application::activateWindowDelayed(not_null<QWidget*> widget) {
+	if (_delayedActivationsPaused) {
+		return;
+	} else if (std::exchange(_windowForDelayedActivation, widget.get())) {
+		return;
+	}
+	crl::on_main(this, [=] {
+		if (const auto widget = base::take(_windowForDelayedActivation)) {
+			if (!widget->isHidden()) {
+				widget->activateWindow();
+			}
+		}
+	});
+}
+
+void Application::pauseDelayedWindowActivations() {
+	_windowForDelayedActivation = nullptr;
+	_delayedActivationsPaused = true;
+}
+
+void Application::resumeDelayedWindowActivations() {
+	_delayedActivationsPaused = false;
 }
 
 void Application::closeApplication() {

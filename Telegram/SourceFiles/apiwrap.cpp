@@ -1172,7 +1172,8 @@ void ApiWrap::markMediaRead(
 		QVector<MTPint>>();
 	markedIds.reserve(items.size());
 	for (const auto item : items) {
-		if (!item->isMediaUnread() || (item->out() && !item->mentionsMe())) {
+		if ((!item->isUnreadMedia() || item->out())
+			&& !item->isUnreadMention()) {
 			continue;
 		}
 		item->markMediaRead();
@@ -1201,7 +1202,8 @@ void ApiWrap::markMediaRead(
 }
 
 void ApiWrap::markMediaRead(not_null<HistoryItem*> item) {
-	if (!item->isMediaUnread() || (item->out() && !item->mentionsMe())) {
+	if ((!item->isUnreadMedia() || item->out())
+		&& !item->isUnreadMention()) {
 		return;
 	}
 	item->markMediaRead();
@@ -3290,7 +3292,7 @@ void ApiWrap::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		auto possiblyReadMentions = base::flat_set<MsgId>();
 		for (const auto &msgId : d.vmessages.v) {
 			if (auto item = App::histItemById(NoChannel, msgId.v)) {
-				if (item->isMediaUnread()) {
+				if (item->isUnreadMedia() || item->isUnreadMention()) {
 					item->markMediaRead();
 					_session->data().requestItemRepaint(item);
 
@@ -4302,14 +4304,10 @@ void ApiWrap::sendFiles(
 		TextWithTags &&caption,
 		std::shared_ptr<SendingAlbum> album,
 		const SendOptions &options) {
-	const auto isSticker = [&] {
-		if (list.files.empty() || type != SendMediaType::File) {
-			return false;
-		}
-		return list.files.front().mime == qstr("image/webp");
-	};
-	if ((list.files.size() > 1 || isSticker())
-		&& !caption.text.isEmpty() && !album) {
+	const auto haveCaption = !caption.text.isEmpty();
+	const auto isAlbum = (album != nullptr);
+	const auto compressImages = (type == SendMediaType::Photo);
+	if (haveCaption && !list.canAddCaption(isAlbum, compressImages)) {
 		auto message = MessageToSend(options.history);
 		message.textWithTags = std::move(caption);
 		message.replyTo = options.replyTo;
@@ -4902,37 +4900,13 @@ void ApiWrap::sendAlbumWithUploaded(
 	const auto albumIt = _sendingAlbums.find(groupId.raw());
 	Assert(albumIt != _sendingAlbums.end());
 	const auto &album = albumIt->second;
-
-	const auto proj = [](const SendingAlbum::Item &item) {
-		return item.msgId;
-	};
-	const auto itemIt = ranges::find(album->items, localId, proj);
-	Assert(itemIt != album->items.end());
-	Assert(!itemIt->media);
-
-	auto caption = item->originalText();
-	TextUtilities::Trim(caption);
-	auto sentEntities = TextUtilities::EntitiesToMTP(
-		caption.entities,
-		TextUtilities::ConvertOption::SkipLocal);
-	const auto flags = !sentEntities.v.isEmpty()
-		? MTPDinputSingleMedia::Flag::f_entities
-		: MTPDinputSingleMedia::Flag(0);
-
-	itemIt->media = MTP_inputSingleMedia(
-		MTP_flags(flags),
-		media,
-		MTP_long(randomId),
-		MTP_string(caption.text),
-		sentEntities);
-
+	album->fillMedia(item, media, randomId);
 	sendAlbumIfReady(album.get());
 }
 
 void ApiWrap::sendAlbumWithCancelled(
 		not_null<HistoryItem*> item,
 		const MessageGroupId &groupId) {
-	const auto localId = item->fullId();
 	const auto albumIt = _sendingAlbums.find(groupId.raw());
 	if (albumIt == _sendingAlbums.end()) {
 		// Sometimes we destroy item being sent already after the album
@@ -4944,14 +4918,7 @@ void ApiWrap::sendAlbumWithCancelled(
 		return;
 	}
 	const auto &album = albumIt->second;
-
-	const auto proj = [](const SendingAlbum::Item &item) {
-		return item.msgId;
-	};
-	const auto itemIt = ranges::find(album->items, localId, proj);
-	Assert(itemIt != album->items.end());
-	album->items.erase(itemIt);
-
+	album->removeItem(item);
 	sendAlbumIfReady(album.get());
 }
 
