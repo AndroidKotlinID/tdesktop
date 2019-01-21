@@ -122,7 +122,7 @@ public:
 		FilePathResolveType type = FilePathResolveCached,
 		bool forceSavingAs = false) const;
 
-	bool saveToCache() const;
+	[[nodiscard]] bool saveToCache() const;
 
 	void performActionOnLoad();
 
@@ -158,6 +158,8 @@ public:
 	void setData(const QByteArray &data) {
 		_data = data;
 	}
+	bool checkWallPaperProperties();
+	bool isWallPaper() const;
 
 	bool hasGoodStickerThumb() const;
 
@@ -338,5 +340,8 @@ namespace Data {
 QString FileExtension(const QString &filepath);
 bool IsValidMediaFile(const QString &filepath);
 bool IsExecutableName(const QString &filepath);
+base::binary_guard ReadImageAsync(
+	not_null<DocumentData*> document,
+	FnMut<void(QImage&&)> done);
 
 } // namespace Data
