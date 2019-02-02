@@ -137,7 +137,11 @@ MediaView::MediaView()
 	});
 	handleAuthSessionChange();
 
+#ifdef Q_OS_LINUX
+	setWindowFlags(Qt::FramelessWindowHint | Qt::MaximizeUsingFullscreenGeometryHint);
+#else // Q_OS_LINUX
 	setWindowFlags(Qt::FramelessWindowHint);
+#endif // Q_OS_LINUX
 	moveToScreen();
 	setAttribute(Qt::WA_NoSystemBackground, true);
 	setAttribute(Qt::WA_TranslucentBackground, true);
@@ -1777,7 +1781,11 @@ void MediaView::displayFinished() {
 	updateControls();
 	if (isHidden()) {
 		psUpdateOverlayed(this);
+#ifdef Q_OS_LINUX
+		showFullScreen();
+#else // Q_OS_LINUX
 		show();
+#endif // Q_OS_LINUX
 		psShowOverAll(this);
 		activateWindow();
 		QApplication::setActiveWindow(this);
@@ -1798,10 +1806,14 @@ void MediaView::initAnimation() {
 	} else if (_doc->dimensions.width() && _doc->dimensions.height()) {
 		auto w = _doc->dimensions.width();
 		auto h = _doc->dimensions.height();
-		_current = _doc->thumbnail()->pixNoCache(fileOrigin(), w, h, VideoThumbOptions(_doc), w / cIntRetinaFactor(), h / cIntRetinaFactor());
+		_current = (_doc->hasThumbnail()
+			? _doc->thumbnail()
+			: Image::Blank().get())->pixNoCache(fileOrigin(), w, h, VideoThumbOptions(_doc), w / cIntRetinaFactor(), h / cIntRetinaFactor());
 		_current.setDevicePixelRatio(cRetinaFactor());
 	} else {
-		_current = _doc->thumbnail()->pixNoCache(fileOrigin(), _doc->thumbnail()->width(), _doc->thumbnail()->height(), VideoThumbOptions(_doc), st::mediaviewFileIconSize, st::mediaviewFileIconSize);
+		_current = (_doc->hasThumbnail()
+			? _doc->thumbnail()
+			: Image::Blank().get())->pixNoCache(fileOrigin(), _doc->thumbnail()->width(), _doc->thumbnail()->height(), VideoThumbOptions(_doc), st::mediaviewFileIconSize, st::mediaviewFileIconSize);
 	}
 }
 
@@ -1814,10 +1826,14 @@ void MediaView::createClipReader() {
 	if (_doc->dimensions.width() && _doc->dimensions.height()) {
 		int w = _doc->dimensions.width();
 		int h = _doc->dimensions.height();
-		_current = _doc->thumbnail()->pixNoCache(fileOrigin(), w, h, VideoThumbOptions(_doc), w / cIntRetinaFactor(), h / cIntRetinaFactor());
+		_current = (_doc->hasThumbnail()
+			? _doc->thumbnail()
+			: Image::Blank().get())->pixNoCache(fileOrigin(), w, h, VideoThumbOptions(_doc), w / cIntRetinaFactor(), h / cIntRetinaFactor());
 		_current.setDevicePixelRatio(cRetinaFactor());
 	} else {
-		_current = _doc->thumbnail()->pixNoCache(fileOrigin(), _doc->thumbnail()->width(), _doc->thumbnail()->height(), VideoThumbOptions(_doc), st::mediaviewFileIconSize, st::mediaviewFileIconSize);
+		_current = (_doc->hasThumbnail()
+			? _doc->thumbnail()
+			: Image::Blank().get())->pixNoCache(fileOrigin(), _doc->thumbnail()->width(), _doc->thumbnail()->height(), VideoThumbOptions(_doc), st::mediaviewFileIconSize, st::mediaviewFileIconSize);
 	}
 	auto mode = (_doc->isVideoFile() || _doc->isVideoMessage())
 		? Media::Clip::Reader::Mode::Video

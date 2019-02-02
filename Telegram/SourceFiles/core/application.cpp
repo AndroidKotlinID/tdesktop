@@ -111,7 +111,7 @@ void Application::run() {
 	anim::startManager();
 	Ui::InitTextOptions();
 	Ui::Emoji::Init();
-	Media::Player::start();
+	Media::Player::start(_audio.get());
 
 	DEBUG_LOG(("Application Info: inited..."));
 
@@ -440,10 +440,13 @@ void Application::setMtpAuthorization(const QByteArray &serialized) {
 void Application::startMtp() {
 	Expects(!_mtproto);
 
+	auto config = base::take(_private->mtpConfig);
+	config.deviceModel = _launcher->deviceModel();
+	config.systemVersion = _launcher->systemVersion();
 	_mtproto = std::make_unique<MTP::Instance>(
 		_dcOptions.get(),
 		MTP::Instance::Mode::Normal,
-		base::take(_private->mtpConfig));
+		std::move(config));
 	_mtproto->setUserPhone(cLoggedPhoneNumber());
 	_private->mtpConfig.mainDcId = _mtproto->mainDcId();
 
@@ -526,7 +529,12 @@ void Application::destroyMtpKeys(MTP::AuthKeysList &&keys) {
 	auto destroyConfig = MTP::Instance::Config();
 	destroyConfig.mainDcId = MTP::Instance::Config::kNoneMainDc;
 	destroyConfig.keys = std::move(keys);
-	_mtprotoForKeysDestroy = std::make_unique<MTP::Instance>(_dcOptions.get(), MTP::Instance::Mode::KeysDestroyer, std::move(destroyConfig));
+	destroyConfig.deviceModel = _launcher->deviceModel();
+	destroyConfig.systemVersion = _launcher->systemVersion();
+	_mtprotoForKeysDestroy = std::make_unique<MTP::Instance>(
+		_dcOptions.get(),
+		MTP::Instance::Mode::KeysDestroyer,
+		std::move(destroyConfig));
 	connect(
 		_mtprotoForKeysDestroy.get(),
 		&MTP::Instance::allKeysDestroyed,
@@ -1039,6 +1047,11 @@ void Application::preventWindowActivation() {
 void Application::QuitAttempt() {
 	auto prevents = false;
 	if (AuthSession::Exists() && !Sandbox::Instance().isSavingSession()) {
+		if (const auto mainwidget = App::main()) {
+			if (mainwidget->isQuitPrevent()) {
+				prevents = true;
+			}
+		}
 		if (Auth().api().isQuitPrevent()) {
 			prevents = true;
 		}
@@ -1117,7 +1130,7 @@ Application::~Application() {
 
 	Window::Theme::Unload();
 
-	Media::Player::finish();
+	Media::Player::finish(_audio.get());
 	style::stopManager();
 
 	Local::finish();
