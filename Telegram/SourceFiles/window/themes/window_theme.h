@@ -26,6 +26,8 @@ public:
 	[[nodiscard]] bool isPattern() const;
 	[[nodiscard]] bool isDefault() const;
 	[[nodiscard]] bool isCreator() const;
+	[[nodiscard]] bool isDark() const;
+	[[nodiscard]] bool isLocal() const;
 	[[nodiscard]] int patternIntensity() const;
 	[[nodiscard]] bool hasShareUrl() const;
 	[[nodiscard]] QString shareUrl() const;
@@ -155,6 +157,7 @@ bool LoadFromFile(const QString &file, Instance *out, QByteArray *outContent);
 bool IsPaletteTestingPath(const QString &path);
 QColor CountAverageColor(const QImage &image);
 QColor AdjustedColor(QColor original, QColor background);
+QImage ProcessBackgroundImage(QImage image);
 
 struct BackgroundUpdate {
 	enum class Type {
