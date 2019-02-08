@@ -28,6 +28,7 @@ public:
 	[[nodiscard]] bool isCreator() const;
 	[[nodiscard]] bool isDark() const;
 	[[nodiscard]] bool isLocal() const;
+	[[nodiscard]] bool isBlurred() const;
 	[[nodiscard]] int patternIntensity() const;
 	[[nodiscard]] bool hasShareUrl() const;
 	[[nodiscard]] QString shareUrl() const;
@@ -38,6 +39,10 @@ public:
 
 	[[nodiscard]] WallPaper withUrlParams(
 		const QMap<QString, QString> &params) const;
+	[[nodiscard]] WallPaper withBlurred(bool blurred) const;
+	[[nodiscard]] WallPaper withPatternIntensity(int intensity) const;
+	[[nodiscard]] WallPaper withBackgroundColor(QColor color) const;
+	[[nodiscard]] WallPaper withParamsFrom(const WallPaper &other) const;
 
 	[[nodiscard]] static std::optional<WallPaper> Create(
 		const MTPWallPaper &data);
@@ -89,6 +94,7 @@ QImage PreparePatternImage(
 	QColor bg,
 	QColor fg,
 	int intensity);
+QImage PrepareBlurredBackground(QImage image);
 
 namespace details {
 
@@ -200,6 +206,9 @@ public:
 	void setTestingDefaultTheme();
 	void revert();
 
+	[[nodiscard]] Data::WallPaper paper() const {
+		return _paper;
+	}
 	[[nodiscard]] WallPaperId id() const {
 		return _paper.id();
 	}

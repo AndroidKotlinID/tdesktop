@@ -150,6 +150,10 @@ bool WallPaper::isLocal() const {
 	return !document() && thumbnail();
 }
 
+bool WallPaper::isBlurred() const {
+	return _settings & MTPDwallPaperSettings::Flag::f_blur;
+}
+
 int WallPaper::patternIntensity() const {
 	return _intensity;
 }
@@ -223,16 +227,64 @@ WallPaper WallPaper::withUrlParams(
 		}
 	}
 	if (const auto color = ColorFromString(params.value("bg_color"))) {
+		result._settings |= Flag::f_background_color;
 		result._backgroundColor = color;
 	}
 	if (const auto string = params.value("intensity"); !string.isEmpty()) {
 		auto ok = false;
 		const auto intensity = string.toInt(&ok);
 		if (ok && base::in_range(intensity, 0, 101)) {
+			result._settings |= Flag::f_intensity;
 			result._intensity = intensity;
 		}
 	}
 
+	return result;
+}
+
+WallPaper WallPaper::withBlurred(bool blurred) const {
+	using Flag = MTPDwallPaperSettings::Flag;
+
+	auto result = *this;
+	if (blurred) {
+		result._settings |= Flag::f_blur;
+	} else {
+		result._settings &= ~Flag::f_blur;
+	}
+	return result;
+}
+
+WallPaper WallPaper::withPatternIntensity(int intensity) const {
+	using Flag = MTPDwallPaperSettings::Flag;
+
+	auto result = *this;
+	result._settings |= Flag::f_intensity;
+	result._intensity = intensity;
+	return result;
+}
+
+WallPaper WallPaper::withBackgroundColor(QColor color) const {
+	using Flag = MTPDwallPaperSettings::Flag;
+
+	auto result = *this;
+	result._settings |= Flag::f_background_color;
+	result._backgroundColor = color;
+	if (ColorFromString(_slug)) {
+		result._slug = StringFromColor(color);
+	}
+	return result;
+}
+
+WallPaper WallPaper::withParamsFrom(const WallPaper &other) const {
+	auto result = *this;
+	result._settings = other._settings;
+	if (other._backgroundColor || !ColorFromString(_slug)) {
+		result._backgroundColor = other._backgroundColor;
+		if (ColorFromString(_slug)) {
+			result._slug = StringFromColor(*result._backgroundColor);
+		}
+	}
+	result._intensity = other._intensity;
 	return result;
 }
 
@@ -480,6 +532,19 @@ QImage PreparePatternImage(
 		resultInts += resultIntsAdded;
 	}
 	return image;
+}
+
+QImage PrepareBlurredBackground(QImage image) {
+	constexpr auto kSize = 900;
+	constexpr auto kRadius = 24;
+	if (image.width() > kSize || image.height() > kSize) {
+		image = image.scaled(
+			kSize,
+			kSize,
+			Qt::KeepAspectRatio,
+			Qt::SmoothTransformation);
+	}
+	return Images::BlurLargeImage(image, kRadius);
 }
 
 namespace details {
@@ -973,6 +1038,9 @@ void ChatBackground::setPreparedImage(QImage original, QImage prepared) {
 	Expects(prepared.width() > 0 && prepared.height() > 0);
 
 	_original = std::move(original);
+	if (!_paper.isPattern() && _paper.isBlurred()) {
+		prepared = Data::PrepareBlurredBackground(std::move(prepared));
+	}
 	if (adjustPaletteRequired()) {
 		adjustPaletteUsingBackground(prepared);
 	}
