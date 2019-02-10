@@ -476,7 +476,15 @@ void BackgroundPreviewBox::createBlurCheckbox() {
 }
 
 void BackgroundPreviewBox::apply() {
+	const auto install = (_paper.id() != Window::Theme::Background()->id())
+		&& Data::IsCloudWallPaper(_paper);
 	App::main()->setChatBackground(_paper, std::move(_full));
+	if (install) {
+		Auth().api().request(MTPaccount_InstallWallPaper(
+			_paper.mtpInput(),
+			_paper.mtpSettings()
+		)).send();
+	}
 	closeBox();
 }
 
@@ -511,9 +519,6 @@ void BackgroundPreviewBox::paintEvent(QPaintEvent *e) {
 void BackgroundPreviewBox::paintImage(Painter &p, TimeMs ms) {
 	Expects(!_scaled.isNull());
 
-	if (_paper.isPattern() && _paper.document() && _full.isNull()) {
-		return;
-	}
 	const auto master = _paper.isPattern()
 		? std::clamp(_paper.patternIntensity() / 100., 0., 1.)
 		: 1.;
@@ -695,7 +700,8 @@ std::optional<QColor> BackgroundPreviewBox::patternBackgroundColor() const {
 
 void BackgroundPreviewBox::checkLoadedDocument() {
 	const auto document = _paper.document();
-	if (!document
+	if (!_full.isNull()
+		|| !document
 		|| !document->loaded(DocumentData::FilePathResolveChecked)
 		|| _generating) {
 		return;
