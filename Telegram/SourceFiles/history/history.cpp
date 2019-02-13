@@ -2089,8 +2089,10 @@ void History::setLastMessage(HistoryItem *item) {
 	if (_lastMessage) {
 		if (*_lastMessage == item) {
 			return;
-		} else if (!IsServerMsgId((*_lastMessage)->id)
-				&& (*_lastMessage)->date() > item->date()) {
+		} else if (*_lastMessage
+			&& item
+			&& !IsServerMsgId((*_lastMessage)->id)
+			&& (*_lastMessage)->date() > item->date()) {
 			return;
 		}
 	}

@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/media_active_cache.h"
 #include "core/mime_type.h"
-#include "media/media_audio.h"
+#include "media/audio/media_audio.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
 #include "history/history.h"
@@ -722,14 +722,15 @@ void DocumentData::automaticLoad(
 	const auto filename = toCache
 		? QString()
 		: documentSaveFilename(this);
-	const auto shouldLoadFromCloud = item
-		? Data::AutoDownload::Should(
-			Auth().settings().autoDownload(),
-			item->history()->peer,
-			this)
-		: Data::AutoDownload::Should(
-			Auth().settings().autoDownload(),
-			this);
+	const auto shouldLoadFromCloud = !Data::IsExecutableName(filename)
+		&& (item
+			? Data::AutoDownload::Should(
+				Auth().settings().autoDownload(),
+				item->history()->peer,
+				this)
+			: Data::AutoDownload::Should(
+				Auth().settings().autoDownload(),
+				this));
 	const auto loadFromCloud = shouldLoadFromCloud
 		? LoadFromCloudOrLocal
 		: LoadFromLocalOnly;
