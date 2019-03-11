@@ -233,7 +233,7 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 	case QEvent::MouseButtonPress:
 	case QEvent::TouchBegin:
 	case QEvent::Wheel: {
-		psUserActionDone();
+		updateNonIdle();
 	} break;
 
 	case QEvent::ShortcutOverride: {
@@ -252,7 +252,7 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 
 	case QEvent::ApplicationActivate: {
 		if (object == QCoreApplication::instance()) {
-			psUserActionDone();
+			updateNonIdle();
 		}
 	} break;
 
@@ -839,6 +839,14 @@ void Application::clearPasscodeLock() {
 
 bool Application::passcodeLocked() const {
 	return _passcodeLock.current();
+}
+
+void Application::updateNonIdle() {
+	_lastNonIdleTime = crl::now();
+}
+
+crl::time Application::lastNonIdleTime() const {
+	return std::max(Platform::LastUserInputTime(), _lastNonIdleTime);
 }
 
 rpl::producer<bool> Application::passcodeLockChanges() const {
