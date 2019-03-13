@@ -1092,7 +1092,10 @@ void InnerWidget::savePhotoToFile(PhotoData *photo) {
 }
 
 void InnerWidget::saveDocumentToFile(DocumentData *document) {
-	DocumentSaveClickHandler::Save(Data::FileOrigin(), document, true);
+	DocumentSaveClickHandler::Save(
+		Data::FileOrigin(),
+		document,
+		DocumentSaveClickHandler::Mode::ToNewFile);
 }
 
 void InnerWidget::copyContextImage(PhotoData *photo) {

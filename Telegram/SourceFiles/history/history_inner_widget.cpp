@@ -1823,7 +1823,10 @@ void HistoryInner::showContextInFolder(not_null<DocumentData*> document) {
 void HistoryInner::saveDocumentToFile(
 		FullMsgId contextId,
 		not_null<DocumentData*> document) {
-	DocumentSaveClickHandler::Save(contextId, document, true);
+	DocumentSaveClickHandler::Save(
+		contextId,
+		document,
+		DocumentSaveClickHandler::Mode::ToNewFile);
 }
 
 void HistoryInner::openContextGif(FullMsgId itemId) {
@@ -3062,7 +3065,7 @@ QString HistoryInner::tooltipText() const {
 				if (const auto media = view->media()) {
 					if (media->hidesForwardedInfo()) {
 						dateText += "\n" + lng_forwarded(
-							lt_user, 
+							lt_user,
 							forwarded->originalSender->shortName());
 					}
 				}

@@ -391,12 +391,12 @@ BackgroundPreviewBox::BackgroundPreviewBox(
 	const Data::WallPaper &paper)
 : _text1(GenerateTextItem(
 	this,
-	Auth().data().history(peerFromUser(ServiceUserId)),
+	Auth().data().history(peerFromUser(PeerData::kServiceNotificationsId)),
 	lang(lng_background_text1),
 	false))
 , _text2(GenerateTextItem(
 	this,
-	Auth().data().history(peerFromUser(ServiceUserId)),
+	Auth().data().history(peerFromUser(PeerData::kServiceNotificationsId)),
 	lang(lng_background_text2),
 	true))
 , _paper(paper)
@@ -784,7 +784,7 @@ void BackgroundPreviewBox::elementAnimationAutoplayAsync(
 
 crl::time BackgroundPreviewBox::elementHighlightTime(
 		not_null<const Element*> element) {
-	return crl::time();
+	return crl::time(0);
 }
 
 bool BackgroundPreviewBox::elementInSelectionMode() {
