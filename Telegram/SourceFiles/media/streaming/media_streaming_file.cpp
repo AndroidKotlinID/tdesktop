@@ -12,6 +12,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Media {
 namespace Streaming {
+namespace {
+
+constexpr auto kMaxSingleReadAmount = 8 * 1024 * 1024;
+
+} // namespace
 
 File::Context::Context(
 	not_null<FileDelegate*> delegate,
@@ -32,7 +37,13 @@ int64_t File::Context::Seek(void *opaque, int64_t offset, int whence) {
 
 int File::Context::read(bytes::span buffer) {
 	const auto amount = std::min(size_type(_size - _offset), buffer.size());
-	if (unroll() || amount < 0) {
+	Assert(amount >= 0);
+
+	if (unroll()) {
+		return -1;
+	} else if (amount > kMaxSingleReadAmount) {
+		LOG(("Streaming Error: Read callback asked for too much data: %1"
+			).arg(amount));
 		return -1;
 	} else if (!amount) {
 		return amount;
@@ -135,13 +146,17 @@ Stream File::Context::initStream(
 	result.duration = (info->duration != AV_NOPTS_VALUE)
 		? PtsToTime(info->duration, result.timeBase)
 		: PtsToTime(format->duration, kUniversalTimeBase);
-	if (result.duration == kTimeUnknown || !result.duration) {
+	if (!result.duration) {
 		result.codec = nullptr;
-		return result;
+	} else if (result.duration == kTimeUnknown) {
+		result.duration = kDurationUnavailable;
+	} else {
+		++result.duration;
+		if (result.duration > kDurationMax) {
+			result.duration = 0;
+			result.codec = nullptr;
+		}
 	}
-	// We want duration to be greater than any valid frame position.
-	// That way we can handle looping by advancing position by n * duration.
-	++result.duration;
 	return result;
 }
 
@@ -152,6 +167,9 @@ void File::Context::seekToPosition(
 	auto error = AvErrorWrap();
 
 	if (!position) {
+		return;
+	} else if (stream.duration == kDurationUnavailable) {
+		// Seek in files with unknown duration is not supported.
 		return;
 	}
 	//

@@ -28,6 +28,7 @@ AudioTrack::AudioTrack(
 , _error(std::move(error))
 , _playPosition(options.position) {
 	Expects(_stream.duration > 1);
+	Expects(_stream.duration != kDurationUnavailable); // Not supported.
 	Expects(_ready != nullptr);
 	Expects(_error != nullptr);
 	Expects(_audioId.externalPlayId() != 0);
@@ -47,7 +48,9 @@ crl::time AudioTrack::streamDuration() const {
 }
 
 void AudioTrack::process(Packet &&packet) {
-	_noMoreData = packet.empty();
+	if (packet.empty()) {
+		_readTillEnd = true;
+	}
 	if (initialized()) {
 		mixerEnqueue(std::move(packet));
 	} else if (!tryReadFirstFrame(std::move(packet))) {
@@ -69,28 +72,40 @@ bool AudioTrack::tryReadFirstFrame(Packet &&packet) {
 	if (ProcessPacket(_stream, std::move(packet)).failed()) {
 		return false;
 	}
-	if (const auto error = ReadNextFrame(_stream)) {
-		if (error.code() == AVERROR_EOF) {
-			// Return the last valid frame if we seek too far.
-			return processFirstFrame();
-		} else if (error.code() != AVERROR(EAGAIN) || _noMoreData) {
+	while (true) {
+		if (const auto error = ReadNextFrame(_stream)) {
+			if (error.code() == AVERROR_EOF) {
+				if (!_initialSkippingFrame) {
+					return false;
+				}
+				// Return the last valid frame if we seek too far.
+				_stream.frame = std::move(_initialSkippingFrame);
+				return processFirstFrame();
+			} else if (error.code() != AVERROR(EAGAIN) || _readTillEnd) {
+				return false;
+			} else {
+				// Waiting for more packets.
+				return true;
+			}
+		} else if (!fillStateFromFrame()) {
 			return false;
-		} else {
-			// Waiting for more packets.
-			return true;
+		} else if (_startedPosition >= _options.position) {
+			return processFirstFrame();
 		}
-	} else if (!fillStateFromFrame()) {
-		return false;
-	} else if (_startedPosition < _options.position) {
+
 		// Seek was with AVSEEK_FLAG_BACKWARD so first we get old frames.
 		// Try skipping frames until one is after the requested position.
-		return true;
-	} else {
-		return processFirstFrame();
+		std::swap(_initialSkippingFrame, _stream.frame);
+		if (!_stream.frame) {
+			_stream.frame = MakeFramePointer();
+		}
 	}
 }
 
 bool AudioTrack::processFirstFrame() {
+	if (!FrameHasData(_stream.frame.get())) {
+		return false;
+	}
 	mixerInit();
 	callReady();
 	return true;
@@ -127,7 +142,7 @@ void AudioTrack::callReady() {
 	auto data = AudioInformation();
 	data.state.duration = _stream.duration;
 	data.state.position = _startedPosition;
-	data.state.receivedTill = _noMoreData
+	data.state.receivedTill = _readTillEnd
 		? _stream.duration
 		: _startedPosition;
 	base::take(_ready)({ VideoInformation(), data });

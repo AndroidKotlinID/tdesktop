@@ -412,6 +412,8 @@ int32 Video::resizeGetHeight(int32 width) {
 void Video::paint(Painter &p, const QRect &clip, TextSelection selection, const PaintContext *context) {
 	const auto selected = (selection == FullSelection);
 	const auto blurred = _data->thumbnailInline();
+	const auto goodLoaded = _data->goodThumbnail()
+		&& _data->goodThumbnail()->loaded();
 	const auto thumbLoaded = _data->hasThumbnail()
 		&& _data->thumbnail()->loaded();
 
@@ -424,12 +426,15 @@ void Video::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 		}
 	}
 	updateStatusText();
-	bool radial = isRadialAnimation(context->ms);
+	const auto radial = isRadialAnimation(context->ms);
+	const auto radialOpacity = radial ? _radial->opacity() : 0.;
 
-	if ((blurred || thumbLoaded)
+	if ((blurred || thumbLoaded || goodLoaded)
 		&& (_pix.width() != _width * cIntRetinaFactor())) {
 		auto size = _width * cIntRetinaFactor();
-		auto img = thumbLoaded
+		auto img = goodLoaded
+			? _data->goodThumbnail()->original()
+			: thumbLoaded
 			? _data->thumbnail()->original()
 			: Images::prepareBlur(blurred->original());
 		if (img.width() == img.height()) {
@@ -457,30 +462,30 @@ void Video::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 		p.fillRect(QRect(0, 0, _width, _height), st::overviewPhotoSelectOverlay);
 	}
 
-	if (!selected && !context->selecting && !loaded) {
+	if (!selected && !context->selecting && radialOpacity < 1.) {
 		if (clip.intersects(QRect(0, _height - st::normalFont->height, _width, st::normalFont->height))) {
-			int32 statusX = st::msgDateImgPadding.x(), statusY = _height - st::normalFont->height - st::msgDateImgPadding.y();
-			int32 statusW = st::normalFont->width(_status.text()) + 2 * st::msgDateImgPadding.x();
-			int32 statusH = st::normalFont->height + 2 * st::msgDateImgPadding.y();
-			statusX = _width - statusW + statusX;
-			p.fillRect(rtlrect(statusX - st::msgDateImgPadding.x(), statusY - st::msgDateImgPadding.y(), statusW, statusH, _width), selected ? st::msgDateImgBgSelected : st::msgDateImgBg);
+			const auto download = !loaded && !_data->canBePlayed();
+			const auto &icon = download
+				? (selected ? st::overviewVideoDownloadSelected : st::overviewVideoDownload)
+				: (selected ? st::overviewVideoPlaySelected : st::overviewVideoPlay);
+			const auto text = download ? _status.text() : _duration;
+			const auto margin = st::overviewVideoStatusMargin;
+			const auto padding = st::overviewVideoStatusPadding;
+			const auto statusX = margin + padding.x(), statusY = _height - margin - padding.y() - st::normalFont->height;
+			const auto statusW = icon.width() + padding.x() + st::normalFont->width(text) + 2 * padding.x();
+			const auto statusH = st::normalFont->height + 2 * padding.y();
+			p.setOpacity(1. - radialOpacity);
+			App::roundRect(p, statusX - padding.x(), statusY - padding.y(), statusW, statusH, selected ? st::msgDateImgBgSelected : st::msgDateImgBg, selected ? OverviewVideoSelectedCorners : OverviewVideoCorners);
 			p.setFont(st::normalFont);
 			p.setPen(st::msgDateImgFg);
-			p.drawTextLeft(statusX, statusY, _width, _status.text(), statusW - 2 * st::msgDateImgPadding.x());
+			icon.paint(p, statusX, statusY + (st::normalFont->height - icon.height()) / 2, _width);
+			p.drawTextLeft(statusX + icon.width() + padding.x(), statusY, _width, text, statusW - 2 * padding.x());
 		}
 	}
-	if (clip.intersects(QRect(0, 0, _width, st::normalFont->height))) {
-		int32 statusX = st::msgDateImgPadding.x(), statusY = st::msgDateImgPadding.y();
-		int32 statusW = st::normalFont->width(_duration) + 2 * st::msgDateImgPadding.x();
-		int32 statusH = st::normalFont->height + 2 * st::msgDateImgPadding.y();
-		p.fillRect(rtlrect(statusX - st::msgDateImgPadding.x(), statusY - st::msgDateImgPadding.y(), statusW, statusH, _width), selected ? st::msgDateImgBgSelected : st::msgDateImgBg);
-		p.setFont(st::normalFont);
-		p.setPen(st::msgDateImgFg);
-		p.drawTextLeft(statusX, statusY, _width, _duration, statusW - 2 * st::msgDateImgPadding.x());
-	}
 
-	QRect inner((_width - st::msgFileSize) / 2, (_height - st::msgFileSize) / 2, st::msgFileSize, st::msgFileSize);
-	if (clip.intersects(inner)) {
+	QRect inner((_width - st::overviewVideoRadialSize) / 2, (_height - st::overviewVideoRadialSize) / 2, st::overviewVideoRadialSize, st::overviewVideoRadialSize);
+	if (radial && clip.intersects(inner)) {
+		p.setOpacity(radialOpacity);
 		p.setPen(Qt::NoPen);
 		if (selected) {
 			p.setBrush(st::msgDateImgBgSelected);
@@ -494,14 +499,8 @@ void Video::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 			p.drawEllipse(inner);
 		}
 
-		p.setOpacity((radial && loaded) ? _radial->opacity() : 1);
 		const auto icon = [&] {
-			if (_data->loading() || _data->uploading()) {
-				return &(selected ? st::historyFileThumbCancelSelected : st::historyFileThumbCancel);
-			} else if (loaded || _data->canBePlayed()) {
-				return &(selected ? st::historyFileThumbPlaySelected : st::historyFileThumbPlay);
-			}
-			return &(selected ? st::historyFileThumbDownloadSelected : st::historyFileThumbDownload);
+			return &(selected ? st::historyFileThumbCancelSelected : st::historyFileThumbCancel);
 		}();
 		icon->paintInCenter(p, inner);
 		if (radial) {
@@ -510,6 +509,7 @@ void Video::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 			_radial->draw(p, rinner, st::msgFileRadialLine, selected ? st::historyFileThumbRadialFgSelected : st::historyFileThumbRadialFg);
 		}
 	}
+	p.setOpacity(1);
 
 	const auto checkDelta = st::overviewCheckSkip + st::overviewCheck.size;
 	const auto checkLeft = _width - checkDelta;
@@ -898,6 +898,13 @@ Document::Document(
 	}
 }
 
+bool Document::downloadInCorner() const {
+	return _data->isAudioFile()
+		&& _data->canBeStreamed()
+		&& !_data->inappPlaybackFailed()
+		&& IsServerMsgId(parent()->id);
+}
+
 void Document::initDimensions() {
 	_maxw = _st.maxWidth;
 	if (_data->isSong()) {
@@ -909,6 +916,8 @@ void Document::initDimensions() {
 
 void Document::paint(Painter &p, const QRect &clip, TextSelection selection, const PaintContext *context) {
 	bool selected = (selection == FullSelection);
+
+	const auto cornerDownload = downloadInCorner();
 
 	_data->automaticLoad(parent()->fullId(), parent());
 	bool loaded = _data->loaded(), displayLoading = _data->displayLoading();
@@ -938,7 +947,7 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 			if (selected) {
 				p.setBrush(st::msgFileInBgSelected);
 			} else {
-				auto over = ClickHandler::showAsActive((_data->loading() || _data->uploading()) ? _cancell : (loaded || _data->canBePlayed()) ? _openl : _savel);
+				auto over = ClickHandler::showAsActive((!cornerDownload && (_data->loading() || _data->uploading())) ? _cancell : (loaded || _data->canBePlayed()) ? _openl : _savel);
 				p.setBrush(anim::brush(_st.songIconBg, _st.songOverBg, _a_iconOver.current(context->ms, over ? 1. : 0.)));
 			}
 
@@ -947,14 +956,8 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 				p.drawEllipse(inner);
 			}
 
-			if (radial) {
-				auto rinner = inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine));
-				auto &bg = selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg;
-				_radial->draw(p, rinner, st::msgFileRadialLine, bg);
-			}
-
-			auto icon = [&] {
-				if (_data->loading() || _data->uploading()) {
+			const auto icon = [&] {
+				if (!cornerDownload && (_data->loading() || _data->uploading())) {
 					return &(selected ? _st.songCancelSelected : _st.songCancel);
 				} else if (showPause) {
 					return &(selected ? _st.songPauseSelected : _st.songPause);
@@ -964,6 +967,14 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 				return &(selected ? _st.songDownloadSelected : _st.songDownload);
 			}();
 			icon->paintInCenter(p, inner);
+
+			if (radial && !cornerDownload) {
+				auto rinner = inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine));
+				auto &bg = selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg;
+				_radial->draw(p, rinner, st::msgFileRadialLine, bg);
+			}
+
+			drawCornerDownload(p, selected, context);
 		}
 	} else {
 		nameleft = _st.fileThumbSize + _st.filePadding.right();
@@ -1073,6 +1084,56 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 	paintCheckbox(p, { checkLeft, checkTop }, selected, context);
 }
 
+void Document::drawCornerDownload(Painter &p, bool selected, const PaintContext *context) const {
+	if (_data->loaded() || !downloadInCorner()) {
+		return;
+	}
+	const auto size = st::overviewSmallCheck.size;
+	const auto shift = _st.songThumbSize + st::overviewCheckSkip - size;
+	const auto inner = rtlrect(_st.songPadding.left() + shift, _st.songPadding.top() + shift, size, size, _width);
+	auto pen = st::windowBg->p;
+	pen.setWidth(st::lineWidth);
+	p.setPen(pen);
+	if (selected) {
+		p.setBrush(st::msgFileInBgSelected);
+	} else {
+		p.setBrush(_st.songIconBg);
+	}
+	{
+		PainterHighQualityEnabler hq(p);
+		p.drawEllipse(inner);
+	}
+	const auto icon = [&] {
+		if (_data->loading()) {
+			return &(selected ? st::overviewSmallCancelSelected : st::overviewSmallCancel);
+		}
+		return &(selected ? st::overviewSmallDownloadSelected : st::overviewSmallDownload);
+	}();
+	icon->paintInCenter(p, inner);
+	if (_radial && _radial->animating()) {
+		const auto rinner = inner.marginsRemoved(QMargins(st::historyAudioRadialLine, st::historyAudioRadialLine, st::historyAudioRadialLine, st::historyAudioRadialLine));
+		auto fg = selected ? st::historyFileThumbRadialFgSelected : st::historyFileThumbRadialFg;
+		_radial->draw(p, rinner, st::historyAudioRadialLine, fg);
+	}
+}
+
+TextState Document::cornerDownloadTextState(
+		QPoint point,
+		StateRequest request) const {
+	auto result = TextState(parent());
+	if (!downloadInCorner() || _data->loaded()) {
+		return result;
+	}
+	const auto size = st::overviewSmallCheck.size;
+	const auto shift = _st.songThumbSize + st::overviewCheckSkip - size;
+	const auto inner = rtlrect(_st.songPadding.left() + shift, _st.songPadding.top() + shift, size, size, _width);
+	if (inner.contains(point)) {
+		result.link = _data->loading() ? _cancell : _savel;
+	}
+	return result;
+
+}
+
 TextState Document::getState(
 		QPoint point,
 		StateRequest request) const {
@@ -1087,6 +1148,10 @@ TextState Document::getState(
 			_name.maxWidth());
 		const auto nametop = _st.songNameTop;
 		const auto statustop = _st.songStatusTop;
+
+		if (const auto state = cornerDownloadTextState(point, request); state.link) {
+			return state;
+		}
 
 		const auto inner = rtlrect(
 			_st.songPadding.left(),

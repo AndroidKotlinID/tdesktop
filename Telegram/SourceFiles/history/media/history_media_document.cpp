@@ -86,6 +86,9 @@ void HistoryDocument::createComponents(bool caption) {
 		thumbed->_linksavel = std::make_shared<DocumentSaveClickHandler>(
 			_data,
 			_parent->data()->fullId());
+		thumbed->_linkopenwithl = std::make_shared<DocumentOpenWithClickHandler>(
+			_data,
+			_parent->data()->fullId());
 		thumbed->_linkcancell = std::make_shared<DocumentCancelClickHandler>(
 			_data,
 			_parent->data()->fullId());
@@ -203,6 +206,8 @@ QSize HistoryDocument::countCurrentSize(int newWidth) {
 void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
 
+	const auto cornerDownload = downloadInCorner();
+
 	_data->automaticLoad(_realParent->fullId(), _parent->data());
 	bool loaded = _data->loaded(), displayLoading = _data->displayLoading();
 	bool selected = (selection == FullSelection);
@@ -282,6 +287,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 		if (_data->status != FileUploadFailed) {
 			const auto &lnk = (_data->loading() || _data->uploading())
 				? thumbed->_linkcancell
+				: _data->loaded()
+				? thumbed->_linkopenwithl
 				: thumbed->_linksavel;
 			bool over = ClickHandler::showAsActive(lnk);
 			p.setFont(over ? st::semiboldFont->underline() : st::semiboldFont);
@@ -308,14 +315,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			p.drawEllipse(inner);
 		}
 
-		if (radial) {
-			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
-			auto fg = outbg ? (selected ? st::historyFileOutRadialFgSelected : st::historyFileOutRadialFg) : (selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg);
-			_animation->radial.draw(p, rinner, st::msgFileRadialLine, fg);
-		}
-
-		auto icon = [&] {
-			if (_data->loading() || _data->uploading()) {
+		const auto icon = [&] {
+			if (!cornerDownload && (_data->loading() || _data->uploading())) {
 				return &(outbg ? (selected ? st::historyFileOutCancelSelected : st::historyFileOutCancel) : (selected ? st::historyFileInCancelSelected : st::historyFileInCancel));
 			} else if (showPause) {
 				return &(outbg ? (selected ? st::historyFileOutPauseSelected : st::historyFileOutPause) : (selected ? st::historyFileInPauseSelected : st::historyFileInPause));
@@ -330,6 +331,14 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			return &(outbg ? (selected ? st::historyFileOutDownloadSelected : st::historyFileOutDownload) : (selected ? st::historyFileInDownloadSelected : st::historyFileInDownload));
 		}();
 		icon->paintInCenter(p, inner);
+
+		if (radial && !cornerDownload) {
+			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
+			auto fg = outbg ? (selected ? st::historyFileOutRadialFgSelected : st::historyFileOutRadialFg) : (selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg);
+			_animation->radial.draw(p, rinner, st::msgFileRadialLine, fg);
+		}
+
+		drawCornerDownload(p, selected);
 	}
 	auto namewidth = width() - nameleft - nameright;
 	auto statuswidth = namewidth;
@@ -444,6 +453,68 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 	}
 }
 
+bool HistoryDocument::downloadInCorner() const {
+	return _data->isAudioFile()
+		&& _data->canBeStreamed()
+		&& !_data->inappPlaybackFailed()
+		&& IsServerMsgId(_parent->data()->id);
+}
+
+void HistoryDocument::drawCornerDownload(Painter &p, bool selected) const {
+	if (_data->loaded() || !downloadInCorner()) {
+		return;
+	}
+	auto outbg = _parent->hasOutLayout();
+	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
+	const auto shift = st::historyAudioDownloadShift;
+	const auto size = st::historyAudioDownloadSize;
+	const auto inner = rtlrect(st::msgFilePadding.left() + shift, st::msgFilePadding.top() - topMinus + shift, size, size, width());
+	auto pen = (selected
+		? (outbg ? st::msgOutBgSelected : st::msgInBgSelected)
+		: (outbg ? st::msgOutBg : st::msgInBg))->p;
+	pen.setWidth(st::lineWidth);
+	p.setPen(pen);
+	if (selected) {
+		p.setBrush(outbg ? st::msgFileOutBgSelected : st::msgFileInBgSelected);
+	} else {
+		p.setBrush(outbg ? st::msgFileOutBg : st::msgFileInBg);
+	}
+	{
+		PainterHighQualityEnabler hq(p);
+		p.drawEllipse(inner);
+	}
+	const auto icon = [&] {
+		if (_data->loading()) {
+			return &(outbg ? (selected ? st::historyAudioOutCancelSelected : st::historyAudioOutCancel) : (selected ? st::historyAudioInCancelSelected : st::historyAudioInCancel));
+		}
+		return &(outbg ? (selected ? st::historyAudioOutDownloadSelected : st::historyAudioOutDownload) : (selected ? st::historyAudioInDownloadSelected : st::historyAudioInDownload));
+	}();
+	icon->paintInCenter(p, inner);
+	if (_animation && _animation->radial.animating()) {
+		const auto rinner = inner.marginsRemoved(QMargins(st::historyAudioRadialLine, st::historyAudioRadialLine, st::historyAudioRadialLine, st::historyAudioRadialLine));
+		auto fg = outbg ? (selected ? st::historyFileOutRadialFgSelected : st::historyFileOutRadialFg) : (selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg);
+		_animation->radial.draw(p, rinner, st::historyAudioRadialLine, fg);
+	}
+}
+
+TextState HistoryDocument::cornerDownloadTextState(
+		QPoint point,
+		StateRequest request) const {
+	auto result = TextState(_parent);
+	if (!downloadInCorner() || _data->loaded()) {
+		return result;
+	}
+	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
+	const auto shift = st::historyAudioDownloadShift;
+	const auto size = st::historyAudioDownloadSize;
+	const auto inner = rtlrect(st::msgFilePadding.left() + shift, st::msgFilePadding.top() - topMinus + shift, size, size, width());
+	if (inner.contains(point)) {
+		result.link = _data->loading() ? _cancell : _savel;
+	}
+	return result;
+
+}
+
 TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
 
@@ -474,6 +545,8 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 			if (rtlrect(nameleft, linktop, thumbed->_linkw, st::semiboldFont->height, width()).contains(point)) {
 				result.link = (_data->loading() || _data->uploading())
 					? thumbed->_linkcancell
+					: _data->loaded()
+					? thumbed->_linkopenwithl
 					: thumbed->_linksavel;
 				return result;
 			}
@@ -484,8 +557,11 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 		nametop = st::msgFileNameTop - topMinus;
 		bottom = st::msgFilePadding.top() + st::msgFileSize + st::msgFilePadding.bottom() - topMinus;
 
+		if (const auto state = cornerDownloadTextState(point, request); state.link) {
+			return state;
+		}
 		QRect inner(rtlrect(st::msgFilePadding.left(), st::msgFilePadding.top() - topMinus, st::msgFileSize, st::msgFileSize, width()));
-		if ((_data->loading() || _data->uploading()) && inner.contains(point)) {
+		if ((_data->loading() || _data->uploading()) && inner.contains(point) && !downloadInCorner()) {
 			result.link = _cancell;
 			return result;
 		}
@@ -523,7 +599,7 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 		}
 	}
 	if (QRect(0, 0, width(), painth).contains(point)
-		&& !_data->loading()
+		&& (!_data->loading() || downloadInCorner())
 		&& !_data->uploading()
 		&& !_data->isNull()) {
 		if (loaded || _data->canBePlayed()) {
