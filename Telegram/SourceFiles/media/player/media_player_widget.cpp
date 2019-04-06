@@ -62,7 +62,7 @@ Widget::PlayButton::PlayButton(QWidget *parent) : Ui::RippleButton(parent, st::m
 void Widget::PlayButton::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	paintRipple(p, st::mediaPlayerButton.rippleAreaPosition.x(), st::mediaPlayerButton.rippleAreaPosition.y(), crl::now());
+	paintRipple(p, st::mediaPlayerButton.rippleAreaPosition.x(), st::mediaPlayerButton.rippleAreaPosition.y());
 	p.translate(st::mediaPlayerButtonPosition.x(), st::mediaPlayerButtonPosition.y());
 	_layout.paint(p, st::mediaPlayerActiveFg);
 }
@@ -94,27 +94,27 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 	_nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 	_timeLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-	_playbackProgress->setInLoadingStateChangedCallback([this](bool loading) {
+	_playbackProgress->setInLoadingStateChangedCallback([=](bool loading) {
 		_playbackSlider->setDisabled(loading);
 	});
-	_playbackProgress->setValueChangedCallback([this](float64 value, float64) {
+	_playbackProgress->setValueChangedCallback([=](float64 value, float64) {
 		_playbackSlider->setValue(value);
 	});
-	_playbackSlider->setChangeProgressCallback([this](float64 value) {
+	_playbackSlider->setChangeProgressCallback([=](float64 value) {
 		if (_type != AudioMsgId::Type::Song) {
 			return; // Round video seek is not supported for now :(
 		}
 		_playbackProgress->setValue(value, false);
 		handleSeekProgress(value);
 	});
-	_playbackSlider->setChangeFinishedCallback([this](float64 value) {
+	_playbackSlider->setChangeFinishedCallback([=](float64 value) {
 		if (_type != AudioMsgId::Type::Song) {
 			return; // Round video seek is not supported for now :(
 		}
 		_playbackProgress->setValue(value, false);
 		handleSeekFinished(value);
 	});
-	_playPause->setClickedCallback([this] {
+	_playPause->setClickedCallback([=] {
 		instance()->playPauseCancelClicked(_type);
 	});
 
@@ -135,7 +135,7 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 	_playbackSpeed->setClickedCallback([=] {
 		const auto doubled = !Global::VoiceMsgPlaybackDoubled();
 		Global::SetVoiceMsgPlaybackDoubled(doubled);
-		mixer()->setVoicePlaybackDoubled(doubled);
+		instance()->updateVoicePlaybackSpeed();
 		updatePlaybackSpeedIcon();
 		Local::writeUserSettings();
 	});

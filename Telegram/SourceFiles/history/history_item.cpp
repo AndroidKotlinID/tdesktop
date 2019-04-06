@@ -493,7 +493,7 @@ bool HistoryItem::canDeleteForEveryone(TimeId now) const {
 	} else if (const auto user = peer->asUser()) {
 		// Bots receive all messages and there is no sense in revoking them.
 		// See https://github.com/telegramdesktop/tdesktop/issues/3818
-		if (user->botInfo) {
+		if (user->isBot() && !user->isSupport()) {
 			return false;
 		}
 	}
@@ -549,32 +549,7 @@ bool HistoryItem::suggestDeleteAllReport() const {
 }
 
 bool HistoryItem::hasDirectLink() const {
-	if (!IsServerMsgId(id)) {
-		return false;
-	}
-	if (auto channel = _history->peer->asChannel()) {
-		return channel->isPublic();
-	}
-	return false;
-}
-
-QString HistoryItem::directLink() const {
-	if (hasDirectLink()) {
-		auto channel = _history->peer->asChannel();
-		Assert(channel != nullptr);
-		auto query = channel->username + '/' + QString::number(id);
-		if (!channel->isMegagroup()) {
-			if (const auto media = this->media()) {
-				if (const auto document = media->document()) {
-					if (document->isVideoMessage()) {
-						return qsl("https://telesco.pe/") + query;
-					}
-				}
-			}
-		}
-		return Core::App().createInternalLinkFull(query);
-	}
-	return QString();
+	return IsServerMsgId(id) && _history->peer->isChannel();
 }
 
 ChannelId HistoryItem::channelId() const {
@@ -767,9 +742,6 @@ void HistoryItem::drawInDialog(
 HistoryItem::~HistoryItem() {
 	_history->owner().notifyItemRemoved(this);
 	App::historyUnregItem(this);
-	if (id < 0 && !App::quitting()) {
-		_history->session().uploader().cancel(fullId());
-	}
 }
 
 QDateTime ItemDateTime(not_null<const HistoryItem*> item) {

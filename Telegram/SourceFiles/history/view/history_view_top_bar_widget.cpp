@@ -100,20 +100,22 @@ TopBarWidget::TopBarWidget(
 	if (Adaptive::OneColumn()) {
 		createUnreadBadge();
 	}
-	Auth().data().sendActionAnimationUpdated(
-	) | rpl::start_with_next([=](
-			const Data::Session::SendActionAnimationUpdate &update) {
-		if (update.history == _activeChat.history()) {
-			this->update();
-		}
-	}, lifetime());
+	{
+		using AnimationUpdate = Data::Session::SendActionAnimationUpdate;
+		Auth().data().sendActionAnimationUpdated(
+		) | rpl::filter([=](const AnimationUpdate &update) {
+			return (update.history == _activeChat.history());
+		}) | rpl::start_with_next([=] {
+			update();
+		}, lifetime());
+	}
 
 	using UpdateFlag = Notify::PeerUpdate::Flag;
 	auto flags = UpdateFlag::UserHasCalls
 		| UpdateFlag::UserOnlineChanged
 		| UpdateFlag::MembersChanged
 		| UpdateFlag::UserSupportInfoChanged;
-	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(flags, [this](const Notify::PeerUpdate &update) {
+	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(flags, [=](const Notify::PeerUpdate &update) {
 		if (update.flags & UpdateFlag::UserHasCalls) {
 			if (update.peer->isUser()) {
 				updateControlsVisibility();
@@ -152,15 +154,15 @@ void TopBarWidget::updateConnectingState() {
 		}
 	} else if (!_connecting) {
 		_connecting = std::make_unique<Ui::InfiniteRadialAnimation>(
-			animation(this, &TopBarWidget::step_connecting),
+			[=] { connectingAnimationCallback(); },
 			st::topBarConnectingAnimation);
 		_connecting->start();
 		update();
 	}
 }
 
-void TopBarWidget::step_connecting(crl::time ms, bool timer) {
-	if (timer && !anim::Disabled()) {
+void TopBarWidget::connectingAnimationCallback() {
+	if (!anim::Disabled()) {
 		update();
 	}
 }
@@ -284,20 +286,17 @@ void TopBarWidget::paintEvent(QPaintEvent *e) {
 	}
 	Painter p(this);
 
-	auto ms = crl::now();
-	_forward->stepNumbersAnimation(ms);
-	_delete->stepNumbersAnimation(ms);
 	auto hasSelected = (_selectedCount > 0);
-	auto selectedButtonsTop = countSelectedButtonsTop(_selectedShown.current(crl::now(), hasSelected ? 1. : 0.));
+	auto selectedButtonsTop = countSelectedButtonsTop(_selectedShown.value(hasSelected ? 1. : 0.));
 
 	p.fillRect(QRect(0, 0, width(), st::topBarHeight), st::topBarBg);
 	if (selectedButtonsTop < 0) {
 		p.translate(0, selectedButtonsTop + st::topBarHeight);
-		paintTopBar(p, ms);
+		paintTopBar(p);
 	}
 }
 
-void TopBarWidget::paintTopBar(Painter &p, crl::time ms) {
+void TopBarWidget::paintTopBar(Painter &p) {
 	if (!_activeChat) {
 		return;
 	}
@@ -337,7 +336,7 @@ void TopBarWidget::paintTopBar(Painter &p, crl::time ms) {
 		history->peer->dialogName().drawElided(p, nameleft, nametop, namewidth);
 
 		p.setFont(st::dialogsTextFont);
-		if (paintConnectingState(p, nameleft, statustop, width(), ms)) {
+		if (paintConnectingState(p, nameleft, statustop, width())) {
 			return;
 		} else if (history->paintSendAction(
 				p,
@@ -346,7 +345,7 @@ void TopBarWidget::paintTopBar(Painter &p, crl::time ms) {
 				namewidth,
 				width(),
 				st::historyStatusFgTyping,
-				ms)) {
+				crl::now())) {
 			return;
 		} else {
 			paintStatus(p, nameleft, statustop, namewidth, width());
@@ -358,11 +357,7 @@ bool TopBarWidget::paintConnectingState(
 		Painter &p,
 		int left,
 		int top,
-		int outerWidth,
-		crl::time ms) {
-	if (_connecting) {
-		_connecting->step(ms);
-	}
+		int outerWidth) {
 	if (!_connecting) {
 		return false;
 	}
@@ -486,7 +481,7 @@ int TopBarWidget::countSelectedButtonsTop(float64 selectedShown) {
 
 void TopBarWidget::updateControlsGeometry() {
 	auto hasSelected = (_selectedCount > 0);
-	auto selectedButtonsTop = countSelectedButtonsTop(_selectedShown.current(hasSelected ? 1. : 0.));
+	auto selectedButtonsTop = countSelectedButtonsTop(_selectedShown.value(hasSelected ? 1. : 0.));
 	auto otherButtonsTop = selectedButtonsTop + st::topBarHeight;
 	auto buttonsLeft = st::topBarActionSkip + (Adaptive::OneColumn() ? 0 : st::lineWidth);
 	auto buttonsWidth = _forward->contentWidth() + _delete->contentWidth() + _clear->width();
@@ -542,7 +537,7 @@ void TopBarWidget::updateControlsGeometry() {
 }
 
 void TopBarWidget::finishAnimating() {
-	_selectedShown.finish();
+	_selectedShown.stop();
 	updateControlsVisibility();
 }
 

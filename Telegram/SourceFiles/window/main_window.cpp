@@ -202,12 +202,19 @@ void MainWindow::showTermsDecline() {
 
 void MainWindow::showTermsDelete() {
 	const auto box = std::make_shared<QPointer<BoxContent>>();
+	const auto deleteByTerms = [=] {
+		if (AuthSession::Exists()) {
+			Auth().termsDeleteNow();
+		} else {
+			Ui::hideLayer();
+		}
+	};
 	*box = Ui::show(
 		Box<ConfirmBox>(
 			lang(lng_terms_delete_warning),
 			lang(lng_terms_delete_now),
 			st::attentionBoxButton,
-			[=] { Core::App().termsDeleteNow(); },
+			deleteByTerms,
 			[=] { if (*box) (*box)->closeBox(); }),
 		LayerOption::KeepOther);
 }
@@ -266,8 +273,18 @@ void MainWindow::init() {
 	initHook();
 	updateWindowIcon();
 
-	connect(windowHandle(), &QWindow::activeChanged, this, [this] { handleActiveChanged(); }, Qt::QueuedConnection);
-	connect(windowHandle(), &QWindow::windowStateChanged, this, [this](Qt::WindowState state) { handleStateChanged(state); });
+	// Non-queued activeChanged handlers must use QtSignalProducer.
+	connect(
+		windowHandle(),
+		&QWindow::activeChanged,
+		this,
+		[=] { handleActiveChanged(); },
+		Qt::QueuedConnection);
+	connect(
+		windowHandle(),
+		&QWindow::windowStateChanged,
+		this,
+		[=](Qt::WindowState state) { handleStateChanged(state); });
 
 	updatePalette();
 
