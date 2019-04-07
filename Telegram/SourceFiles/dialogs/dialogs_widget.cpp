@@ -275,6 +275,8 @@ void DialogsWidget::updateScrollUpVisibility() {
 }
 
 void DialogsWidget::startScrollUpButtonAnimation(bool shown) {
+	const auto smallColumn = (width() < st::columnMinimalWidthLeft);
+	shown &= !smallColumn;
 	if (_scrollToTopIsShown == shown) {
 		return;
 	}
@@ -283,14 +285,14 @@ void DialogsWidget::startScrollUpButtonAnimation(bool shown) {
 		[=] { updateScrollUpPosition(); },
 		_scrollToTopIsShown ? 0. : 1.,
 		_scrollToTopIsShown ? 1. : 0.,
-		st::historyToDownDuration);
+		smallColumn ? 0 : st::historyToDownDuration);
 }
 
 void DialogsWidget::updateScrollUpPosition() {
 	// _scrollToTop is a child widget of _scroll, not me.
 	auto top = anim::interpolate(
 		0,
-		_scrollToTop->height() + st::historyToDownPosition.y(),
+		_scrollToTop->height() + st::connectingMargin.top(),
 		_scrollToTopShown.value(_scrollToTopIsShown ? 1. : 0.));
 	_scrollToTop->moveToRight(
 		st::historyToDownPosition.x(),
