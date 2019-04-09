@@ -46,7 +46,7 @@ public:
 		return !_caption.isEmpty();
 	}
 
-	TextWithEntities selectedText(TextSelection selection) const override;
+	TextForMimeData selectedText(TextSelection selection) const override;
 
 	bool uploading() const override;
 
@@ -57,7 +57,7 @@ public:
 	void stopAnimation() override;
 
 	TextWithEntities getCaption() const override {
-		return _caption.originalTextWithEntities();
+		return _caption.toTextWithEntities();
 	}
 	bool needsBubble() const override;
 	bool customInfoLayout() const override {

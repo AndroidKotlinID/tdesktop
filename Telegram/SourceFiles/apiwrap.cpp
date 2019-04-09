@@ -1661,6 +1661,9 @@ void ApiWrap::requestSelfParticipant(not_null<ChannelData*> channel) {
 	}
 
 	const auto finalize = [=](UserId inviter, TimeId inviteDate) {
+		if (inviter < 0) {
+			channel->markForbidden();
+		}
 		channel->inviter = inviter;
 		channel->inviteDate = inviteDate;
 		if (const auto history = _session->data().historyLoaded(channel)) {
@@ -2383,8 +2386,7 @@ void ApiWrap::clearHistory(not_null<PeerData*> peer, bool revoke) {
 		if (const auto last = history->chatListMessage()) {
 			Local::addSavedPeer(history->peer, ItemDateTime(last));
 		}
-		history->clear();
-		history->markFullyLoaded();
+		history->clear(History::ClearType::ClearHistory);
 	}
 	if (const auto channel = peer->asChannel()) {
 		if (const auto migrated = peer->migrateFrom()) {
@@ -4660,6 +4662,9 @@ void ApiWrap::editUploadedFile(
 	if (!item) {
 		return;
 	}
+	if (!item->media()) {
+		return;
+	}
 
 	auto sentEntities = TextUtilities::EntitiesToMTP(
 		item->originalText().entities,
@@ -4670,21 +4675,31 @@ void ApiWrap::editUploadedFile(
 	flagsEditMsg |= MTPmessages_EditMessage::Flag::f_entities;
 	flagsEditMsg |= MTPmessages_EditMessage::Flag::f_media;
 
-	MTPinputMedia media = MTP_inputMediaEmpty();
+	const auto media = [&]() -> std::optional<MTPInputMedia> {
+		if (!isDocument) {
+			if (!item->media()->photo()) {
+				return std::nullopt;
+			}
+			return MTP_inputMediaUploadedPhoto(
+				MTP_flags(0),
+				file,
+				MTPVector<MTPInputDocument>(),
+				MTP_int(0));
+		}
 
-	if (isDocument) {
 		const auto document = item->media()->document();
 		if (!document) {
-			return;
+			return std::nullopt;
 		}
 
 		const auto flags = MTPDinputMediaUploadedDocument::Flags(0)
 			| (thumb
 				? MTPDinputMediaUploadedDocument::Flag::f_thumb
 				: MTPDinputMediaUploadedDocument::Flag(0))
-			// Never edit video as gif.
-			| MTPDinputMediaUploadedDocument::Flag::f_nosound_video;
-		media = MTP_inputMediaUploadedDocument(
+			| (item->groupId()
+				? MTPDinputMediaUploadedDocument::Flag::f_nosound_video
+				: MTPDinputMediaUploadedDocument::Flag(0));
+		return MTP_inputMediaUploadedDocument(
 			MTP_flags(flags),
 			file,
 			thumb ? *thumb : MTPInputFile(),
@@ -4692,16 +4707,10 @@ void ApiWrap::editUploadedFile(
 			ComposeSendingDocumentAttributes(document),
 			MTPVector<MTPInputDocument>(),
 			MTP_int(0));
-	} else {
-		const auto photo = item->media()->photo();
-		if (!photo) {
-			return;
-		}
-		media = MTP_inputMediaUploadedPhoto(
-			MTP_flags(0),
-			file,
-			MTPVector<MTPInputDocument>(),
-			MTP_int(0));
+	}();
+
+	if (!media) {
+		return;
 	}
 
 	request(MTPmessages_EditMessage(
@@ -4709,7 +4718,7 @@ void ApiWrap::editUploadedFile(
 		item->history()->peer->input,
 		MTP_int(item->id),
 		MTP_string(item->originalText().text),
-		media,
+		*media,
 		MTPReplyMarkup(),
 		sentEntities
 	)).done([=](const MTPUpdates &result) {

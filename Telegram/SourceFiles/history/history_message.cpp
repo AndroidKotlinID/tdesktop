@@ -937,17 +937,13 @@ void HistoryMessage::applyEdition(const MTPDmessage &message) {
 
 void HistoryMessage::applyEdition(const MTPDmessageService &message) {
 	if (message.vaction.type() == mtpc_messageActionHistoryClear) {
-		applyEditionToEmpty();
+		setReplyMarkup(nullptr);
+		refreshMedia(nullptr);
+		setEmptyText();
+		setViewsCount(-1);
+
+		finishEditionToEmpty();
 	}
-}
-
-void HistoryMessage::applyEditionToEmpty() {
-	setReplyMarkup(nullptr);
-	refreshMedia(nullptr);
-	setEmptyText();
-	setViewsCount(-1);
-
-	finishEditionToEmpty();
 }
 
 void HistoryMessage::updateSentMedia(const MTPMessageMedia *media) {
@@ -1013,9 +1009,9 @@ Storage::SharedMediaTypesMask HistoryMessage::sharedMediaTypes() const {
 void HistoryMessage::setText(const TextWithEntities &textWithEntities) {
 	for_const (auto &entity, textWithEntities.entities) {
 		auto type = entity.type();
-		if (type == EntityInTextUrl
-			|| type == EntityInTextCustomUrl
-			|| type == EntityInTextEmail) {
+		if (type == EntityType::Url
+			|| type == EntityType::CustomUrl
+			|| type == EntityType::Email) {
 			_flags |= MTPDmessage_ClientFlag::f_has_text_links;
 			break;
 		}
@@ -1097,14 +1093,14 @@ TextWithEntities HistoryMessage::originalText() const {
 	if (emptyText()) {
 		return { QString(), EntitiesInText() };
 	}
-	return _text.originalTextWithEntities();
+	return _text.toTextWithEntities();
 }
 
-TextWithEntities HistoryMessage::clipboardText() const {
+TextForMimeData HistoryMessage::clipboardText() const {
 	if (emptyText()) {
-		return { QString(), EntitiesInText() };
+		return TextForMimeData();
 	}
-	return _text.originalTextWithEntities(AllTextSelection, ExpandLinksAll);
+	return _text.toTextForMimeData();
 }
 
 bool HistoryMessage::textHasLinks() const {

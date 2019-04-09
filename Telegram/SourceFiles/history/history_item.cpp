@@ -43,6 +43,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
+constexpr auto kNotificationTextLimit = 255;
+
 enum class MediaCheckResult {
 	Good,
 	Unsupported,
@@ -64,7 +66,7 @@ not_null<HistoryItem*> CreateUnsupportedMessage(
 	};
 	TextUtilities::ParseEntities(text, Ui::ItemTextNoMonoOptions().flags);
 	text.entities.push_front(
-		EntityInText(EntityInTextItalic, 0, text.text.size()));
+		EntityInText(EntityType::Italic, 0, text.text.size()));
 	flags &= ~MTPDmessage::Flag::f_post_author;
 	flags |= MTPDmessage_ClientFlag::f_is_unsupported;
 	return new HistoryMessage(
@@ -374,6 +376,21 @@ void HistoryItem::clearMainView() {
 void HistoryItem::addToUnreadMentions(UnreadMentionType type) {
 }
 
+void HistoryItem::applyEditionToHistoryCleared() {
+	const auto fromId = 0;
+	const auto replyToId = 0;
+	applyEdition(
+		MTP_messageService(
+			MTP_flags(0),
+			MTP_int(id),
+			MTP_int(fromId),
+			peerToMTP(history()->peer->id),
+			MTP_int(replyToId),
+			MTP_int(date()),
+			MTP_messageActionHistoryClear()
+		).c_messageService());
+}
+
 void HistoryItem::indexAsNewItem() {
 	if (IsServerMsgId(id)) {
 		CrashReports::SetAnnotation("addToUnreadMentions", QString::number(id));
@@ -671,20 +688,17 @@ bool HistoryItem::isEmpty() const {
 }
 
 QString HistoryItem::notificationText() const {
-	auto getText = [this]() {
+	const auto result = [&] {
 		if (_media) {
 			return _media->notificationText();
 		} else if (!emptyText()) {
-			return _text.originalText();
+			return _text.toString();
 		}
 		return QString();
-	};
-
-	auto result = getText();
-	if (result.size() > 0xFF) {
-		result = result.mid(0, 0xFF) + qsl("...");
-	}
-	return result;
+	}();
+	return (result.size() <= kNotificationTextLimit)
+		? result
+		: result.mid(0, kNotificationTextLimit) + qsl("...");
 }
 
 QString HistoryItem::inDialogsText(DrawInDialog way) const {
@@ -695,7 +709,7 @@ QString HistoryItem::inDialogsText(DrawInDialog way) const {
 			}
 			return _media->chatListText();
 		} else if (!emptyText()) {
-			return TextUtilities::Clean(_text.originalText());
+			return TextUtilities::Clean(_text.toString());
 		}
 		return QString();
 	};

@@ -188,6 +188,7 @@ public:
 	}
 	virtual void applyEdition(const MTPDmessageService &message) {
 	}
+	void applyEditionToHistoryCleared();
 	virtual void updateSentMedia(const MTPMessageMedia *media) {
 	}
 	virtual void updateReplyMarkup(const MTPReplyMarkup *markup) {
@@ -219,10 +220,10 @@ public:
 		return inDialogsText(DrawInDialog::WithoutSender);
 	}
 	virtual TextWithEntities originalText() const {
-		return { QString(), EntitiesInText() };
+		return TextWithEntities();
 	}
-	virtual TextWithEntities clipboardText() const {
-		return { QString(), EntitiesInText() };
+	virtual TextForMimeData clipboardText() const {
+		return TextForMimeData();
 	}
 
 	virtual void setViewsCount(int32 count) {

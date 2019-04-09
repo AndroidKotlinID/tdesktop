@@ -15,6 +15,8 @@ class Manager;
 class Basic final {
 public:
 	Basic() = default;
+	Basic(const Basic &other) = delete;
+	Basic &operator=(const Basic &other) = delete;
 
 	template <typename Callback>
 	explicit Basic(Callback &&callback);
@@ -99,9 +101,13 @@ class Manager final : private QObject {
 public:
 	Manager();
 
-	void update();
-
 private:
+	enum class UpdateSource {
+		Queued,
+		TimerEvent,
+		RepaintRequest,
+	};
+
 	class ActiveBasicPointer {
 	public:
 		ActiveBasicPointer(Basic *value = nullptr) : _value(value) {
@@ -149,19 +155,21 @@ private:
 	friend class Basic;
 
 	void timerEvent(QTimerEvent *e) override;
+	void update(UpdateSource source);
 
 	void start(not_null<Basic*> animation);
 	void stop(not_null<Basic*> animation);
 
-	void schedule();
 	void updateQueued();
+	void startTimer();
 	void stopTimer();
+	not_null<const QObject*> delayedCallGuard() const;
 
 	crl::time _lastUpdateTime = 0;
 	int _timerId = 0;
 	bool _updating = false;
-	bool _scheduled = false;
-	bool _forceImmediateUpdate = false;
+	bool _queued = false;
+	bool _forceUpdateProcessing = false;
 	std::vector<ActiveBasicPointer> _active;
 	std::vector<ActiveBasicPointer> _starting;
 	rpl::lifetime _lifetime;
