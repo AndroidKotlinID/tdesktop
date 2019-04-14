@@ -388,10 +388,15 @@ void EditCaptionBox::updateEditPreview() {
 
 	auto isGif = false;
 	auto shouldAsDoc = true;
+	auto docPhotoSize = QSize();
 	if (const auto image = base::get_if<Info::Image>(fileMedia)) {
 		shouldAsDoc = !Storage::ValidateThumbDimensions(
 			image->data.width(),
 			image->data.height());
+		if (shouldAsDoc) {
+			docPhotoSize.setWidth(image->data.width());
+			docPhotoSize.setHeight(image->data.height());
+		}
 		isGif = image->animated;
 		_animated = isGif;
 		_photo = !isGif && !shouldAsDoc;
@@ -429,6 +434,12 @@ void EditCaptionBox::updateEditPreview() {
 			fileinfo.size()
 				? fileinfo.size()
 				: _preparedList.files.front().content.size());
+		// Show image dimensions if it should be sent as doc.
+		if (_isImage) {
+			_status = qsl("%1x%2")
+				.arg(docPhotoSize.width())
+				.arg(docPhotoSize.height());
+		}
 		_doc = true;
 	}
 
@@ -629,6 +640,7 @@ bool EditCaptionBox::fileFromClipboard(not_null<const QMimeData*> data) {
 	if (!_isAllowedEditMedia) {
 		return false;
 	}
+	using Error = Storage::PreparedList::Error;
 
 	auto list = [&] {
 		auto url = QList<QUrl>();
@@ -642,9 +654,9 @@ bool EditCaptionBox::fileFromClipboard(not_null<const QMimeData*> data) {
 		auto result = canAddUrl
 			? Storage::PrepareMediaList(url, st::sendMediaPreviewSize)
 			: Storage::PreparedList(
-				Storage::PreparedList::Error::EmptyFile,
+				Error::EmptyFile,
 				QString());
-		if (result.error == Storage::PreparedList::Error::None) {
+		if (result.error == Error::None) {
 			return result;
 		} else if (data->hasImage()) {
 			auto image = qvariant_cast<QImage>(data->imageData());
@@ -659,10 +671,18 @@ bool EditCaptionBox::fileFromClipboard(not_null<const QMimeData*> data) {
 		}
 		return result;
 	}();
-	_preparedList = std::move(list);
-	if (_preparedList.files.empty()) {
+	if (list.error != Error::None || list.files.empty()) {
 		return false;
 	}
+	if (list.files.front().type == Storage::PreparedFile::AlbumType::None
+		&& _isAlbum) {
+		Ui::show(
+			Box<InformBox>(lang(lng_edit_media_album_error)),
+			LayerOption::KeepOther);
+		return false;
+	}
+
+	_preparedList = std::move(list);
 	updateEditPreview();
 	return true;
 }

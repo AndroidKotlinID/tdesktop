@@ -2191,13 +2191,11 @@ void History::setChatListMessage(HistoryItem *item) {
 		return;
 	}
 	if (item) {
-		if (_chatListMessage) {
-			if (!*_chatListMessage) {
-				Local::removeSavedPeer(peer);
-			} else if (!IsServerMsgId((*_chatListMessage)->id)
-				&& (*_chatListMessage)->date() > item->date()) {
-				return;
-			}
+		if (!_chatListMessage || !*_chatListMessage) {
+			Local::removeSavedPeer(peer);
+		} else if (!IsServerMsgId((*_chatListMessage)->id)
+			&& (*_chatListMessage)->date() > item->date()) {
+			return;
 		}
 		_chatListMessage = item;
 		setChatListTimeId(item->date());
@@ -2949,8 +2947,8 @@ void History::clear(ClearType type) {
 		changeUnreadCount(-unreadCount());
 		if (type == ClearType::DeleteChat) {
 			setLastMessage(nullptr);
-		} else {
-			if (_lastMessage && IsServerMsgId((*_lastMessage)->id)) {
+		} else if (_lastMessage && *_lastMessage) {
+			if (IsServerMsgId((*_lastMessage)->id)) {
 				(*_lastMessage)->applyEditionToHistoryCleared();
 			} else {
 				_lastMessage = std::nullopt;
