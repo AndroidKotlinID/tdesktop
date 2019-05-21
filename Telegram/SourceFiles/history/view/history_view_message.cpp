@@ -1797,8 +1797,8 @@ void Message::initTime() {
 		item->_timeWidth = st::msgDateFont->width(item->_timeText);
 	}
 	if (const auto views = item->Get<HistoryMessageViews>()) {
-		views->_viewsText = (views->_views >= 0)
-			? FormatViewsCount(views->_views)
+		views->_viewsText = (views->_views > 0)
+			? Lang::FormatCountToShort(views->_views).string
 			: QString();
 		views->_viewsWidth = views->_viewsText.isEmpty()
 			? 0
