@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_widget.h"
 #include "history/history_inner_widget.h"
+#include "main/main_account.h" // Account::sessionChanges.
 #include "storage/localstorage.h"
 #include "window/notifications_manager_default.h"
 #include "window/themes/window_theme.h"
@@ -94,11 +95,30 @@ private:
 
 #endif // OS_MAC_OLD
 
+class EventFilter : public QAbstractNativeEventFilter {
+public:
+	EventFilter(not_null<MainWindow*> window) : _window(window) {
+	}
+
+	bool nativeEventFilter(
+			const QByteArray &eventType,
+			void *message,
+			long *result) {
+		return Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+			return _window->psFilterNativeEvent(message);
+		});
+	}
+
+private:
+	not_null<MainWindow*> _window;
+
+};
+
 } // namespace
 
 class MainWindow::Private {
 public:
-	Private(MainWindow *window);
+	explicit Private(not_null<MainWindow*> window);
 
 	void setNativeWindow(NSWindow *window, NSView *view);
 	void setWindowBadge(const QString &str);
@@ -122,7 +142,7 @@ private:
 	void initCustomTitle();
 	void refreshWeakTitleReferences();
 
-	MainWindow *_public;
+	not_null<MainWindow*> _public;
 	friend class MainWindow;
 
 #ifdef OS_MAC_OLD
@@ -138,10 +158,12 @@ private:
 	bool _useNativeTitle = false;
 	bool _inFullScreen = false;
 
-	MainWindowObserver *_observer;
+	MainWindowObserver *_observer = nullptr;
 	NSPasteboard *_generalPasteboard = nullptr;
 	int _generalPasteboardChangeCount = -1;
 	bool _generalPasteboardHasText = false;
+
+	EventFilter _nativeEventFilter;
 
 };
 
@@ -186,9 +208,10 @@ private:
 
 namespace Platform {
 
-MainWindow::Private::Private(MainWindow *window)
+MainWindow::Private::Private(not_null<MainWindow*> window)
 : _public(window)
-, _observer([[MainWindowObserver alloc] init:this]) {
+, _observer([[MainWindowObserver alloc] init:this])
+, _nativeEventFilter(window) {
 	_generalPasteboard = [NSPasteboard generalPasteboard];
 
 	@autoreleasepool {
@@ -380,8 +403,12 @@ MainWindow::Private::~Private() {
 	[_observer release];
 }
 
-MainWindow::MainWindow()
-: _private(std::make_unique<Private>(this)) {
+MainWindow::MainWindow(not_null<Window::Controller*> controller)
+: Window::MainWindow(controller)
+, _private(std::make_unique<Private>(this)) {
+	QCoreApplication::instance()->installNativeEventFilter(
+		&_private->_nativeEventFilter);
+
 #ifndef OS_MAC_OLD
 	auto forceOpenGL = std::make_unique<QOpenGLWidget>(this);
 #endif // !OS_MAC_OLD
@@ -405,8 +432,9 @@ void MainWindow::initTouchBar() {
 		return;
 	}
 
-	subscribe(Core::App().authSessionChanged(), [this] {
-		if (AuthSession::Exists()) {
+	account().sessionValue(
+	) | rpl::start_with_next([=](AuthSession *session) {
+		if (session) {
 			// We need only common pinned dialogs.
 			if (!_private->_touchBar) {
 				if (auto view = reinterpret_cast<NSView*>(winId())) {
@@ -422,7 +450,7 @@ void MainWindow::initTouchBar() {
 			}
 			_private->_touchBar = nil;
 		}
-	});
+	}, lifetime());
 }
 
 void MainWindow::closeWithoutDestroy() {
@@ -638,15 +666,18 @@ void MainWindow::createGlobalMenu() {
 
 	QMenu *window = psMainMenu.addMenu(lang(lng_mac_menu_window));
 	psContacts = window->addAction(lang(lng_mac_menu_contacts));
-	connect(psContacts, &QAction::triggered, psContacts, [] {
-		if (App::wnd() && App::wnd()->isHidden()) App::wnd()->showFromTray();
-
-		if (!AuthSession::Exists()) return;
+	connect(psContacts, &QAction::triggered, psContacts, crl::guard(this, [=] {
+		if (isHidden()) {
+			App::wnd()->showFromTray();
+		}
+		if (!account().sessionExists()) {
+			return;
+		}
 		Ui::show(Box<PeerListBox>(std::make_unique<ContactsBoxController>(), [](not_null<PeerListBox*> box) {
 			box->addButton(langFactory(lng_close), [box] { box->closeBox(); });
 			box->addLeftButton(langFactory(lng_profile_add_contact), [] { App::wnd()->onShowAddContact(); });
 		}));
-	});
+	}));
 	psAddContact = window->addAction(lang(lng_mac_menu_add_contact), App::wnd(), SLOT(onShowAddContact()));
 	window->addSeparator();
 	psNewGroup = window->addAction(lang(lng_mac_menu_new_group), App::wnd(), SLOT(onShowNewGroup()));
@@ -731,10 +762,10 @@ void MainWindow::updateGlobalMenuHook() {
 		canDelete = list->canDeleteSelected();
 	}
 	App::wnd()->updateIsActive(0);
-	const auto logged = AuthSession::Exists();
+	const auto logged = account().sessionExists();
 	const auto locked = Core::App().locked();
 	const auto inactive = !logged || locked;
-	const auto support = logged && Auth().supportMode();
+	const auto support = logged && account().session().supportMode();
 	_forceDisabled(psLogout, !logged && !locked);
 	_forceDisabled(psUndo, !canUndo);
 	_forceDisabled(psRedo, !canRedo);
