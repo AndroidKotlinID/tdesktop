@@ -13,9 +13,11 @@
 #include "core/application.h"
 #include "core/sandbox.h"
 #include "data/data_folder.h"
+#include "data/data_peer_values.h"
 #include "data/data_session.h"
 #include "dialogs/dialogs_layout.h"
 #include "history/history.h"
+#include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "observer_peer.h"
@@ -37,6 +39,14 @@ constexpr auto kCommandPlaylistPrevious = 0x003;
 constexpr auto kCommandPlaylistNext = 0x004;
 constexpr auto kCommandClosePlayer = 0x005;
 
+constexpr auto kCommandBold = 0x010;
+constexpr auto kCommandItalic = 0x011;
+constexpr auto kCommandMonospace = 0x012;
+constexpr auto kCommandClear = 0x013;
+constexpr auto kCommandLink = 0x014;
+
+constexpr auto kCommandPopoverInput = 0x020;
+
 constexpr auto kMs = 1000;
 
 constexpr auto kSongType = AudioMsgId::Type::Song;
@@ -57,6 +67,13 @@ const NSTouchBarItemIdentifier kPreviousItemIdentifier = [NSString stringWithFor
 const NSTouchBarItemIdentifier kCommandClosePlayerItemIdentifier = [NSString stringWithFormat:@"%@.closePlayer", kCustomizationIdPlayer];
 const NSTouchBarItemIdentifier kCurrentPositionItemIdentifier = [NSString stringWithFormat:@"%@.currentPosition", kCustomizationIdPlayer];
 
+const NSTouchBarItemIdentifier kPopoverInputItemIdentifier = [NSString stringWithFormat:@"%@.popoverInput", kCustomizationIdMain];
+const NSTouchBarItemIdentifier kBoldItemIdentifier = [NSString stringWithFormat:@"%@.bold", kCustomizationIdMain];
+const NSTouchBarItemIdentifier kItalicItemIdentifier = [NSString stringWithFormat:@"%@.italic", kCustomizationIdMain];
+const NSTouchBarItemIdentifier kMonospaceItemIdentifier = [NSString stringWithFormat:@"%@.monospace", kCustomizationIdMain];
+const NSTouchBarItemIdentifier kClearItemIdentifier = [NSString stringWithFormat:@"%@.clear", kCustomizationIdMain];
+const NSTouchBarItemIdentifier kLinkItemIdentifier = [NSString stringWithFormat:@"%@.link", kCustomizationIdMain];
+
 NSImage *CreateNSImageFromStyleIcon(const style::icon &icon, int size = kIdealIconSize) {
 	const auto instance = icon.instance(QColor(255, 255, 255, 255), 100);
 	auto pixmap = QPixmap::fromImage(instance);
@@ -64,6 +81,10 @@ NSImage *CreateNSImageFromStyleIcon(const style::icon &icon, int size = kIdealIc
 	NSImage *image = [qt_mac_create_nsimage(pixmap) autorelease];
 	[image setSize:NSMakeSize(size, size)];
 	return image;
+}
+
+NSString *NSStringFromLang(LangKey key) {
+	return [NSString stringWithUTF8String:lang(key).toUtf8().constData()];
 }
 
 inline bool CurrentSongExists() {
@@ -75,13 +96,11 @@ inline bool UseEmptyUserpic(PeerData *peer) {
 }
 
 inline bool IsSelfPeer(PeerData *peer) {
-	return (peer && peer->id == Auth().userPeerId());
+	return (peer && peer->isSelf());
 }
 
 inline int UnreadCount(PeerData *peer) {
-	return (peer
-		&& AuthSession::Exists()
-		&& Auth().data().history(peer->id)->unreadCountForBadge());
+	return (peer && peer->owner().history(peer->id)->unreadCountForBadge());
 }
 
 NSString *FormatTime(int time) {
@@ -102,11 +121,11 @@ NSString *FormatTime(int time) {
 	return stringTime;
 }
 
-void PaintUnreadBadge(Painter &p, PeerData *peer) {
-	const auto history = Auth().data().history(peer->id);
+bool PaintUnreadBadge(Painter &p, PeerData *peer) {
+	const auto history = peer->owner().history(peer->id);
 	const auto count = history->unreadCountForBadge();
 	if (!count) {
-		return;
+		return false;
 	}
 	const auto unread = history->unreadMark()
 		? QString()
@@ -122,6 +141,59 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		unreadSt.font->flags(),
 		unreadSt.font->family());
 	Dialogs::Layout::paintUnreadCount(p, unread, kIdealIconSize, kIdealIconSize - unreadSt.size, unreadSt, nullptr, 2);
+	return true;
+}
+
+void PaintOnlineCircle(Painter &p) {
+	PainterHighQualityEnabler hq(p);
+	// Use constant values to draw online badge regardless of cConfigScale().
+	const auto size = 8;
+	const auto paddingSize = 4;
+	const auto circleSize = size + paddingSize;
+	const auto offset = size + paddingSize / 2;
+	p.setPen(Qt::NoPen);
+	p.setBrush(Qt::black);
+	p.drawEllipse(
+		kIdealIconSize - circleSize,
+		kIdealIconSize - circleSize,
+		circleSize,
+		circleSize);
+	p.setBrush(st::dialogsOnlineBadgeFg);
+	p.drawEllipse(
+		kIdealIconSize - offset,
+		kIdealIconSize - offset,
+		size,
+		size);
+}
+
+void SendKeyEvent(int command) {
+	QWidget *focused = QApplication::focusWidget();
+	if (!qobject_cast<QTextEdit*>(focused)) {
+		return;
+	}
+	auto key = 0;
+	auto modifier = Qt::KeyboardModifiers(0) | Qt::ControlModifier;
+	switch (command) {
+	case kCommandBold:
+		key = Qt::Key_B;
+		break;
+	case kCommandItalic:
+		key = Qt::Key_I;
+		break;
+	case kCommandMonospace:
+		key = Qt::Key_M;
+		modifier |= Qt::ShiftModifier;
+		break;
+	case kCommandClear:
+		key = Qt::Key_N;
+		modifier |= Qt::ShiftModifier;
+		break;
+	case kCommandLink:
+		key = Qt::Key_K;
+		break;
+	}
+	QApplication::postEvent(focused, new QKeyEvent(QEvent::KeyPress, key, modifier));
+	QApplication::postEvent(focused, new QKeyEvent(QEvent::KeyRelease, key, modifier));
 }
 
 } // namespace
@@ -188,7 +260,7 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		themeChanged
 	) | rpl::filter([=](const Update &update) {
 		return update.type == Update::Type::ApplyingTheme
-			&& UnreadCount(_peer);
+			&& (UnreadCount(_peer) || Data::IsPeerAnOnlineUser(_peer));
 	}) | rpl::start_with_next([=] {
 		[self updateBadge];
 	}, _lifetime);
@@ -233,6 +305,15 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 	) | rpl::start_with_next([=] {
 		[self updateBadge];
 	}, _peerChangedLifetime);
+
+	Notify::PeerUpdateViewer(
+		_peer,
+		Notify::PeerUpdate::Flag::UserOnlineChanged
+	) | rpl::filter([=] {
+		return UnreadCount(_peer) == 0;
+	}) | rpl::start_with_next([=] {
+		[self updateBadge];
+	}, _peerChangedLifetime);
 }
 
 - (void) buttonActionPin:(NSButton *)sender {
@@ -257,8 +338,8 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 	// Don't draw self userpic if we pin Saved Messages.
 	if (self.number <= kSavedMessagesId || IsSelfPeer(_peer)) {
 		const auto s = kIdealIconSize * cIntRetinaFactor();
-		auto *pixmap = new QPixmap(s, s);
-		Painter paint(pixmap);
+		_userpic = QPixmap(s, s);
+		Painter paint(&_userpic);
 		paint.fillRect(QRectF(0, 0, s, s), QColor(0, 0, 0, 255));
 
 		if (self.number == kArchiveId) {
@@ -268,8 +349,7 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		} else {
 			Ui::EmptyUserpic::PaintSavedMessages(paint, 0, 0, s, s);
 		}
-		pixmap->setDevicePixelRatio(cRetinaFactor());
-		_userpic = *pixmap;
+		_userpic.setDevicePixelRatio(cRetinaFactor());
 		[self updateImage:_userpic];
 		return;
 	}
@@ -284,9 +364,12 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 }
 
 - (void) updateBadge {
+	// Draw unread or online badge.
 	auto pixmap = App::pixmapFromImageInPlace(_userpic.toImage());
 	Painter p(&pixmap);
-	PaintUnreadBadge(p, _peer);
+	if (!PaintUnreadBadge(p, _peer) && Data::IsPeerAnOnlineUser(_peer)) {
+		PaintOnlineCircle(p);
+	}
 	[self updateImage:pixmap];
 }
 
@@ -363,6 +446,37 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		kCurrentPositionItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
 			@"type": @"text",
 			@"name": @"Current Position"
+		}],
+		kBoldItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
+			@"type":  @"textButton",
+			@"name":  NSStringFromLang(lng_menu_formatting_bold),
+			@"cmd":   [NSNumber numberWithInt:kCommandBold],
+		}],
+		kItalicItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
+			@"type":  @"textButton",
+			@"name":  NSStringFromLang(lng_menu_formatting_italic),
+			@"cmd":   [NSNumber numberWithInt:kCommandItalic],
+		}],
+		kMonospaceItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
+			@"type":  @"textButton",
+			@"name":  NSStringFromLang(lng_menu_formatting_monospace),
+			@"cmd":   [NSNumber numberWithInt:kCommandMonospace],
+		}],
+		kClearItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
+			@"type":  @"textButton",
+			@"name":  NSStringFromLang(lng_menu_formatting_clear),
+			@"cmd":   [NSNumber numberWithInt:kCommandClear],
+		}],
+		kLinkItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
+			@"type":  @"textButton",
+			@"name":  NSStringFromLang(lng_info_link_label),
+			@"cmd":   [NSNumber numberWithInt:kCommandLink],
+		}],
+		kPopoverInputItemIdentifier: [NSMutableDictionary dictionaryWithDictionary:@{
+			@"type":  @"popover",
+			@"name":  @"Input Field",
+			@"cmd":   [NSNumber numberWithInt:kCommandPopoverInput],
+			@"image": [NSImage imageNamed:NSImageNameTouchBarTextItalicTemplate],
 		}]
 	};
 
@@ -434,6 +548,14 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		item.customizationLabel = dictionaryItem[@"name"];
 		[dictionaryItem setObject:button forKey:@"view"];
 		return item;
+	} else if ([type isEqualToString:@"textButton"]) {
+		NSCustomTouchBarItem *item = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
+		NSButton *button = [NSButton buttonWithTitle:dictionaryItem[@"name"] target:self action:@selector(buttonAction:)];
+		button.tag = [dictionaryItem[@"cmd"] intValue];
+		item.view = button;
+		item.customizationLabel = dictionaryItem[@"name"];
+		[dictionaryItem setObject:button forKey:@"view"];
+		return item;
 	} else if ([type isEqualToString:@"text"]) {
 		NSCustomTouchBarItem *item = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
 		NSTextField *text = [NSTextField labelWithString:@"00:00 / 00:00"];
@@ -441,6 +563,24 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		item.view = text;
 		item.customizationLabel = dictionaryItem[@"name"];
 		[dictionaryItem setObject:text forKey:@"view"];
+		return item;
+	} else if ([type isEqualToString:@"popover"]) {
+		NSPopoverTouchBarItem *item = [[NSPopoverTouchBarItem alloc] initWithIdentifier:identifier];
+		item.collapsedRepresentationImage = dictionaryItem[@"image"];
+
+		NSTouchBar *secondaryTouchBar = [[NSTouchBar alloc] init];
+		secondaryTouchBar.delegate = self;
+		if ([dictionaryItem[@"cmd"] intValue] == kCommandPopoverInput) {
+			secondaryTouchBar.defaultItemIdentifiers = @[
+				kBoldItemIdentifier,
+				kItalicItemIdentifier,
+				kMonospaceItemIdentifier,
+				kLinkItemIdentifier,
+				kClearItemIdentifier];
+		}
+
+		item.pressAndHoldTouchBar = secondaryTouchBar;
+		item.popoverTouchBar = secondaryTouchBar;
 		return item;
 	} else if ([type isEqualToString:@"pinned"]) {
 		NSCustomTouchBarItem *item = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
@@ -510,6 +650,15 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 		[_parentView setTouchBar:nil];
 	}
 	_touchBarType = type;
+}
+
+- (void) showInputFieldItems:(bool)show {
+	NSMutableArray *items = [NSMutableArray arrayWithObject:kPinnedPanelItemIdentifier];
+	if (show) {
+		[items addObject:kPopoverInputItemIdentifier];
+		_touchBarMain.principalItemIdentifier = kPopoverInputItemIdentifier;
+	}
+	_touchBarMain.defaultItemIdentifiers = items;
 }
 
 // Main Touchbar.
@@ -669,6 +818,14 @@ void PaintUnreadBadge(Painter &p, PeerData *peer) {
 			break;
 		case kCommandClosePlayer:
 			App::main()->closeBothPlayers();
+			break;
+		// Input Field.
+		case kCommandBold:
+		case kCommandItalic:
+		case kCommandMonospace:
+		case kCommandClear:
+		case kCommandLink:
+			SendKeyEvent(command);
 			break;
 		}
 	});

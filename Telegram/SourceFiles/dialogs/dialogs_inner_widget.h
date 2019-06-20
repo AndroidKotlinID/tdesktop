@@ -25,6 +25,10 @@ namespace Window {
 class SessionController;
 } // namespace Window
 
+namespace Notify {
+struct PeerUpdate;
+} // namespace Notify
+
 namespace Dialogs {
 
 class Row;
@@ -204,6 +208,10 @@ private:
 	bool uniqueSearchResults() const;
 	bool hasHistoryInResults(not_null<History*> history) const;
 
+	int defaultRowTop(not_null<Row*> row) const;
+	void setupOnlineStatusCheck();
+	void userOnlineUpdated(const Notify::PeerUpdate &update);
+
 	void setupShortcuts();
 	RowDescriptor computeJump(
 		const RowDescriptor &to,
@@ -305,7 +313,7 @@ private:
 	std::vector<std::unique_ptr<CollapsedRow>> _collapsedRows;
 	int _collapsedSelected = -1;
 	int _collapsedPressed = -1;
-	int _skipByCollapsedRows = 0;
+	int _skipTopDialogs = 0;
 	Row *_selected = nullptr;
 	Row *_pressed = nullptr;
 
