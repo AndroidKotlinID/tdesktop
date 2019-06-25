@@ -39,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "ui/widgets/multi_select.h"
 #include "ui/empty_userpic.h"
+#include "ui/unread_badge.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_window.h"
@@ -105,7 +106,7 @@ InnerWidget::InnerWidget(
 , _pinnedShiftAnimation([=](crl::time now) {
 	return pinnedShiftAnimationCallback(now);
 })
-, _addContactLnk(this, lang(lng_add_contact_button))
+, _addContactLnk(this, tr::lng_add_contact_button(tr::now))
 , _cancelSearchInChat(this, st::dialogsCancelSearchInPeer)
 , _cancelSearchFromUser(this, st::dialogsCancelSearchInPeer) {
 
@@ -478,7 +479,12 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			p.fillRect(dialogsClip, st::dialogsBg);
 			p.setFont(st::noContactsFont);
 			p.setPen(st::noContactsColor);
-			p.drawText(QRect(0, 0, fullWidth, st::noContactsHeight - (session().data().contactsLoaded().current() ? st::noContactsFont->height : 0)), lang(session().data().contactsLoaded().current() ? lng_no_chats : lng_contacts_loading), style::al_center);
+			p.drawText(
+				QRect(0, 0, fullWidth, st::noContactsHeight - (session().data().contactsLoaded().current() ? st::noContactsFont->height : 0)),
+				(session().data().contactsLoaded().current()
+					? tr::lng_no_chats
+					: tr::lng_contacts_loading)(tr::now),
+				style::al_center);
 		}
 	} else if (_state == WidgetState::Filtered) {
 		if (!_hashtagResults.empty()) {
@@ -557,7 +563,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			p.fillRect(0, 0, fullWidth, st::searchedBarHeight, st::searchedBarBg);
 			p.setFont(st::searchedBarFont);
 			p.setPen(st::searchedBarFg);
-			p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), lang(lng_search_global_results));
+			p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), tr::lng_search_global_results(tr::now));
 			p.translate(0, st::searchedBarHeight);
 
 			auto skip = peerSearchOffset();
@@ -598,7 +604,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 					st::searchedBarPosition.x(),
 					st::searchedBarPosition.y(),
 					width(),
-					lang(lng_dlg_search_for_messages));
+					tr::lng_dlg_search_for_messages(tr::now));
 				p.translate(0, st::searchedBarHeight);
 			}
 		}
@@ -606,10 +612,11 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		const auto showUnreadInSearchResults = uniqueSearchResults();
 		if (!_waitingForSearch || !_searchResults.empty()) {
 			const auto text = _searchResults.empty()
-				? lang(lng_search_no_results)
+				? tr::lng_search_no_results(tr::now)
 				: showUnreadInSearchResults
 				? qsl("Search results")
-				: lng_search_found_results(
+				: tr::lng_search_found_results(
+					tr::now,
 					lt_count,
 					_searchedMigratedCount + _searchedCount);
 			p.fillRect(0, 0, fullWidth, st::searchedBarHeight, st::searchedBarBg);
@@ -676,8 +683,8 @@ void InnerWidget::paintCollapsedRow(
 	const auto text = row->folder
 		? row->folder->chatListName()
 		: (_mode == Dialogs::Mode::Important)
-		? (narrow ? "Show" : lang(lng_dialogs_show_all_chats))
-		: (narrow ? "Hide" : lang(lng_dialogs_hide_muted_chats));
+		? (narrow ? "Show" : tr::lng_dialogs_show_all_chats(tr::now))
+		: (narrow ? "Hide" : tr::lng_dialogs_hide_muted_chats(tr::now));
 	const auto unread = row->folder
 		? row->folder->chatListUnreadCount()
 		: (_mode == Dialogs::Mode::Important)
@@ -730,11 +737,25 @@ void InnerWidget::paintPeerSearchResult(
 		chatTypeIcon->paint(p, rectForName.topLeft(), fullWidth);
 		rectForName.setLeft(rectForName.left() + st::dialogsChatTypeSkip);
 	}
-	if (peer->isVerified()) {
-		auto icon = &(active ? st::dialogsVerifiedIconActive : (selected ? st::dialogsVerifiedIconOver : st::dialogsVerifiedIcon));
-		rectForName.setWidth(rectForName.width() - icon->width());
-		icon->paint(p, rectForName.topLeft() + QPoint(qMin(peer->dialogName().maxWidth(), rectForName.width()), 0), fullWidth);
-	}
+	const auto badgeStyle = Ui::PeerBadgeStyle{
+		(active
+			? &st::dialogsVerifiedIconActive
+			: selected
+			? &st::dialogsVerifiedIconOver
+			: &st::dialogsVerifiedIcon),
+		(active
+			? &st::dialogsScamFgActive
+			: selected
+			? &st::dialogsScamFgOver
+			: &st::dialogsScamFg) };
+	const auto badgeWidth = Ui::DrawPeerBadgeGetWidth(
+		peer,
+		p,
+		rectForName,
+		peer->nameText().maxWidth(),
+		fullWidth,
+		badgeStyle);
+	rectForName.setWidth(rectForName.width() - badgeWidth);
 
 	QRect tr(nameleft, st::dialogsPadding.y() + st::msgNameFont->height + st::dialogsSkip, namewidth, st::dialogsTextFont->height);
 	p.setFont(st::dialogsTextFont);
@@ -758,7 +779,7 @@ void InnerWidget::paintPeerSearchResult(
 	}
 
 	p.setPen(active ? st::dialogsTextFgActive : st::dialogsNameFg);
-	peer->dialogName().drawElided(p, rectForName.left(), rectForName.top(), rectForName.width());
+	peer->nameText().drawElided(p, rectForName.left(), rectForName.top(), rectForName.width());
 }
 
 void InnerWidget::paintSearchInChat(Painter &p) const {
@@ -768,7 +789,7 @@ void InnerWidget::paintSearchInChat(Painter &p) const {
 	p.fillRect(0, 0, width(), top, st::searchedBarBg);
 	p.setFont(st::searchedBarFont);
 	p.setPen(st::searchedBarFg);
-	p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), lang(lng_dlg_search_in));
+	p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), tr::lng_dlg_search_in(tr::now));
 
 	auto fullRect = QRect(0, top, width(), height - top);
 	p.fillRect(fullRect, st::dialogsBg);
@@ -802,7 +823,7 @@ void InnerWidget::paintSearchInFilter(
 		PaintUserpic paintUserpic,
 		int top,
 		const style::icon *icon,
-		const Text &text) const {
+		const Ui::Text::String &text) const {
 	const auto savedPen = p.pen();
 	const auto userpicLeft = st::dialogsPadding.x();
 	const auto userpicTop = top
@@ -838,7 +859,7 @@ void InnerWidget::paintSearchInPeer(
 		Painter &p,
 		not_null<PeerData*> peer,
 		int top,
-		const Text &text) const {
+		const Ui::Text::String &text) const {
 	const auto paintUserpic = [&](Painter &p, int x, int y, int size) {
 		peer->paintUserpicLeft(p, x, y, width(), size);
 	};
@@ -849,7 +870,7 @@ void InnerWidget::paintSearchInPeer(
 void InnerWidget::paintSearchInSaved(
 		Painter &p,
 		int top,
-		const Text &text) const {
+		const Ui::Text::String &text) const {
 	const auto paintUserpic = [&](Painter &p, int x, int y, int size) {
 		Ui::EmptyUserpic::PaintSavedMessages(p, x, y, width(), size);
 	};
@@ -860,7 +881,7 @@ void InnerWidget::paintSearchInSaved(
 //		Painter &p,
 //		not_null<Data::Feed*> feed,
 //		int top,
-//		const Text &text) const {
+//		const Ui::Text::String &text) const {
 //	const auto paintUserpic = [&](Painter &p, int x, int y, int size) {
 //		feed->paintUserpicLeft(p, x, y, width(), size);
 //	};
@@ -1693,6 +1714,21 @@ void InnerWidget::fillSupportSearchMenu(not_null<Ui::PopupMenu*> menu) {
 	});
 }
 
+void InnerWidget::fillArchiveSearchMenu(not_null<Ui::PopupMenu*> menu) {
+	const auto folder = session().data().folderLoaded(Data::Folder::kId);
+	if (!folder || !folder->chatsListSize() || _searchInChat) {
+		return;
+	}
+	const auto skip = session().settings().skipArchiveInSearch();
+	const auto text = skip
+		? tr::lng_dialogs_show_archive_in_search(tr::now)
+		: tr::lng_dialogs_skip_archive_in_search(tr::now);
+	menu->addAction(text, [=] {
+		session().settings().setSkipArchiveInSearch(!skip);
+		session().saveSettingsDelayed();
+	});
+}
+
 void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 	_menu = nullptr;
 
@@ -1712,8 +1748,7 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 		} else if (_state == WidgetState::Filtered) {
 			if (base::in_range(_filteredSelected, 0, _filterResults.size())) {
 				return { _filterResults[_filteredSelected]->key(), FullMsgId() };
-			} else if (session().supportMode()
-				&& base::in_range(_searchedSelected, 0, _searchResults.size())) {
+			} else if (base::in_range(_searchedSelected, 0, _searchResults.size())) {
 				return {
 					_searchResults[_searchedSelected]->item()->history(),
 					_searchResults[_searchedSelected]->item()->fullId()
@@ -1730,8 +1765,12 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 	}
 
 	_menu = base::make_unique_q<Ui::PopupMenu>(this);
-	if (session().supportMode() && row.fullId) {
-		fillSupportSearchMenu(_menu.get());
+	if (row.fullId) {
+		if (session().supportMode()) {
+			fillSupportSearchMenu(_menu.get());
+		} else {
+			fillArchiveSearchMenu(_menu.get());
+		}
 	} else if (const auto history = row.key.history()) {
 		Window::FillPeerMenu(
 			_controller,
@@ -2207,7 +2246,7 @@ void InnerWidget::refreshSearchInChatLabel() {
 	const auto dialog = [&] {
 		if (const auto peer = _searchInChat.peer()) {
 			if (peer->isSelf()) {
-				return lang(lng_saved_messages);
+				return tr::lng_saved_messages(tr::now);
 			}
 			return peer->name;
 		//} else if (const auto feed = _searchInChat.feed()) { // #feed
@@ -2228,7 +2267,8 @@ void InnerWidget::refreshSearchInChatLabel() {
 		return QString();
 	}();
 	if (!from.isEmpty()) {
-		const auto fromUserText = lng_dlg_search_from(
+		const auto fromUserText = tr::lng_dlg_search_from(
+			tr::now,
 			lt_user,
 			textcmdLink(1, from));
 		_searchFromUserText.setText(

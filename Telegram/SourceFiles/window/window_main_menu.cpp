@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/widgets/menu.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/text/text_utilities.h"
 #include "ui/special_buttons.h"
 #include "ui/empty_userpic.h"
 #include "mainwindow.h"
@@ -58,7 +59,7 @@ bool IsShadowShown(const QImage &img, const QRect r, float64 intensityText) {
 	return false;
 }
 
-}
+} // namespace
 
 namespace Window {
 
@@ -167,7 +168,7 @@ MainMenu::MainMenu(
 		}
 		_contextMenu = base::make_unique_q<Ui::PopupMenu>(this);
 		_contextMenu->addAction(
-			lang(lng_context_archive_to_list), [=] {
+			tr::lng_context_archive_to_list(tr::now), [=] {
 			_controller->session().settings().setArchiveInMainMenu(false);
 			_controller->session().saveSettingsDelayed();
 			Ui::hideSettingsAndLayer();
@@ -192,9 +193,11 @@ MainMenu::MainMenu(
 	refreshMenu();
 	refreshBackground();
 
-	_telegram->setRichText(textcmdLink(1, qsl("Telegram Desktop")));
-	_telegram->setLink(1, std::make_shared<UrlClickHandler>(qsl("https://desktop.telegram.org")));
-	_version->setRichText(textcmdLink(1, lng_settings_current_version(lt_version, currentVersionText())) + QChar(' ') + QChar(8211) + QChar(' ') + textcmdLink(2, lang(lng_menu_about)));
+	_telegram->setMarkedText(Ui::Text::Link(
+		qsl("Telegram Desktop"),
+		qsl("https://desktop.telegram.org")));
+	_telegram->setLinksTrusted();
+	_version->setRichText(textcmdLink(1, tr::lng_settings_current_version(tr::now, lt_version, currentVersionText())) + QChar(' ') + QChar(8211) + QChar(' ') + textcmdLink(2, tr::lng_menu_about(tr::now)));
 	_version->setLink(1, std::make_shared<UrlClickHandler>(qsl("https://desktop.telegram.org/changelog")));
 	_version->setLink(2, std::make_shared<LambdaClickHandler>([] { Ui::show(Box<AboutBox>()); }));
 
@@ -228,22 +231,22 @@ MainMenu::MainMenu(
 void MainMenu::refreshMenu() {
 	_menu->clearActions();
 	if (!Auth().supportMode()) {
-		_menu->addAction(lang(lng_create_group_title), [] {
+		_menu->addAction(tr::lng_create_group_title(tr::now), [] {
 			App::wnd()->onShowNewGroup();
 		}, &st::mainMenuNewGroup, &st::mainMenuNewGroupOver);
-		_menu->addAction(lang(lng_create_channel_title), [] {
+		_menu->addAction(tr::lng_create_channel_title(tr::now), [] {
 			App::wnd()->onShowNewChannel();
 		}, &st::mainMenuNewChannel, &st::mainMenuNewChannelOver);
-		_menu->addAction(lang(lng_menu_contacts), [] {
+		_menu->addAction(tr::lng_menu_contacts(tr::now), [] {
 			Ui::show(Box<PeerListBox>(std::make_unique<ContactsBoxController>(), [](not_null<PeerListBox*> box) {
-				box->addButton(langFactory(lng_close), [box] { box->closeBox(); });
-				box->addLeftButton(langFactory(lng_profile_add_contact), [] { App::wnd()->onShowAddContact(); });
+				box->addButton(tr::lng_close(), [box] { box->closeBox(); });
+				box->addLeftButton(tr::lng_profile_add_contact(), [] { App::wnd()->onShowAddContact(); });
 			}));
 		}, &st::mainMenuContacts, &st::mainMenuContactsOver);
 		if (Global::PhoneCallsEnabled()) {
-			_menu->addAction(lang(lng_menu_calls), [] {
+			_menu->addAction(tr::lng_menu_calls(tr::now), [] {
 				Ui::show(Box<PeerListBox>(std::make_unique<Calls::BoxController>(), [](not_null<PeerListBox*> box) {
-					box->addButton(langFactory(lng_close), [=] {
+					box->addButton(tr::lng_close(), [=] {
 						box->closeBox();
 					});
 					box->addTopButton(st::callSettingsButton, [=] {
@@ -255,7 +258,7 @@ void MainMenu::refreshMenu() {
 			}, &st::mainMenuCalls, &st::mainMenuCallsOver);
 		}
 	} else {
-		_menu->addAction(lang(lng_profile_add_contact), [] {
+		_menu->addAction(tr::lng_profile_add_contact(tr::now), [] {
 			App::wnd()->onShowAddContact();
 		}, &st::mainMenuContacts, &st::mainMenuContactsOver);
 
@@ -272,12 +275,12 @@ void MainMenu::refreshMenu() {
 			Auth().supportTemplates().reload();
 		}, &st::mainMenuReload, &st::mainMenuReloadOver);
 	}
-	_menu->addAction(lang(lng_menu_settings), [] {
+	_menu->addAction(tr::lng_menu_settings(tr::now), [] {
 		App::wnd()->showSettings();
 	}, &st::mainMenuSettings, &st::mainMenuSettingsOver);
 
 	_nightThemeAction = std::make_shared<QPointer<QAction>>();
-	auto action = _menu->addAction(lang(lng_menu_night_mode), [=] {
+	auto action = _menu->addAction(tr::lng_menu_night_mode(tr::now), [=] {
 		if (auto action = *_nightThemeAction) {
 			action->setChecked(!action->isChecked());
 			_nightThemeSwitch.callOnce(st::mainMenu.itemToggle.duration);
@@ -332,7 +335,7 @@ void MainMenu::refreshBackground() {
 		st::mainMenuCoverTextLeft,
 		st::mainMenuCoverNameTop,
 		std::max(
-			st::semiboldFont->width(Auth().user()->nameText.toString()),
+			st::semiboldFont->width(Auth().user()->nameText().toString()),
 			st::normalFont->width(_phoneText)),
 		st::semiboldFont->height * 2);
 
@@ -405,7 +408,7 @@ void MainMenu::paintEvent(QPaintEvent *e) {
 		}
 		p.setPen(st::mainMenuCoverFg);
 		p.setFont(st::semiboldFont);
-		Auth().user()->nameText.drawLeftElided(
+		Auth().user()->nameText().drawLeftElided(
 			p,
 			st::mainMenuCoverTextLeft,
 			st::mainMenuCoverNameTop,

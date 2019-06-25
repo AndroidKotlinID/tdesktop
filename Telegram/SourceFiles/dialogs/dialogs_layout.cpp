@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "ui/empty_userpic.h"
 #include "ui/text_options.h"
+#include "ui/unread_badge.h"
 #include "lang/lang_keys.h"
 #include "support/support_helper.h"
 #include "history/history_item_components.h"
@@ -295,7 +296,7 @@ void paintRow(
 	const auto promoted = (history && history->useProxyPromotion())
 		&& !(flags & (Flag::SearchResult/* | Flag::FeedSearchResult*/)); // #feed
 	if (promoted) {
-		const auto text = lang(lng_proxy_sponsor);
+		const auto text = tr::lng_proxy_sponsor(tr::now);
 		PaintRowTopRight(p, text, rectForName, active, selected);
 	} else if (from/* && !(flags & Flag::FeedSearchResult)*/) { // #feed
 		if (const auto chatTypeIcon = ChatTypeIcon(from, active, selected)) {
@@ -329,10 +330,10 @@ void paintRow(
 		auto &color = active ? st::dialogsTextFgServiceActive : (selected ? st::dialogsTextFgServiceOver : st::dialogsTextFgService);
 		if (history && !history->paintSendAction(p, nameleft, texttop, availableWidth, fullWidth, color, ms)) {
 			if (history->cloudDraftTextCache.isEmpty()) {
-				auto draftWrapped = textcmdLink(1, lng_dialogs_text_from_wrapped(lt_from, lang(lng_from_draft)));
+				auto draftWrapped = textcmdLink(1, tr::lng_dialogs_text_from_wrapped(tr::now, lt_from, tr::lng_from_draft(tr::now)));
 				auto draftText = supportMode
 					? textcmdLink(1, Support::ChatOccupiedString(history))
-					: lng_dialogs_text_with_from(lt_from_part, draftWrapped, lt_message, TextUtilities::Clean(draft->textWithTags.text));
+					: tr::lng_dialogs_text_with_from(tr::now, lt_from_part, draftWrapped, lt_message, TextUtilities::Clean(draft->textWithTags.text));
 				history->cloudDraftTextCache.setText(st::dialogsTextStyle, draftText, Ui::DialogTextOptions());
 			}
 			p.setPen(active ? st::dialogsTextFgActive : (selected ? st::dialogsTextFgOver : st::dialogsTextFg));
@@ -406,27 +407,47 @@ void paintRow(
 		sendStateIcon->paint(p, rectForName.topLeft() + QPoint(rectForName.width(), 0), fullWidth);
 	}
 
-	const auto nameFg = active
-		? st::dialogsNameFgActive
-		: (selected
-			? st::dialogsNameFgOver
-			: st::dialogsNameFg);
-	p.setPen(nameFg);
 	if (flags & Flag::SavedMessages) {
-		p.setFont(st::msgNameFont);
-		auto text = lang(lng_saved_messages);
-		auto textWidth = st::msgNameFont->width(text);
+		auto text = tr::lng_saved_messages(tr::now);
+		const auto textWidth = st::msgNameFont->width(text);
 		if (textWidth > rectForName.width()) {
 			text = st::msgNameFont->elided(text, rectForName.width());
 		}
+		p.setFont(st::msgNameFont);
+		p.setPen(active
+			? st::dialogsNameFgActive
+			: selected
+			? st::dialogsNameFgOver
+			: st::dialogsNameFg);
 		p.drawTextLeft(rectForName.left(), rectForName.top(), fullWidth, text);
 	} else if (from) {
-		if (!(flags & Flag::SearchResult) && from->isVerified()) {
-			auto icon = &(active ? st::dialogsVerifiedIconActive : (selected ? st::dialogsVerifiedIconOver : st::dialogsVerifiedIcon));
-			rectForName.setWidth(rectForName.width() - icon->width());
-			icon->paint(p, rectForName.topLeft() + QPoint(qMin(from->dialogName().maxWidth(), rectForName.width()), 0), fullWidth);
+		if (!(flags & Flag::SearchResult)) {
+			const auto badgeStyle = Ui::PeerBadgeStyle{
+				(active
+					? &st::dialogsVerifiedIconActive
+					: selected
+					? &st::dialogsVerifiedIconOver
+					: &st::dialogsVerifiedIcon),
+				(active
+					? &st::dialogsScamFgActive
+					: selected
+					? &st::dialogsScamFgOver
+					: &st::dialogsScamFg) };
+			const auto badgeWidth = Ui::DrawPeerBadgeGetWidth(
+				from,
+				p,
+				rectForName,
+				from->nameText().maxWidth(),
+				fullWidth,
+				badgeStyle);
+			rectForName.setWidth(rectForName.width() - badgeWidth);
 		}
-		from->dialogName().drawElided(p, rectForName.left(), rectForName.top(), rectForName.width());
+		p.setPen(active
+			? st::dialogsNameFgActive
+			: selected
+			? st::dialogsNameFgOver
+			: st::dialogsNameFg);
+		from->nameText().drawElided(p, rectForName.left(), rectForName.top(), rectForName.width());
 	} else if (hiddenSenderInfo) {
 		hiddenSenderInfo->nameText.drawElided(p, rectForName.left(), rectForName.top(), rectForName.width());
 	} else {
