@@ -509,8 +509,8 @@ private:
 	void applyInlineBotQuery(UserData *bot, const QString &query);
 
 	void cancelReplyAfterMediaSend(bool lastKeyboardUsed);
-	void replyToPreviousMessage();
-	void replyToNextMessage();
+	bool replyToPreviousMessage();
+	bool replyToNextMessage();
 	[[nodiscard]] bool showSlowmodeError();
 
 	void hideSelectorControlsAnimated();
