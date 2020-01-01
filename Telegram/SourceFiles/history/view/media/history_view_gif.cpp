@@ -111,7 +111,9 @@ QSize Gif::countOptimalSize() {
 			_parent->skipBlockHeight());
 	}
 
-	const auto maxSize = _data->isVideoMessage()
+	const auto maxSize = _data->isVideoFile()
+		? st::maxMediaSize
+		: _data->isVideoMessage()
 		? st::maxVideoMessageSize
 		: st::maxGifSize;
 	const auto size = style::ConvertScale(videoSize());
@@ -160,7 +162,9 @@ QSize Gif::countOptimalSize() {
 QSize Gif::countCurrentSize(int newWidth) {
 	auto availableWidth = newWidth;
 
-	const auto maxSize = _data->isVideoMessage()
+	const auto maxSize = _data->isVideoFile()
+		? st::maxMediaSize
+		: _data->isVideoMessage()
 		? st::maxVideoMessageSize
 		: st::maxGifSize;
 	const auto size = style::ConvertScale(videoSize());
@@ -1339,7 +1343,7 @@ void Gif::startStreamedPlayer() const {
 }
 
 void Gif::checkStreamedIsStarted() const {
-	if (!_streamed) {
+	if (!_streamed || _streamed->instance.playerLocked()) {
 		return;
 	} else if (_streamed->instance.paused()) {
 		_streamed->instance.resume();
