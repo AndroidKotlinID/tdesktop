@@ -577,6 +577,11 @@ bool InnerWidget::elementIntersectsRange(
 void InnerWidget::elementStartStickerLoop(not_null<const Element*> view) {
 }
 
+void InnerWidget::elementShowPollResults(
+	not_null<PollData*> poll,
+	FullMsgId context) {
+}
+
 void InnerWidget::saveState(not_null<SectionMemento*> memento) {
 	memento->setFilter(std::move(_filter));
 	memento->setAdmins(std::move(_admins));
@@ -1702,7 +1707,9 @@ void InnerWidget::repaintItem(const Element *view) {
 	if (!view) {
 		return;
 	}
-	update(0, itemTop(view), width(), view->height());
+	const auto top = itemTop(view);
+	const auto range = view->verticalRepaintRange();
+	update(0, top + range.top, width(), range.height);
 }
 
 void InnerWidget::resizeItem(not_null<Element*> view) {

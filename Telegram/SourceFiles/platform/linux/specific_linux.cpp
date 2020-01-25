@@ -95,6 +95,13 @@ void SetApplicationIcon(const QIcon &icon) {
 	QApplication::setWindowIcon(icon);
 }
 
+bool InSandbox() {
+	static const auto Sandbox = QFileInfo::exists(
+		QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)
+		+ qsl("/flatpak-info"));
+	return Sandbox;
+}
+
 QString CurrentExecutablePath(int argc, char *argv[]) {
 	constexpr auto kMaxPath = 1024;
 	char result[kMaxPath] = { 0 };
@@ -110,6 +117,23 @@ QString CurrentExecutablePath(int argc, char *argv[]) {
 
 	// Fallback to the first command line argument.
 	return argc ? QFile::decodeName(argv[0]) : QString();
+}
+
+QString SingleInstanceLocalServerName(const QString &hash) {
+	const auto runtimeDir = QStandardPaths::writableLocation(
+		QStandardPaths::RuntimeLocation);
+
+	if (InSandbox()) {
+		return runtimeDir
+			+ qsl("/app/")
+			+ QString::fromUtf8(qgetenv("FLATPAK_ID"))
+			+ '/' + hash;
+	} else if (QFileInfo::exists(runtimeDir)) {
+		return runtimeDir + '/' + hash + '-' + cGUIDStr();
+	} else { // non-systemd distros
+		return QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+			+ '/' + hash + '-' + cGUIDStr();
+	}
 }
 
 } // namespace Platform
@@ -360,6 +384,7 @@ bool OpenSystemSettings(SystemSettingsType type) {
 		} else if (DesktopEnvironment::IsGnome()) {
 			add("gnome-control-center sound");
 		}
+		add("pavucontrol-qt");
 		add("pavucontrol");
 		add("alsamixergui");
 		return ranges::find_if(options, [](const QString &command) {
