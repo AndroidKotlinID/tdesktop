@@ -77,7 +77,7 @@ if (DESKTOP_APP_USE_PACKAGED)
     )
 endif()
 
-if (LINUX AND NOT TDESKTOP_DISABLE_DBUS_INTEGRATION)
+if (LINUX AND NOT DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
     target_link_libraries(Telegram
     PRIVATE
         desktop-app::external_statusnotifieritem
@@ -335,6 +335,8 @@ PRIVATE
     data/data_game.h
     data/data_groups.cpp
     data/data_groups.h
+    data/data_histories.cpp
+    data/data_histories.h
     data/data_location.cpp
     data/data_location.h
     data/data_media_rotation.cpp
@@ -1076,8 +1078,8 @@ endif()
 
 if (build_macstore)
     set(bundle_identifier "org.telegram.desktop")
-    set(bundle_entitlements "Telegram Desktop.entitlements")
-    set(output_name "Telegram Desktop")
+    set(bundle_entitlements "Telegram Lite.entitlements")
+    set(output_name "Telegram Lite")
     set_target_properties(Telegram PROPERTIES
         XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS ${libs_loc}/breakpad/src/client/mac/build/Release
     )
@@ -1121,7 +1123,7 @@ set_target_properties(Telegram PROPERTIES
 )
 set(entitlement_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Telegram.entitlements"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Telegram Desktop.entitlements"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Telegram Lite.entitlements"
 )
 target_sources(Telegram PRIVATE ${entitlement_sources})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/Telegram PREFIX Resources FILES ${entitlement_sources})
