@@ -238,7 +238,7 @@ void ShowErrorToast(const QString &text) {
 	auto config = Ui::Toast::Config();
 	config.multiline = true;
 	config.minWidth = st::msgMinWidth;
-	config.text = text;
+	config.text = { text };
 	Ui::Toast::Show(config);
 }
 
@@ -2913,7 +2913,26 @@ void HistoryWidget::historyDownClicked() {
 }
 
 void HistoryWidget::showNextUnreadMention() {
-	showHistory(_peer->id, _history->getMinLoadedUnreadMention());
+	const auto msgId = _history->getMinLoadedUnreadMention();
+	const auto already = (_showAtMsgId == msgId);
+
+	// Mark mention voice/video message as read.
+	// See https://github.com/telegramdesktop/tdesktop/issues/5623
+	if (msgId && already) {
+		const auto item = _history->owner().message(
+			_history->channelId(),
+			msgId);
+		if (const auto media = item ? item->media() : nullptr) {
+			if (const auto document = media->document()) {
+				if (!media->webpage()
+					&& (document->isVoiceMessage()
+						|| document->isVideoMessage())) {
+					document->owner().markMediaRead(document);
+				}
+			}
+		}
+	}
+	showHistory(_peer->id, msgId);
 }
 
 void HistoryWidget::saveEditMsg() {
