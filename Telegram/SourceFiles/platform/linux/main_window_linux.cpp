@@ -456,6 +456,13 @@ void MainWindow::initHook() {
 		LOG(("Not using Unity launcher counter."));
 	}
 #endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
+
+	updateWaylandDecorationColors();
+
+	style::PaletteChanged(
+	) | rpl::start_with_next([=] {
+		updateWaylandDecorationColors();
+	}, lifetime());
 }
 
 bool MainWindow::hasTrayIcon() const {
@@ -674,6 +681,16 @@ void MainWindow::updateIconCounters() {
 	if (trayIcon && IsIconRegenerationNeeded(counter, muted)) {
 		trayIcon->setIcon(TrayIconGen(counter, muted));
 	}
+}
+
+void MainWindow::updateWaylandDecorationColors() {
+	windowHandle()->setProperty("__material_decoration_backgroundColor", st::titleBgActive->c);
+	windowHandle()->setProperty("__material_decoration_foregroundColor", st::titleFgActive->c);
+	windowHandle()->setProperty("__material_decoration_backgroundInactiveColor", st::titleBg->c);
+	windowHandle()->setProperty("__material_decoration_foregroundInactiveColor", st::titleFg->c);
+
+	// Trigger a QtWayland client-side decoration update
+	windowHandle()->resize(windowHandle()->size());
 }
 
 void MainWindow::LibsLoaded() {
