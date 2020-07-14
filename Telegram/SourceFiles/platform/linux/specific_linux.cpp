@@ -132,6 +132,45 @@ uint FileChooserPortalVersion() {
 }
 #endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
 
+QString FlatpakID() {
+	static const auto Result = [] {
+		if (!qEnvironmentVariableIsEmpty("FLATPAK_ID")) {
+			return QString::fromLatin1(qgetenv("FLATPAK_ID"));
+		} else {
+			return GetLauncherBasename();
+		}
+	}();
+
+	return Result;
+}
+
+QString ProcessNameByPID(const QString &pid) {
+	constexpr auto kMaxPath = 1024;
+	char result[kMaxPath] = { 0 };
+	auto count = readlink("/proc/" + pid.toLatin1() + "/exe", result, kMaxPath);
+	if (count > 0) {
+		auto filename = QFile::decodeName(result);
+		auto deletedPostfix = qstr(" (deleted)");
+		if (filename.endsWith(deletedPostfix) && !QFileInfo(filename).exists()) {
+			filename.chop(deletedPostfix.size());
+		}
+		return filename;
+	}
+
+	return QString();
+}
+
+QString RealExecutablePath(int argc, char *argv[]) {
+	const auto processName = ProcessNameByPID(qsl("self"));
+
+	// Fallback to the first command line argument.
+	return !processName.isEmpty()
+		? processName
+		: argc
+			? QFile::decodeName(argv[0])
+			: QString();
+}
+
 bool RunShellCommand(const QByteArray &command) {
 	auto result = system(command.constData());
 	if (result) {
@@ -642,33 +681,6 @@ bool CanOpenDirectoryWithPortal() {
 #endif // (Qt < 5.15 && !DESKTOP_APP_QT_PATCHED) || TDESKTOP_DISABLE_DBUS_INTEGRATION
 }
 
-QString ProcessNameByPID(const QString &pid) {
-	constexpr auto kMaxPath = 1024;
-	char result[kMaxPath] = { 0 };
-	auto count = readlink("/proc/" + pid.toLatin1() + "/exe", result, kMaxPath);
-	if (count > 0) {
-		auto filename = QFile::decodeName(result);
-		auto deletedPostfix = qstr(" (deleted)");
-		if (filename.endsWith(deletedPostfix) && !QFileInfo(filename).exists()) {
-			filename.chop(deletedPostfix.size());
-		}
-		return filename;
-	}
-
-	return QString();
-}
-
-QString RealExecutablePath(int argc, char *argv[]) {
-	const auto processName = ProcessNameByPID(qsl("self"));
-
-	// Fallback to the first command line argument.
-	return !processName.isEmpty()
-		? processName
-		: argc
-			? QFile::decodeName(argv[0])
-			: QString();
-}
-
 QString CurrentExecutablePath(int argc, char *argv[]) {
 	if (InAppImage()) {
 		const auto appimagePath = QString::fromUtf8(qgetenv("APPIMAGE"));
@@ -694,16 +706,7 @@ QString AppRuntimeDirectory() {
 			QStandardPaths::RuntimeLocation);
 
 		if (InFlatpak()) {
-			const auto flatpakId = [&] {
-				if (!qEnvironmentVariableIsEmpty("FLATPAK_ID")) {
-					return QString::fromLatin1(qgetenv("FLATPAK_ID"));
-				} else {
-					return GetLauncherBasename();
-				}
-			}();
-
-			runtimeDir += qsl("/app/")
-				+ flatpakId;
+			runtimeDir += qsl("/app/") + FlatpakID();
 		}
 
 		if (!QFileInfo::exists(runtimeDir)) { // non-systemd distros
@@ -786,7 +789,7 @@ QString GetLauncherFilename() {
 
 QString GetIconName() {
 	static const auto Result = InFlatpak()
-		? GetLauncherBasename()
+		? FlatpakID()
 		: kIconName.utf16();
 	return Result;
 }

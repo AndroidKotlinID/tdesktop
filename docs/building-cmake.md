@@ -54,7 +54,7 @@ Go to ***BuildPath*** and run
 
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 0ba67e2
+    git checkout 53ed295
     cd ../
 
     git clone https://github.com/xiph/opus
@@ -207,7 +207,7 @@ Go to ***BuildPath*** and run
     git clone https://github.com/openssl/openssl openssl_1_1_1
     cd openssl_1_1_1
     git checkout OpenSSL_1_1_1-stable
-    ./config --prefix=/usr/local/desktop-app/openssl-1.1.1
+    ./config --prefix=/usr/local/desktop-app/openssl-1.1.1 no-tests
     make $MAKE_THREADS_CNT
     sudo make install_sw
     cd ..
