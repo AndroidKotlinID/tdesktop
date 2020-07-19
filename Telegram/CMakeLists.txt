@@ -208,6 +208,8 @@ nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
 
+    api/api_bot.cpp
+    api/api_bot.h
     api/api_chat_filters.cpp
     api/api_chat_filters.h
     api/api_common.h
@@ -215,6 +217,8 @@ PRIVATE
     api/api_hash.h
     api/api_self_destruct.cpp
     api/api_self_destruct.h
+    api/api_send_progress.cpp
+    api/api_send_progress.h
     api/api_sending.cpp
     api/api_sending.h
     api/api_sensitive_content.cpp
@@ -862,6 +866,8 @@ PRIVATE
     platform/linux/linux_gdk_helper.h
     platform/linux/linux_libs.cpp
     platform/linux/linux_libs.h
+    platform/linux/linux_xlib_helper.cpp
+    platform/linux/linux_xlib_helper.h
     platform/linux/file_utilities_linux.cpp
     platform/linux/file_utilities_linux.h
     platform/linux/launcher_linux.cpp
@@ -887,8 +893,24 @@ PRIVATE
     platform/mac/specific_mac_p.h
     platform/mac/window_title_mac.mm
     platform/mac/window_title_mac.h
-    platform/mac/mac_touchbar.h
-    platform/mac/mac_touchbar.mm
+    platform/mac/touchbar/items/mac_formatter_item.h
+    platform/mac/touchbar/items/mac_formatter_item.mm
+    platform/mac/touchbar/items/mac_pinned_chats_item.h
+    platform/mac/touchbar/items/mac_pinned_chats_item.mm
+    platform/mac/touchbar/items/mac_scrubber_item.h
+    platform/mac/touchbar/items/mac_scrubber_item.mm
+    platform/mac/touchbar/mac_touchbar_audio.h
+    platform/mac/touchbar/mac_touchbar_audio.mm
+    platform/mac/touchbar/mac_touchbar_common.h
+    platform/mac/touchbar/mac_touchbar_common.mm
+    platform/mac/touchbar/mac_touchbar_controls.h
+    platform/mac/touchbar/mac_touchbar_controls.mm
+    platform/mac/touchbar/mac_touchbar_main.h
+    platform/mac/touchbar/mac_touchbar_main.mm
+    platform/mac/touchbar/mac_touchbar_manager.h
+    platform/mac/touchbar/mac_touchbar_manager.mm
+    platform/mac/touchbar/mac_touchbar_media_view.h
+    platform/mac/touchbar/mac_touchbar_media_view.mm
     platform/win/audio_win.cpp
     platform/win/audio_win.h
     platform/win/file_utilities_win.cpp

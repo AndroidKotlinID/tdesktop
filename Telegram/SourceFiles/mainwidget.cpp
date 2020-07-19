@@ -833,14 +833,6 @@ void MainWidget::hideSingleUseKeyboard(PeerData *peer, MsgId replyTo) {
 	_history->hideSingleUseKeyboard(peer, replyTo);
 }
 
-void MainWidget::app_sendBotCallback(
-		not_null<const HistoryMessageMarkupButton*> button,
-		not_null<const HistoryItem*> msg,
-		int row,
-		int column) {
-	_history->app_sendBotCallback(button, msg, row, column);
-}
-
 bool MainWidget::insertBotCommand(const QString &cmd) {
 	return _history->insertBotCommand(cmd);
 }
@@ -2098,7 +2090,12 @@ void MainWidget::showAll() {
 	}
 	if (_callTopBar) {
 		_callTopBar->setVisible(true);
-		_callTopBarHeight = _callTopBar->height();
+
+		// show() could've send pending resize event that would update
+		// the height value and destroy the top bar if it was hiding.
+		if (_callTopBar) {
+			_callTopBarHeight = _callTopBar->height();
+		}
 	}
 	updateControlsGeometry();
 	floatPlayerCheckVisibility();
@@ -2180,9 +2177,9 @@ void MainWidget::updateControlsGeometry() {
 		const auto shadowTop = _controller->window().verticalShadowTop();
 		const auto shadowHeight = height() - shadowTop;
 		_sideShadow->setGeometryToLeft(
-			dialogsWidth, 
+			dialogsWidth,
 			shadowTop,
-			st::lineWidth, 
+			st::lineWidth,
 			shadowHeight);
 		if (_thirdShadow) {
 			_thirdShadow->setGeometryToLeft(

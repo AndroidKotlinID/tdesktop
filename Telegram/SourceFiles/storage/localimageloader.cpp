@@ -842,11 +842,9 @@ void FileLoadTask::process() {
 
 		if (ValidateThumbDimensions(w, h)) {
 			isSticker = Core::IsMimeSticker(filemime)
-				&& (w > 0)
-				&& (h > 0)
-				&& (w <= StickerMaxSize)
-				&& (h <= StickerMaxSize)
-				&& (filesize < Storage::kMaxStickerBytesSize);
+				&& (filesize < Storage::kMaxStickerBytesSize)
+				&& (Core::IsMimeStickerAnimated(filemime)
+					|| GoodStickerDimensions(w, h));
 			if (isSticker) {
 				attributes.push_back(MTP_documentAttributeSticker(
 					MTP_flags(0),
