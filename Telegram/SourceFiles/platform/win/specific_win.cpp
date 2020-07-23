@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "core/crash_reports.h"
 
+#include <QtCore/QOperatingSystemVersion>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QDesktopWidget>
 #include <QtGui/QDesktopServices>
@@ -380,6 +381,37 @@ std::optional<crl::time> LastUserInputTime() {
 		return std::min(LastTrackedWhen + add, now);
 	}
 	return LastTrackedWhen;
+}
+
+std::optional<bool> IsDarkMode() {
+	static const auto kSystemVersion = QOperatingSystemVersion::current();
+	static const auto kDarkModeAddedVersion = QOperatingSystemVersion(
+		QOperatingSystemVersion::Windows,
+		10,
+		0,
+		17763);
+	static const auto kSupported = (kSystemVersion >= kDarkModeAddedVersion);
+	if (!kSupported) {
+		return std::nullopt;
+	}
+
+	const auto keyName = L""
+		"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+	const auto valueName = L"AppsUseLightTheme";
+	auto key = HKEY();
+	auto result = RegOpenKeyEx(HKEY_CURRENT_USER, keyName, 0, KEY_READ, &key);
+	if (result != ERROR_SUCCESS) {
+		return std::nullopt;
+	}
+
+	DWORD value = 0, type = 0, size = sizeof(value);
+	result = RegQueryValueEx(key, valueName, 0, &type, (LPBYTE)&value, &size);
+	RegCloseKey(key);
+	if (result != ERROR_SUCCESS) {
+		return std::nullopt;
+	}
+
+	return (value == 0);
 }
 
 bool AutostartSupported() {

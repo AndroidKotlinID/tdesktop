@@ -41,8 +41,14 @@ bool OpenSystemSettings(SystemSettingsType type);
 	return LastUserInputTime().has_value();
 }
 
+[[nodiscard]] std::optional<bool> IsDarkMode();
+[[nodiscard]] inline bool IsDarkModeSupported() {
+	return IsDarkMode().has_value();
+}
+
 void IgnoreApplicationActivationRightNow();
 bool AutostartSupported();
+bool TrayIconSupported();
 QImage GetImageFromClipboard();
 bool StartSystemMove(QWindow *window);
 bool StartSystemResize(QWindow *window, Qt::Edges edges);

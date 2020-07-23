@@ -213,8 +213,12 @@ PRIVATE
     api/api_chat_filters.cpp
     api/api_chat_filters.h
     api/api_common.h
+    api/api_editing.cpp
+    api/api_editing.h
     api/api_hash.cpp
     api/api_hash.h
+    api/api_media.cpp
+    api/api_media.h
     api/api_self_destruct.cpp
     api/api_self_destruct.h
     api/api_send_progress.cpp
@@ -600,6 +604,8 @@ PRIVATE
     history/view/history_view_service_message.h
     history/view/history_view_top_bar_widget.cpp
     history/view/history_view_top_bar_widget.h
+    history/view/history_view_webpage_preview.cpp
+    history/view/history_view_webpage_preview.h
     history/history.cpp
     history/history.h
     history/history_drag_area.cpp

@@ -18,6 +18,10 @@ namespace Platform {
 
 void RemoveQuarantine(const QString &path);
 
+inline std::optional<bool> IsDarkMode() {
+	return std::nullopt;
+}
+
 inline void FallbackFontConfigCheckBegin() {
 }
 
@@ -34,6 +38,14 @@ inline bool StartSystemMove(QWindow *window) {
 
 inline bool StartSystemResize(QWindow *window, Qt::Edges edges) {
 	return false;
+}
+
+inline bool AutostartSupported() {
+	return false;
+}
+
+inline bool TrayIconSupported() {
+	return true;
 }
 
 namespace ThirdParty {
