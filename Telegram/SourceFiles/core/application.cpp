@@ -205,6 +205,8 @@ void Application::run() {
 		return;
 	}
 
+	Core::App().settings().setWindowControlsLayout(Platform::WindowControlsLayout());
+
 	_translator = std::make_unique<Lang::Translator>();
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
@@ -307,6 +309,9 @@ void Application::checkSystemDarkMode() {
 }
 
 void Application::startSystemDarkModeViewer() {
+	if (Window::Theme::Background()->editingTheme()) {
+		_settings.setSystemDarkModeEnabled(false);
+	}
 	rpl::merge(
 		_settings.systemDarkModeChanges() | rpl::to_empty,
 		_settings.systemDarkModeEnabledChanges() | rpl::to_empty

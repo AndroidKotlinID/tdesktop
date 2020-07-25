@@ -7,10 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/linux/linux_libs.h"
 
-#include "base/platform/base_platform_info.h"
 #include "platform/linux/linux_xlib_helper.h"
 #include "platform/linux/linux_gdk_helper.h"
-#include "platform/linux/linux_desktop_environment.h"
 #include "platform/linux/specific_linux.h"
 #include "core/sandbox.h"
 #include "core/core_settings.h"
@@ -112,17 +110,12 @@ bool setupGtkBase(QLibrary &lib_gtk) {
 	if (!LOAD_SYMBOL(lib_gtk, "gdk_atom_intern", gdk_atom_intern)) return false;
 
 	if (LOAD_SYMBOL(lib_gtk, "gdk_set_allowed_backends", gdk_set_allowed_backends)) {
-		// We work only with X11 GDK backend.
+		// We work only with Wayland and X11 GDK backends.
 		// Otherwise we get segfault in Ubuntu 17.04 in gtk_init_check() call.
 		// See https://github.com/telegramdesktop/tdesktop/issues/3176
 		// See https://github.com/telegramdesktop/tdesktop/issues/3162
-		if(Platform::IsWayland() && !lib_gtk.fileName().contains("gtk-x11-2.0")) {
-			DEBUG_LOG(("Limit allowed GDK backends to wayland"));
-			gdk_set_allowed_backends("wayland");
-		} else {
-			DEBUG_LOG(("Limit allowed GDK backends to x11"));
-			gdk_set_allowed_backends("x11");
-		}
+		DEBUG_LOG(("Limit allowed GDK backends to wayland and x11"));
+		gdk_set_allowed_backends("wayland,x11");
 	}
 
 	// gtk_init will reset the Xlib error handler, and that causes
@@ -179,6 +172,12 @@ void SetIconTheme() {
 void DarkModeChanged() {
 	Core::Sandbox::Instance().customEnterFromEventLoop([] {
 		Core::App().settings().setSystemDarkMode(Platform::IsDarkMode());
+	});
+}
+
+void DecorationLayoutChanged() {
+	Core::Sandbox::Instance().customEnterFromEventLoop([] {
+		Core::App().settings().setWindowControlsLayout(Platform::WindowControlsLayout());
 	});
 }
 #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
@@ -288,6 +287,10 @@ void start() {
 
 		if (!gtk_check_version(3, 0, 0)) {
 			g_signal_connect(settings, "notify::gtk-application-prefer-dark-theme", G_CALLBACK(DarkModeChanged), nullptr);
+		}
+
+		if (!gtk_check_version(3, 12, 0)) {
+			g_signal_connect(settings, "notify::gtk-decoration-layout", G_CALLBACK(DecorationLayoutChanged), nullptr);
 		}
 	} else {
 		LOG(("Could not load gtk-3 or gtk-x11-2.0!"));

@@ -1052,6 +1052,10 @@ void SetupDefaultThemes(
 			scheme.name(tr::now),
 			st::settingsTheme,
 			std::move(check));
+		scheme.name(
+		) | rpl::start_with_next([=](const auto &themeName) {
+			result->setText(themeName);
+		}, result->lifetime());
 		result->addClickHandler([=] {
 			schemeClicked(scheme, result->clickModifiers());
 		});
@@ -1290,8 +1294,14 @@ void SetupAutoNightMode(not_null<Ui::VerticalLayout*> container) {
 	) | rpl::filter([=](bool checked) {
 		return (checked != Core::App().settings().systemDarkModeEnabled());
 	}) | rpl::start_with_next([=](bool checked) {
-		Core::App().settings().setSystemDarkModeEnabled(checked);
-		Core::App().saveSettingsDelayed();
+		if (checked && Window::Theme::Background()->editingTheme()) {
+			autoNight->setChecked(false);
+			Ui::show(Box<InformBox>(
+				tr::lng_theme_editor_cant_change_theme(tr::now)));
+		} else {
+			Core::App().settings().setSystemDarkModeEnabled(checked);
+			Core::App().saveSettingsDelayed();
+		}
 	}, autoNight->lifetime());
 
 	Core::App().settings().systemDarkModeEnabledChanges(
