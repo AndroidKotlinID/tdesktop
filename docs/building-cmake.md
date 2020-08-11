@@ -54,7 +54,7 @@ Go to ***BuildPath*** and run
 
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 7df6fdd
+    git checkout b2ee1fb
     cd ../
 
     git clone https://github.com/xiph/opus
@@ -236,9 +236,9 @@ Go to ***BuildPath*** and run
 
     git clone git://code.qt.io/qt/qt5.git qt_5_12_8
     cd qt_5_12_8
-    perl init-repository --module-subset=qtbase,qtwayland,qtimageformats,qtsvg,qtx11extras
+    perl init-repository --module-subset=qtbase,qtwayland,qtimageformats,qtsvg
     git checkout v5.12.8
-    git submodule update qtbase qtwayland qtimageformats qtsvg qtx11extras
+    git submodule update qtbase qtwayland qtimageformats qtsvg
     cd qtbase
     find ../../patches/qtbase_5_12_8 -type f -print0 | sort -z | xargs -r0 git apply
     cd ..
@@ -301,7 +301,7 @@ Go to ***BuildPath*** and run
 
 Go to ***BuildPath*/tdesktop/Telegram** and run (using [your **api_id** and **api_hash**](#obtain-your-api-credentials))
 
-    ./configure.sh -D TDESKTOP_API_ID=YOUR_API_ID -D TDESKTOP_API_HASH=YOUR_API_HASH -D DESKTOP_APP_USE_PACKAGED=OFF
+    ./configure.sh -D TDESKTOP_API_ID=YOUR_API_ID -D TDESKTOP_API_HASH=YOUR_API_HASH -D DESKTOP_APP_USE_PACKAGED=OFF -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF
 
 To make Debug version go to ***BuildPath*/tdesktop/out/Debug** and run
 
