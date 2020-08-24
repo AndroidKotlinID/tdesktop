@@ -299,41 +299,38 @@ bool GetImageFromClipboardSupported() {
 #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
 
 std::optional<crl::time> XCBLastUserInputTime() {
-	if (const auto native = QGuiApplication::platformNativeInterface()) {
-		const auto connection = reinterpret_cast<xcb_connection_t*>(
-			native->nativeResourceForIntegration(QByteArray("connection")));
-
-		if (!connection) {
-			return std::nullopt;
-		}
-
-		const auto screen = xcb_setup_roots_iterator(
-			xcb_get_setup(connection)).data;
-
-		if (!screen) {
-			return std::nullopt;
-		}
-
-		const auto cookie = xcb_screensaver_query_info(
-			connection,
-			screen->root);
-
-		auto info = xcb_screensaver_query_info_reply(
-			connection,
-			cookie,
-			nullptr);
-
-		if (!info) {
-			return std::nullopt;
-		}
-
-		const auto idle = info->ms_since_user_input;
-		free(info);
-
-		return (crl::now() - static_cast<crl::time>(idle));
+	const auto native = QGuiApplication::platformNativeInterface();
+	if (!native) {
+		return std::nullopt;
 	}
 
-	return std::nullopt;
+	const auto connection = reinterpret_cast<xcb_connection_t*>(
+		native->nativeResourceForIntegration(QByteArray("connection")));
+
+	if (!connection) {
+		return std::nullopt;
+	}
+
+	const auto screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
+	if (!screen) {
+		return std::nullopt;
+	}
+
+	const auto cookie = xcb_screensaver_query_info(connection, screen->root);
+
+	auto info = xcb_screensaver_query_info_reply(
+		connection,
+		cookie,
+		nullptr);
+
+	if (!info) {
+		return std::nullopt;
+	}
+
+	const auto idle = info->ms_since_user_input;
+	free(info);
+
+	return (crl::now() - static_cast<crl::time>(idle));
 }
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -1116,13 +1113,13 @@ void start() {
 			"Therefore, QT_QPA_PLATFORMTHEME "
 			"and QT_STYLE_OVERRIDE will be unset.");
 
-		g_warning(
+		g_message(
 			"This can be ignored by setting %s environment variable "
 			"to any value, however, if qgtk2 theme or style is used, "
 			"this will lead to a crash.",
 			kIgnoreGtkIncompatibility.utf8().constData());
 
-		g_warning(
+		g_message(
 			"GTK integration can be disabled by setting %s to any value. "
 			"Keep in mind that this will lead to clipboard issues "
 			"and tdesktop will be unable to get settings from GTK "
