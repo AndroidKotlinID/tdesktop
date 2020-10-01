@@ -267,21 +267,36 @@ bool ResolveUsername(
 	auto post = (start == qsl("startgroup"))
 		? ShowAtProfileMsgId
 		: ShowAtUnreadMsgId;
-	auto postParam = params.value(qsl("post"));
-	if (auto postId = postParam.toInt()) {
+	const auto postParam = params.value(qsl("post"));
+	if (const auto postId = postParam.toInt()) {
 		post = postId;
 	}
+	const auto commentParam = params.value(qsl("comment"));
+	const auto commentId = commentParam.toInt();
+	const auto threadParam = params.value(qsl("thread"));
+	const auto threadId = threadParam.toInt();
 	const auto gameParam = params.value(qsl("game"));
 	if (!gameParam.isEmpty() && valid(gameParam)) {
 		startToken = gameParam;
 		post = ShowAtGameShareMsgId;
 	}
 	const auto clickFromMessageId = context.value<FullMsgId>();
-	controller->content()->openPeerByName(
-		domain,
-		post,
-		startToken,
-		clickFromMessageId);
+	using Navigation = Window::SessionNavigation;
+	controller->showPeerByLink(Navigation::PeerByLinkInfo{
+		.usernameOrId = domain,
+		.messageId = post,
+		.repliesInfo = commentId
+			? Navigation::RepliesByLinkInfo{
+				Navigation::CommentId{ commentId }
+			}
+			: threadId
+			? Navigation::RepliesByLinkInfo{
+				Navigation::ThreadId{ threadId }
+			}
+			: Navigation::RepliesByLinkInfo{ v::null },
+		.startToken = startToken,
+		.clickFromMessageId = clickFromMessageId,
+	});
 	return true;
 }
 
@@ -297,39 +312,29 @@ bool ResolvePrivatePost(
 		qthelp::UrlParamNameTransform::ToLower);
 	const auto channelId = params.value(qsl("channel")).toInt();
 	const auto msgId = params.value(qsl("post")).toInt();
+	const auto commentParam = params.value(qsl("comment"));
+	const auto commentId = commentParam.toInt();
+	const auto threadParam = params.value(qsl("thread"));
+	const auto threadId = threadParam.toInt();
 	if (!channelId || !IsServerMsgId(msgId)) {
 		return false;
 	}
-	const auto done = crl::guard(controller, [=](not_null<PeerData*> peer) {
-		controller->showPeerHistory(
-			peer->id,
-			Window::SectionShow::Way::Forward,
-			msgId);
-	});
-	const auto fail = [=] {
-		Ui::show(Box<InformBox>(tr::lng_error_post_link_invalid(tr::now)));
-	};
-	const auto session = &controller->session();
-	if (const auto channel = session->data().channelLoaded(channelId)) {
-		done(channel);
-		return true;
-	}
-	session->api().request(MTPchannels_GetChannels(
-		MTP_vector<MTPInputChannel>(
-			1,
-			MTP_inputChannel(MTP_int(channelId), MTP_long(0)))
-	)).done([=](const MTPmessages_Chats &result) {
-		result.match([&](const auto &data) {
-			const auto peer = session->data().processChats(data.vchats());
-			if (peer && peer->id == peerFromChannel(channelId)) {
-				done(peer);
-			} else {
-				fail();
+	const auto clickFromMessageId = context.value<FullMsgId>();
+	using Navigation = Window::SessionNavigation;
+	controller->showPeerByLink(Navigation::PeerByLinkInfo{
+		.usernameOrId = channelId,
+		.messageId = msgId,
+		.repliesInfo = commentId
+			? Navigation::RepliesByLinkInfo{
+				Navigation::CommentId{ commentId }
 			}
-		});
-	}).fail([=](const RPCError &error) {
-		fail();
-	}).send();
+			: threadId
+			? Navigation::RepliesByLinkInfo{
+				Navigation::ThreadId{ threadId }
+			}
+			: Navigation::RepliesByLinkInfo{ v::null },
+		.clickFromMessageId = clickFromMessageId,
+	});
 	return true;
 }
 
@@ -375,12 +380,11 @@ bool HandleUnknown(
 				result.ventities().value_or_empty())
 		};
 		if (result.is_update_app()) {
-			const auto box = std::make_shared<QPointer<Ui::BoxContent>>();
-			const auto callback = [=] {
+			const auto callback = [=](Fn<void()> &&close) {
 				Core::UpdateApplication();
-				if (*box) (*box)->closeBox();
+				close();
 			};
-			*box = Ui::show(Box<ConfirmBox>(
+			Ui::show(Box<ConfirmBox>(
 				text,
 				tr::lng_menu_update(tr::now),
 				callback));
@@ -545,8 +549,9 @@ QString TryConvertUrlToLocal(QString url) {
 		} else if (auto bgMatch = regex_match(qsl("^bg/([a-zA-Z0-9\\.\\_\\-]+)(\\?(.+)?)?$"), query, matchOptions)) {
 			const auto params = bgMatch->captured(3);
 			return qsl("tg://bg?slug=") + bgMatch->captured(1) + (params.isEmpty() ? QString() : '&' + params);
-		} else if (auto postMatch = regex_match(qsl("^c/(\\-?\\d+)/(\\d+)(#|$)"), query, matchOptions)) {
-			return qsl("tg://privatepost?channel=%1&post=%2").arg(postMatch->captured(1)).arg(postMatch->captured(2));
+		} else if (auto postMatch = regex_match(qsl("^c/(\\-?\\d+)/(\\d+)(/?\\?|/?$)"), query, matchOptions)) {
+			auto params = query.mid(postMatch->captured(0).size()).toString();
+			return qsl("tg://privatepost?channel=%1&post=%2").arg(postMatch->captured(1)).arg(postMatch->captured(2)) + (params.isEmpty() ? QString() : '&' + params);
 		} else if (auto usernameMatch = regex_match(qsl("^([a-zA-Z0-9\\.\\_]+)(/?\\?|/?$|/(\\d+)/?(?:\\?|$))"), query, matchOptions)) {
 			auto params = query.mid(usernameMatch->captured(0).size()).toString();
 			auto postParam = QString();
