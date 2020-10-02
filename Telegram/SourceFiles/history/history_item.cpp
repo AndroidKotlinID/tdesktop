@@ -599,9 +599,7 @@ bool HistoryItem::canDeleteForEveryone(TimeId now) const {
 			return false;
 		}
 	}
-	if (!peer->isUser() && !toHistoryMessage()) {
-		return false;
-	} else if (const auto media = this->media()) {
+	if (const auto media = this->media()) {
 		if (!media->allowsRevoke(now)) {
 			return false;
 		}
@@ -639,7 +637,7 @@ bool HistoryItem::suggestBanReport() const {
 	if (!channel || !fromUser || !channel->canRestrictUser(fromUser)) {
 		return false;
 	}
-	return !isPost() && !out() && toHistoryMessage();
+	return !isPost() && !out();
 }
 
 bool HistoryItem::suggestDeleteAllReport() const {
@@ -647,7 +645,7 @@ bool HistoryItem::suggestDeleteAllReport() const {
 	if (!channel || !channel->canDeleteMessages()) {
 		return false;
 	}
-	return !isPost() && !out() && from()->isUser() && toHistoryMessage();
+	return !isPost() && !out() && from()->isUser();
 }
 
 bool HistoryItem::hasDirectLink() const {
@@ -717,7 +715,9 @@ QString HistoryItem::authorOriginal() const {
 	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
 		return forwarded->originalAuthor;
 	} else if (const auto msgsigned = Get<HistoryMessageSigned>()) {
-		return msgsigned->author;
+		if (!msgsigned->isAnonymousRank) {
+			return msgsigned->author;
+		}
 	}
 	return QString();
 }

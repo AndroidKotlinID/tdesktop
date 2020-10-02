@@ -130,6 +130,8 @@ private:
 	const not_null<Data::Session*> _data;
 	const not_null<Ui::IconButton*> _cancel;
 
+	QRect _clickableRect;
+
 	rpl::event_stream<bool> _visibleChanged;
 	rpl::event_stream<FullMsgId> _scrollToItemRequests;
 
@@ -231,22 +233,16 @@ void FieldHeader::init() {
 	events(
 	) | rpl::filter([=](not_null<QEvent*> event) {
 		return ranges::contains(kMouseEvents, event->type())
-			&& isEditingMessage();
+			&& (isEditingMessage() || replyingToMessage());
 	}) | rpl::start_with_next([=](not_null<QEvent*> event) {
 		const auto type = event->type();
 		const auto e = static_cast<QMouseEvent*>(event.get());
 		const auto pos = e ? e->pos() : mapFromGlobal(QCursor::pos());
-		const auto inPreviewRect = QRect(
-			st::historyReplySkip,
-			0,
-			width() - st::historyReplySkip - _cancel->width(),
-			height()).contains(pos);
+		const auto inPreviewRect = _clickableRect.contains(pos);
 
 		if (type == QEvent::MouseMove) {
-			const auto inEdit = inPreviewRect;
-
-			if (inEdit != *inClickable) {
-				*inClickable = inEdit;
+			if (inPreviewRect != *inClickable) {
+				*inClickable = inPreviewRect;
 				setCursor(*inClickable
 					? style::cur_pointer
 					: style::cur_default);
@@ -260,7 +256,10 @@ void FieldHeader::init() {
 				*leftIconPressed = true;
 				update();
 			} else if (isLeftButton && inPreviewRect) {
-				_scrollToItemRequests.fire(_editMsgId.current());
+				auto id = isEditingMessage()
+					? _editMsgId.current()
+					: replyingToMessage();
+				_scrollToItemRequests.fire(std::move(id));
 			}
 		} else if (type == QEvent::MouseButtonRelease) {
 			if (isLeftButton && *leftIconPressed) {
@@ -451,6 +450,11 @@ WebPageId FieldHeader::webPageId() const {
 
 void FieldHeader::updateControlsGeometry(QSize size) {
 	_cancel->moveToRight(0, 0);
+	_clickableRect = QRect(
+		st::historyReplySkip,
+		0,
+		width() - st::historyReplySkip - _cancel->width(),
+		height());
 }
 
 void FieldHeader::editMessage(FullMsgId id) {
@@ -732,6 +736,7 @@ void ComposeControls::showStarted() {
 		_tabbedPanel->hideFast();
 	}
 	_wrap->hide();
+	_writeRestricted->hide();
 }
 
 void ComposeControls::showFinished() {
@@ -741,7 +746,7 @@ void ComposeControls::showFinished() {
 	if (_tabbedPanel) {
 		_tabbedPanel->hideFast();
 	}
-	_wrap->show();
+	updateWrappingVisibility();
 }
 
 void ComposeControls::showForGrab() {
@@ -785,25 +790,6 @@ void ComposeControls::init() {
 	initTabbedSelector();
 	initSendButton();
 	initWriteRestriction();
-
-	QObject::connect(
-		::Media::Capture::instance(),
-		&::Media::Capture::Instance::error,
-		_wrap.get(),
-		[=] { recordError(); });
-	QObject::connect(
-		::Media::Capture::instance(),
-		&::Media::Capture::Instance::updated,
-		_wrap.get(),
-		[=](quint16 level, int samples) { recordUpdated(level, samples); });
-	qRegisterMetaType<VoiceWaveform>();
-	QObject::connect(
-		::Media::Capture::instance(),
-		&::Media::Capture::Instance::done,
-		_wrap.get(),
-		[=](QByteArray result, VoiceWaveform waveform, int samples) {
-			recordDone(result, waveform, samples);
-		});
 
 	_wrap->sizeValue(
 	) | rpl::start_with_next([=](QSize size) {
@@ -855,10 +841,6 @@ void ComposeControls::init() {
 	}
 }
 
-void ComposeControls::recordError() {
-	stopRecording(false);
-}
-
 void ComposeControls::recordDone(
 		QByteArray result,
 		VoiceWaveform waveform,
@@ -889,20 +871,26 @@ void ComposeControls::recordUpdated(quint16 level, int samples) {
 }
 
 void ComposeControls::recordStartCallback() {
-	//const auto error = _peer // #TODO restrictions
-	//	? Data::RestrictionError(_peer, ChatRestriction::f_send_media)
-	//	: std::nullopt;
-	const auto error = std::optional<QString>();
+	using namespace ::Media::Capture;
+	const auto error = _history
+		? Data::RestrictionError(_history->peer, ChatRestriction::f_send_media)
+		: std::nullopt;
 	if (error) {
 		Ui::show(Box<InformBox>(*error));
 		return;
 	} else if (_showSlowmodeError && _showSlowmodeError()) {
 		return;
-	} else if (!::Media::Capture::instance()->available()) {
+	} else if (!instance()->available()) {
 		return;
 	}
 
-	emit ::Media::Capture::instance()->start();
+	instance()->start();
+	instance()->updated(
+	) | rpl::start_with_next_error([=](const Update &update) {
+		recordUpdated(update.level, update.samples);
+	}, [=] {
+		stopRecording(false);
+	}, _recordingLifetime);
 
 	_recording = _inField = true;
 	updateControlsVisibility();
@@ -922,11 +910,19 @@ void ComposeControls::recordUpdateCallback(QPoint globalPos) {
 }
 
 void ComposeControls::stopRecording(bool send) {
-	emit ::Media::Capture::instance()->stop(send);
+	if (send) {
+		::Media::Capture::instance()->stop(crl::guard(_wrap.get(), [=](
+				const ::Media::Capture::Result &result) {
+			recordDone(result.bytes, result.waveform, result.samples);
+		}));
+	} else {
+		::Media::Capture::instance()->stop();
+	}
 
 	_recordingLevel = anim::value();
 	_recordingAnimation.stop();
 
+	_recordingLifetime.destroy();
 	_recording = false;
 	_recordingSamples = 0;
 	_sendActionUpdates.fire({ Api::SendProgressType::RecordVoice, -1 });
@@ -1087,13 +1083,20 @@ void ComposeControls::initWriteRestriction() {
 	}, _wrap->lifetime());
 
 	_writeRestriction.value(
-	) | rpl::start_with_next([=](const std::optional<QString> &error) {
-		_writeRestricted->setVisible(error.has_value());
-		_wrap->setVisible(!error.has_value());
-		if (!error.has_value()) {
-			_wrap->raise();
-		}
+	) | rpl::filter([=] {
+		return _wrap->isHidden() || _writeRestricted->isHidden();
+	}) | rpl::start_with_next([=] {
+		updateWrappingVisibility();
 	}, _wrap->lifetime());
+}
+
+void ComposeControls::updateWrappingVisibility() {
+	const auto restricted = _writeRestriction.current().has_value();
+	_writeRestricted->setVisible(restricted);
+	_wrap->setVisible(!restricted);
+	if (!restricted) {
+		_wrap->raise();
+	}
 }
 
 void ComposeControls::updateSendButtonType() {

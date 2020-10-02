@@ -363,6 +363,21 @@ void MainWindow::refreshTitleWidget() {
 		_title->init();
 		_titleShadow.destroy();
 	}
+
+#ifdef Q_OS_LINUX
+	// setWindowFlag calls setParent(parentWidget(), newFlags), which
+	// always calls hide() explicitly, we have to show() the window back.
+	const auto hidden = isHidden();
+	const auto withShadow = hasShadow();
+	setWindowFlag(Qt::NoDropShadowWindowHint, withShadow);
+	setAttribute(Qt::WA_OpaquePaintEvent, !withShadow);
+	if (!hidden) {
+		base::call_delayed(
+			kShowAfterWindowFlagChangeDelay,
+			this,
+			[=] { show(); });
+	}
+#endif // Q_OS_LINUX
 }
 
 void MainWindow::updateMinimumSize() {
@@ -377,12 +392,6 @@ void MainWindow::updateShadowSize() {
 }
 
 void MainWindow::recountGeometryConstraints() {
-#ifdef Q_OS_LINUX
-	const auto hasShadow = this->hasShadow();
-	setWindowFlag(Qt::NoDropShadowWindowHint, hasShadow);
-	setAttribute(Qt::WA_OpaquePaintEvent, !hasShadow);
-#endif // Q_OS_LINUX
-
 	updateShadowSize();
 	updateMinimumSize();
 	updateControlsGeometry();
@@ -705,6 +714,17 @@ void MainWindow::launchDrag(std::unique_ptr<QMimeData> data) {
 
 MainWindow::~MainWindow() {
 	_title.destroy();
+
+	// Otherwise:
+	// ~QWidget
+	// QWidgetPrivate::close_helper
+	// QWidgetPrivate::setVisible
+	// QWidgetPrivate::hide_helper
+	// QWidgetPrivate::hide_sys
+	// QWindowPrivate::setVisible
+	// QMetaObject::activate
+	// Window::MainWindow::handleVisibleChanged on a destroyed MainWindow.
+	hide();
 }
 
 } // namespace Window
