@@ -123,6 +123,14 @@ void PortalAutostart(bool autostart, bool silent = false) {
 	}
 }
 
+bool IsXDGDesktopPortalKDEPresent() {
+	static const auto Result = QDBusInterface(
+		qsl("org.freedesktop.impl.portal.desktop.kde"),
+		kXDGDesktopPortalObjectPath.utf16()).isValid();
+
+	return Result;
+}
+
 uint FileChooserPortalVersion() {
 	static const auto Result = [&]() -> uint {
 		auto message = QDBusMessage::createMethodCall(
@@ -731,17 +739,20 @@ bool IsXDGDesktopPortalPresent() {
 }
 
 bool UseXDGDesktopPortal() {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	static const auto Result = [&] {
 		const auto envVar = qEnvironmentVariableIsSet("TDESKTOP_USE_PORTAL");
 		const auto portalPresent = IsXDGDesktopPortalPresent();
+		const auto neededForKde = DesktopEnvironment::IsKDE()
+			&& IsXDGDesktopPortalKDEPresent();
 
-		return (
-			DesktopEnvironment::IsKDE()
-				|| envVar
-			) && portalPresent;
+		return (neededForKde || envVar) && portalPresent;
 	}();
 
 	return Result;
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+
+	return false;
 }
 
 bool CanOpenDirectoryWithPortal() {
@@ -799,10 +810,15 @@ QString AppRuntimeDirectory() {
 }
 
 QString SingleInstanceLocalServerName(const QString &hash) {
-	if (InFlatpak() || InSnap()) {
+	const auto idealSocketPath = AppRuntimeDirectory()
+		+ hash
+		+ '-'
+		+ cGUIDStr();
+
+	if (idealSocketPath.size() >= 108) {
 		return AppRuntimeDirectory() + hash;
 	} else {
-		return AppRuntimeDirectory() + hash + '-' + cGUIDStr();
+		return idealSocketPath;
 	}
 }
 
@@ -1248,7 +1264,7 @@ void start() {
 void finish() {
 }
 
-void InstallMainDesktopFile() {
+void InstallLauncher() {
 	static const auto DisabledByEnv = qEnvironmentVariableIsSet(
 		"TDESKTOP_DISABLE_DESKTOP_FILE_GENERATION");
 
@@ -1416,7 +1432,7 @@ void finish() {
 } // namespace Platform
 
 void psNewVersion() {
-	Platform::InstallMainDesktopFile();
+	Platform::InstallLauncher();
 	Platform::RegisterCustomScheme();
 }
 
