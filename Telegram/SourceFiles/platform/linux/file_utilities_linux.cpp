@@ -18,6 +18,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QProcess>
 #include <QtGui/QDesktopServices>
 
+extern "C" {
+#undef signals
+#include <gio/gio.h>
+#define signals public
+} // extern "C"
+
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
 #include <private/qguiapplication_p.h>
 
@@ -62,39 +68,25 @@ QByteArray EscapeShell(const QByteArray &content) {
 } // namespace internal
 
 void UnsafeOpenUrl(const QString &url) {
-	if (InSnap()) {
-		const QStringList arguments{
-			url
-		};
-		QProcess process;
-		process.startDetached(qsl("xdg-open"), arguments);
-	} else {
+	if (!g_app_info_launch_default_for_uri(
+		url.toUtf8(),
+		nullptr,
+		nullptr)) {
 		QDesktopServices::openUrl(url);
 	}
 }
 
 void UnsafeOpenEmailLink(const QString &email) {
-	const auto url = qstr("mailto:") + email;
-
-	if (InSnap()) {
-		const QStringList arguments{
-			url
-		};
-		QProcess process;
-		process.startDetached(qsl("xdg-open"), arguments);
-	} else {
-		QDesktopServices::openUrl(QUrl(url));
-	}
+	UnsafeOpenUrl(qstr("mailto:") + email);
 }
 
 void UnsafeLaunch(const QString &filepath) {
-	if (InSnap()) {
-		const QStringList arguments{
-			QFileInfo(filepath).absoluteFilePath()
-		};
-		QProcess process;
-		process.startDetached(qsl("xdg-open"), arguments);
-	} else {
+	const auto absolutePath = QFileInfo(filepath).absoluteFilePath();
+
+	if (!g_app_info_launch_default_for_uri(
+		("file://" + absolutePath).toUtf8(),
+		nullptr,
+		nullptr)) {
 		QDesktopServices::openUrl(QUrl::fromLocalFile(filepath));
 	}
 }
@@ -125,19 +117,26 @@ constexpr auto kPreviewHeight = 512;
 using Type = ::FileDialog::internal::Type;
 
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
-bool NativeSupported(Type type = Type::ReadFile) {
+bool UseNative(Type type = Type::ReadFile) {
 	// use gtk file dialog on gtk-based desktop environments
 	// or if QT_QPA_PLATFORMTHEME=(gtk2|gtk3)
-	// or if portals is used and operation is to open folder
+	// or if portals are used and operation is to open folder
 	// and portal doesn't support folder choosing
-	return (Platform::DesktopEnvironment::IsGtkBased()
-			|| Platform::IsGtkIntegrationForced()
-			|| Platform::UseXDGDesktopPortal())
-		&& ((!Platform::UseXDGDesktopPortal() &&
-			((!Platform::InFlatpak() && !Platform::InSnap())
-				|| Platform::IsGtkIntegrationForced()))
-			|| (type == Type::ReadFolder && !Platform::CanOpenDirectoryWithPortal()))
-		&& Platform::internal::GdkHelperLoaded()
+	const auto neededForPortal = UseXDGDesktopPortal()
+		&& type == Type::ReadFolder
+		&& !CanOpenDirectoryWithPortal();
+
+	const auto neededNonForced = DesktopEnvironment::IsGtkBased()
+		|| neededForPortal;
+
+	const auto excludeNonForced = InFlatpak() || InSnap();
+
+	return IsGtkIntegrationForced()
+		|| (neededNonForced && !excludeNonForced);
+}
+
+bool NativeSupported() {
+	return Platform::internal::GdkHelperLoaded()
 		&& (Libs::gtk_widget_hide_on_delete != nullptr)
 		&& (Libs::gtk_clipboard_store != nullptr)
 		&& (Libs::gtk_clipboard_get != nullptr)
@@ -241,7 +240,7 @@ bool Get(
 		parent = parent->window();
 	}
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
-	if (NativeSupported(type)) {
+	if (UseNative(type) && NativeSupported()) {
 		return GetNative(
 			parent,
 			files,

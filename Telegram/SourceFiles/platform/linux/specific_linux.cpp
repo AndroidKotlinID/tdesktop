@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStandardPaths>
 #include <QtCore/QProcess>
 #include <QtCore/QVersionNumber>
+#include <QtCore/QLibraryInfo>
 #include <QtGui/QWindow>
 
 #include <private/qwaylanddisplay_p.h>
@@ -251,7 +252,7 @@ bool GenerateDesktopFile(
 
 	QFile target(targetFile);
 	if (target.open(QIODevice::WriteOnly)) {
-		if (IsStaticBinary() || InAppImage()) {
+		if (!Core::UpdaterDisabled()) {
 			fileText = fileText.replace(
 				QRegularExpression(
 					qsl("^TryExec=.*$"),
@@ -718,7 +719,7 @@ bool IsGtkIntegrationForced() {
 	return false;
 }
 
-bool IsQtPluginsBundled() {
+bool AreQtPluginsBundled() {
 #ifdef DESKTOP_APP_USE_PACKAGED_LAZY
 	return true;
 #else // DESKTOP_APP_USE_PACKAGED_LAZY
@@ -756,11 +757,20 @@ bool UseXDGDesktopPortal() {
 }
 
 bool CanOpenDirectoryWithPortal() {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) || defined DESKTOP_APP_QT_PATCHED) && !defined DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	return FileChooserPortalVersion() >= 3;
-#else // (Qt >= 5.15 || DESKTOP_APP_QT_PATCHED) && !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+	static const auto Result = [&] {
+#ifdef DESKTOP_APP_QT_PATCHED
+		return FileChooserPortalVersion() >= 3;
+#else // DESKTOP_APP_QT_PATCHED
+		return QLibraryInfo::version() >= QVersionNumber(5, 15, 0)
+			&& FileChooserPortalVersion() >= 3;
+#endif // !DESKTOP_APP_QT_PATCHED
+	}();
+
+	return Result;
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+
 	return false;
-#endif // (Qt < 5.15 && !DESKTOP_APP_QT_PATCHED) || DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 QString CurrentExecutablePath(int argc, char *argv[]) {
@@ -824,7 +834,7 @@ QString SingleInstanceLocalServerName(const QString &hash) {
 
 QString GetLauncherBasename() {
 	static const auto Result = [&] {
-		if ((IsStaticBinary() || InAppImage()) && !cExeName().isEmpty()) {
+		if (!Core::UpdaterDisabled() && !cExeName().isEmpty()) {
 			const auto appimagePath = qsl("file://%1%2")
 				.arg(cExeDir())
 				.arg(cExeName())
@@ -1234,13 +1244,11 @@ void start() {
 		"this may lead to font issues.");
 #endif // DESKTOP_APP_USE_PACKAGED_FONTS
 
-	if (IsQtPluginsBundled()) {
+	if (AreQtPluginsBundled()) {
 		qputenv("QT_WAYLAND_DECORATION", "material");
 	}
 
-	if ((IsStaticBinary()
-		|| InAppImage()
-		|| IsQtPluginsBundled())
+	if (AreQtPluginsBundled()
 		// it is handled by Qt for flatpak and snap
 		&& !InFlatpak()
 		&& !InSnap()) {
@@ -1309,7 +1317,7 @@ void RegisterCustomScheme(bool force) {
 	GError *error = nullptr;
 
 	const auto neededCommandlineBuilder = qsl("%1 --")
-		.arg((IsStaticBinary() || InAppImage())
+		.arg(!Core::UpdaterDisabled()
 			? cExeDir() + cExeName()
 			: cExeName());
 
