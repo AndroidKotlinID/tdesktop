@@ -16,8 +16,6 @@ class LocationPoint;
 
 namespace Platform {
 
-void RemoveQuarantine(const QString &path);
-
 [[nodiscard]] bool IsDarkMenuBar();
 
 inline QImage GetImageFromClipboard() {
@@ -42,6 +40,10 @@ inline bool AutostartSupported() {
 
 inline bool TrayIconSupported() {
 	return true;
+}
+
+inline bool SkipTaskbarSupported() {
+	return false;
 }
 
 inline bool SetWindowExtents(QWindow *window, const QMargins &extents) {
@@ -76,8 +78,6 @@ inline void psCheckLocalSocket(const QString &serverName) {
 
 void psWriteDump();
 
-void psDeleteDir(const QString &dir);
-
 QStringList psInitLogs();
 void psClearInitLogs();
 
@@ -91,8 +91,6 @@ QRect psDesktopRect();
 
 int psCleanup();
 int psFixPrevious();
-
-bool psShowOpenWithMenu(int x, int y, const QString &file);
 
 void psNewVersion();
 

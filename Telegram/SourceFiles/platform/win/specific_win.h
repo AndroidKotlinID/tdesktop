@@ -38,6 +38,10 @@ inline bool TrayIconSupported() {
 	return true;
 }
 
+inline bool SkipTaskbarSupported() {
+	return true;
+}
+
 inline bool SetWindowExtents(QWindow *window, const QMargins &extents) {
 	return false;
 }
@@ -64,8 +68,6 @@ inline void psCheckLocalSocket(const QString &) {
 }
 
 void psWriteDump();
-
-void psDeleteDir(const QString &dir);
 
 QStringList psInitLogs();
 void psClearInitLogs();

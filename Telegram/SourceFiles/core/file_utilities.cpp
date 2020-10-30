@@ -7,7 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/file_utilities.h"
 
+#include "boxes/abstract_box.h"
 #include "storage/localstorage.h"
+#include "base/platform/base_platform_info.h"
+#include "base/platform/base_platform_file_utilities.h"
 #include "platform/platform_file_utilities.h"
 #include "core/application.h"
 #include "base/unixtime.h"
@@ -154,7 +157,11 @@ void Launch(const QString &filepath) {
 void ShowInFolder(const QString &filepath) {
 	crl::on_main([=] {
 		Ui::PreventDelayedActivation();
-		Platform::File::UnsafeShowInFolder(filepath);
+		if (Platform::IsLinux()) {
+			// Hide mediaview to make other apps visible.
+			Ui::hideLayer(anim::type::instant);
+		}
+		base::Platform::ShowInFolder(filepath);
 	});
 }
 

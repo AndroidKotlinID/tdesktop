@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_overlay_widget.h"
 
 #include "apiwrap.h"
+#include "api/api_attached_stickers.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
@@ -772,8 +773,15 @@ void OverlayWidget::updateActions() {
 	if ((_document && documentContentShown()) || (_photo && _photoMedia->loaded())) {
 		_actions.push_back({ tr::lng_mediaview_copy(tr::now), SLOT(onCopy()) });
 	}
-	if (_photo && _photo->hasSticker) {
-		_actions.push_back({ tr::lng_context_attached_stickers(tr::now), SLOT(onAttachedStickers()) });
+	if ((_photo && _photo->hasAttachedStickers())
+		|| (_document && _document->hasAttachedStickers())) {
+		auto member = _photo
+			? SLOT(onPhotoAttachedStickers())
+			: SLOT(onDocumentAttachedStickers());
+		_actions.push_back({
+			tr::lng_context_attached_stickers(tr::now),
+			std::move(member)
+		});
 	}
 	if (_canForwardItem) {
 		_actions.push_back({ tr::lng_mediaview_forward(tr::now), SLOT(onForward()) });
@@ -1544,16 +1552,31 @@ void OverlayWidget::onCopy() {
 	}
 }
 
-void OverlayWidget::onAttachedStickers() {
-	const auto session = _session;
-	if (!session || !_photo) {
+void OverlayWidget::onPhotoAttachedStickers() {
+	if (!_session || !_photo) {
 		return;
 	}
 	const auto &active = _session->windows();
 	if (active.empty()) {
 		return;
 	}
-	active.front()->requestAttachedStickerSets(_photo);
+	_session->api().attachedStickers().requestAttachedStickerSets(
+		active.front(),
+		_photo);
+	close();
+}
+
+void OverlayWidget::onDocumentAttachedStickers() {
+	if (!_session || !_document) {
+		return;
+	}
+	const auto &active = _session->windows();
+	if (active.empty()) {
+		return;
+	}
+	_session->api().attachedStickers().requestAttachedStickerSets(
+		active.front(),
+		_document);
 	close();
 }
 
