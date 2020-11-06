@@ -134,7 +134,7 @@ bool IsXDGDesktopPortalKDEPresent() {
 
 bool IsIBusPortalPresent() {
 	static const auto Result = QDBusInterface(
-		qsl("org.freedesktop.IBus.Portal"),
+		qsl("org.freedesktop.portal.IBus"),
 		qsl("/org/freedesktop/IBus")).isValid();
 
 	return Result;
@@ -635,11 +635,11 @@ bool IsGtkIntegrationForced() {
 }
 
 bool AreQtPluginsBundled() {
-#ifdef DESKTOP_APP_USE_PACKAGED_LAZY
+#if !defined DESKTOP_APP_USE_PACKAGED || defined DESKTOP_APP_USE_PACKAGED_LAZY
 	return true;
-#else // DESKTOP_APP_USE_PACKAGED_LAZY
+#else // !DESKTOP_APP_USE_PACKAGED || DESKTOP_APP_USE_PACKAGED_LAZY
 	return false;
-#endif // !DESKTOP_APP_USE_PACKAGED_LAZY
+#endif // DESKTOP_APP_USE_PACKAGED && !DESKTOP_APP_USE_PACKAGED_LAZY
 }
 
 bool IsXDGDesktopPortalPresent() {
@@ -699,10 +699,6 @@ QString AppRuntimeDirectory() {
 
 		if (!QFileInfo::exists(runtimeDir)) { // non-systemd distros
 			runtimeDir = QDir::tempPath();
-		}
-
-		if (runtimeDir.isEmpty()) {
-			runtimeDir = qsl("/tmp/");
 		}
 
 		if (!runtimeDir.endsWith('/')) {
