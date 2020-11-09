@@ -20,6 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "core/crash_reports.h"
 #include "core/update_checker.h"
+#include "window/window_controller.h"
+#include "core/application.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QDesktopWidget>
@@ -108,8 +110,19 @@ void PortalAutostart(bool autostart, bool silent = false) {
 		qsl("org.freedesktop.portal.Background"),
 		qsl("RequestBackground"));
 
+	const auto parentWindowId = [&] {
+		if (const auto activeWindow = Core::App().activeWindow()) {
+			if (!IsWayland()) {
+				return qsl("x11:%1").arg(QString::number(
+					activeWindow->widget().get()->windowHandle()->winId(),
+					16));
+			}
+		}
+		return QString();
+	}();
+
 	message.setArguments({
-		QString(),
+		parentWindowId,
 		options
 	});
 
@@ -162,11 +175,11 @@ uint FileChooserPortalVersion() {
 			qsl("version")
 		});
 
-		const QDBusReply<uint> reply = QDBusConnection::sessionBus().call(
+		const QDBusReply<QVariant> reply = QDBusConnection::sessionBus().call(
 			message);
 
 		if (reply.isValid()) {
-			return reply.value();
+			return reply.value().toUInt();
 		} else {
 			LOG(("Error getting FileChooser portal version: %1")
 				.arg(reply.error().message()));
@@ -272,8 +285,8 @@ bool GenerateDesktopFile(
 
 		if (IsStaticBinary()) {
 			DEBUG_LOG(("App Info: removing old .desktop files"));
-			QFile(qsl("%1telegram.desktop").arg(targetPath)).remove();
-			QFile(qsl("%1telegramdesktop.desktop").arg(targetPath)).remove();
+			QFile::remove(qsl("%1telegram.desktop").arg(targetPath));
+			QFile::remove(qsl("%1telegramdesktop.desktop").arg(targetPath));
 		}
 
 		return true;
@@ -947,14 +960,9 @@ Window::ControlsLayout WindowControlsLayout() {
 
 } // namespace Platform
 
-namespace {
-
-QRect _monitorRect;
-auto _monitorLastGot = 0LL;
-
-} // namespace
-
 QRect psDesktopRect() {
+	static QRect _monitorRect;
+	static auto _monitorLastGot = 0LL;
 	auto tnow = crl::now();
 	if (tnow > _monitorLastGot + 1000LL || tnow < _monitorLastGot) {
 		_monitorLastGot = tnow;
@@ -991,9 +999,9 @@ QString psAppDataPath() {
 	if (!home.isEmpty()) {
 		auto oldPath = home + qsl(".TelegramDesktop/");
 		auto oldSettingsBase = oldPath + qsl("tdata/settings");
-		if (QFile(oldSettingsBase + '0').exists()
-			|| QFile(oldSettingsBase + '1').exists()
-			|| QFile(oldSettingsBase + 's').exists()) {
+		if (QFile::exists(oldSettingsBase + '0')
+			|| QFile::exists(oldSettingsBase + '1')
+			|| QFile::exists(oldSettingsBase + 's')) {
 			return oldPath;
 		}
 	}
@@ -1144,16 +1152,16 @@ void InstallLauncher(bool force) {
 
 	if (!QDir(icons).exists()) QDir().mkpath(icons);
 
-	const auto icon = icons + qsl("telegram.png");
-	auto iconExists = QFile(icon).exists();
+	const auto icon = icons + kIconName.utf16() + qsl(".png");
+	auto iconExists = QFile::exists(icon);
 	if (Local::oldSettingsVersion() < 10021 && iconExists) {
 		// Icon was changed.
-		if (QFile(icon).remove()) {
+		if (QFile::remove(icon)) {
 			iconExists = false;
 		}
 	}
 	if (!iconExists) {
-		if (QFile(qsl(":/gui/art/logo_256.png")).copy(icon)) {
+		if (QFile::copy(qsl(":/gui/art/logo_256.png"), icon)) {
 			DEBUG_LOG(("App Info: Icon copied to '%1'").arg(icon));
 		}
 	}
