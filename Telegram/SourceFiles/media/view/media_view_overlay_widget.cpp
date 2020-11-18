@@ -359,6 +359,7 @@ OverlayWidget::OverlayWidget()
 	} else {
 		setWindowFlags(Qt::FramelessWindowHint);
 	}
+	updateGeometry(QApplication::primaryScreen()->geometry());
 	moveToScreen();
 	setAttribute(Qt::WA_NoSystemBackground, true);
 	setAttribute(Qt::WA_TranslucentBackground, true);
@@ -373,6 +374,17 @@ OverlayWidget::OverlayWidget()
 	if (!Platform::IsMac()) {
 		setWindowState(Qt::WindowFullScreen);
 	}
+
+	connect(
+		windowHandle(),
+		&QWindow::visibleChanged,
+		this,
+		[=](bool visible) { handleVisibleChanged(visible); });
+	connect(
+		windowHandle(),
+		&QWindow::screenChanged,
+		this,
+		[=](QScreen *screen) { handleScreenChanged(screen); });
 
 #if defined Q_OS_MAC && !defined OS_OSX
 	TouchBar::SetupMediaViewTouchBar(
@@ -417,7 +429,7 @@ void OverlayWidget::refreshLang() {
 	InvokeQueued(this, [this] { updateThemePreviewGeometry(); });
 }
 
-void OverlayWidget::moveToScreen(bool force) {
+void OverlayWidget::moveToScreen() {
 	const auto widgetScreen = [&](auto &&widget) -> QScreen* {
 		if (auto handle = widget ? widget->windowHandle() : nullptr) {
 			return handle->screen();
@@ -429,17 +441,18 @@ void OverlayWidget::moveToScreen(bool force) {
 		: nullptr;
 	const auto activeWindowScreen = widgetScreen(window);
 	const auto myScreen = widgetScreen(this);
-	if (activeWindowScreen && myScreen && myScreen != activeWindowScreen) {
+	// Wayland doesn't support positioning, but Qt emits screenChanged anyway
+	// and geometry of the widget become broken
+	if (activeWindowScreen
+		&& myScreen
+		&& myScreen != activeWindowScreen
+		&& !Platform::IsWayland()) {
 		windowHandle()->setScreen(activeWindowScreen);
 	}
-	const auto screen = activeWindowScreen
-		? activeWindowScreen
-		: QApplication::primaryScreen();
-	const auto available = screen->geometry();
-	if (!force && geometry() == available) {
-		return;
-	}
-	setGeometry(available);
+}
+
+void OverlayWidget::updateGeometry(const QRect &rect) {
+	setGeometry(rect);
 
 	auto navSkip = 2 * st::mediaviewControlMargin + st::mediaviewControlSize;
 	_closeNav = myrtlrect(width() - st::mediaviewControlMargin - st::mediaviewControlSize, st::mediaviewControlMargin, st::mediaviewControlSize, st::mediaviewControlSize);
@@ -957,9 +970,9 @@ void OverlayWidget::resizeContentByScreenSize() {
 	const auto availableWidth = width();
 	const auto availableHeight = height() - 2 * skipHeight;
 	const auto countZoomFor = [&](int outerw, int outerh) {
-		auto result = float64(outerw) / _w;
-		if (_h * result > outerh) {
-			result = float64(outerh) / _h;
+		auto result = float64(outerw) / _width;
+		if (_height * result > outerh) {
+			result = float64(outerh) / _height;
 		}
 		if (result >= 1.) {
 			result -= 1.;
@@ -968,7 +981,7 @@ void OverlayWidget::resizeContentByScreenSize() {
 		}
 		return result;
 	};
-	if (_w > 0 && _h > 0) {
+	if (_width > 0 && _height > 0) {
 		_zoomToDefault = countZoomFor(availableWidth, availableHeight);
 		_zoomToScreen = countZoomFor(width(), height());
 	} else {
@@ -976,15 +989,15 @@ void OverlayWidget::resizeContentByScreenSize() {
 	}
 	const auto usew = _fullScreenVideo ? width() : availableWidth;
 	const auto useh = _fullScreenVideo ? height() : availableHeight;
-	if ((_w > usew) || (_h > useh) || _fullScreenVideo) {
+	if ((_width > usew) || (_height > useh) || _fullScreenVideo) {
 		const auto use = _fullScreenVideo ? _zoomToScreen : _zoomToDefault;
 		_zoom = kZoomToScreenLevel;
 		if (use >= 0) {
-			_w = qRound(_w * (use + 1));
-			_h = qRound(_h * (use + 1));
+			_w = qRound(_width * (use + 1));
+			_h = qRound(_height * (use + 1));
 		} else {
-			_w = qRound(_w / (-use + 1));
-			_h = qRound(_h / (-use + 1));
+			_w = qRound(_width / (-use + 1));
+			_h = qRound(_height / (-use + 1));
 		}
 	} else {
 		_zoom = 0;
@@ -1294,12 +1307,31 @@ void OverlayWidget::onScreenResized(int screen) {
 	const auto changed = (screen >= 0 && screen < screens.size())
 		? screens[screen]
 		: nullptr;
+	if (windowHandle()
+		&& windowHandle()->screen()
+		&& changed
+		&& windowHandle()->screen() == changed) {
+		updateGeometry(changed->geometry());
+	}
 	if (!windowHandle()
 		|| !windowHandle()->screen()
 		|| !changed
 		|| windowHandle()->screen() == changed) {
 		moveToScreen();
 	}
+}
+
+void OverlayWidget::handleVisibleChanged(bool visible) {
+	if (visible) {
+		const auto screen = windowHandle()->screen()
+			? windowHandle()->screen()
+			: QApplication::primaryScreen();
+		updateGeometry(screen->geometry());
+	}
+}
+
+void OverlayWidget::handleScreenChanged(QScreen *screen) {
+	updateGeometry(screen->geometry());
 }
 
 void OverlayWidget::onToMessage() {
@@ -1991,7 +2023,7 @@ void OverlayWidget::refreshCaption(HistoryItem *item) {
 	const auto base = duration
 		? DocumentTimestampLinkBase(_document, item->fullId())
 		: QString();
-	const auto context = Core::UiIntegration::Context{
+	const auto context = Core::MarkedTextContext{
 		.session = &item->history()->session()
 	};
 	_caption.setMarkedText(
