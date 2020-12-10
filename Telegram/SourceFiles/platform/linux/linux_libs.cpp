@@ -17,6 +17,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "mainwindow.h"
 
+#ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
+using Platform::internal::XErrorHandlerRestorer;
+#endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
+
 namespace Platform {
 namespace Libs {
 namespace {
@@ -73,10 +77,6 @@ bool setupGtkBase(QLibrary &lib_gtk) {
 	if (!LOAD_SYMBOL(lib_gtk, "gtk_widget_get_type", gtk_widget_get_type)) return false;
 	if (!LOAD_SYMBOL(lib_gtk, "gtk_clipboard_get", gtk_clipboard_get)) return false;
 	if (!LOAD_SYMBOL(lib_gtk, "gtk_clipboard_store", gtk_clipboard_store)) return false;
-	if (!LOAD_SYMBOL(lib_gtk, "gtk_clipboard_wait_for_contents", gtk_clipboard_wait_for_contents)) return false;
-	if (!LOAD_SYMBOL(lib_gtk, "gtk_clipboard_wait_for_image", gtk_clipboard_wait_for_image)) return false;
-	if (!LOAD_SYMBOL(lib_gtk, "gtk_selection_data_targets_include_image", gtk_selection_data_targets_include_image)) return false;
-	if (!LOAD_SYMBOL(lib_gtk, "gtk_selection_data_free", gtk_selection_data_free)) return false;
 	if (!LOAD_SYMBOL(lib_gtk, "gtk_file_chooser_dialog_new", gtk_file_chooser_dialog_new)) return false;
 	if (!LOAD_SYMBOL(lib_gtk, "gtk_file_chooser_get_type", gtk_file_chooser_get_type)) return false;
 	if (!LOAD_SYMBOL(lib_gtk, "gtk_image_get_type", gtk_image_get_type)) return false;
@@ -127,8 +127,7 @@ bool setupGtkBase(QLibrary &lib_gtk) {
 
 	// gtk_init will reset the Xlib error handler, and that causes
 	// Qt applications to quit on X errors. Therefore, we need to manually restore it.
-	internal::XErrorHandlerRestorer handlerRestorer;
-	handlerRestorer.save();
+	XErrorHandlerRestorer handlerRestorer;
 
 	DEBUG_LOG(("Library gtk functions loaded!"));
 	gtkTriedToInit = true;
@@ -138,8 +137,6 @@ bool setupGtkBase(QLibrary &lib_gtk) {
 		return false;
 	}
 	DEBUG_LOG(("Checked gtk with gtk_init_check!"));
-
-	handlerRestorer.restore();
 
 	// Use our custom log handler.
 	g_log_set_handler("Gtk", G_LOG_LEVEL_MESSAGE, gtkMessageHandler, nullptr);
@@ -165,6 +162,14 @@ bool IconThemeShouldBeSet() {
 	return Result;
 }
 
+bool CursorSizeShouldBeSet() {
+	// change the cursor size only on Wayland and if it wasn't already set
+	static const auto Result = IsWayland()
+		&& qEnvironmentVariableIsEmpty("XCURSOR_SIZE");
+
+	return Result;
+}
+
 void SetIconTheme() {
 	Core::Sandbox::Instance().customEnterFromEventLoop([] {
 		if (GtkSettingSupported()
@@ -183,6 +188,21 @@ void SetIconTheme() {
 			}
 
 			Core::App().domain().notifyUnreadBadgeChanged();
+		}
+	});
+}
+
+void SetCursorSize() {
+	Core::Sandbox::Instance().customEnterFromEventLoop([] {
+		if (GtkSettingSupported()
+			&& GtkLoaded()
+			&& CursorSizeShouldBeSet()) {
+			DEBUG_LOG(("Setting GTK cursor size"));
+
+			const auto newCursorSize = GtkSetting<gint>("gtk-cursor-theme-size");
+			qputenv("XCURSOR_SIZE", QByteArray::number(newCursorSize));
+
+			DEBUG_LOG(("New cursor size: %1").arg(newCursorSize));
 		}
 	});
 }
@@ -215,6 +235,7 @@ f_gtk_widget_destroy gtk_widget_destroy = nullptr;
 f_gtk_widget_get_type gtk_widget_get_type = nullptr;
 f_gtk_clipboard_get gtk_clipboard_get = nullptr;
 f_gtk_clipboard_store gtk_clipboard_store = nullptr;
+f_gtk_clipboard_set_image gtk_clipboard_set_image = nullptr;
 f_gtk_clipboard_wait_for_contents gtk_clipboard_wait_for_contents = nullptr;
 f_gtk_clipboard_wait_for_image gtk_clipboard_wait_for_image = nullptr;
 f_gtk_selection_data_targets_include_image gtk_selection_data_targets_include_image = nullptr;
@@ -257,6 +278,7 @@ f_gdk_window_focus gdk_window_focus = nullptr;
 f_gtk_dialog_get_type gtk_dialog_get_type = nullptr;
 f_gtk_dialog_run gtk_dialog_run = nullptr;
 f_gdk_atom_intern gdk_atom_intern = nullptr;
+f_gdk_pixbuf_new_from_data gdk_pixbuf_new_from_data = nullptr;
 f_gdk_pixbuf_new_from_file_at_size gdk_pixbuf_new_from_file_at_size = nullptr;
 f_gdk_pixbuf_get_has_alpha gdk_pixbuf_get_has_alpha = nullptr;
 f_gdk_pixbuf_get_pixels gdk_pixbuf_get_pixels = nullptr;
@@ -296,6 +318,7 @@ void start() {
 	}
 
 	if (gtkLoaded) {
+		LOAD_SYMBOL(lib_gtk, "gdk_pixbuf_new_from_data", gdk_pixbuf_new_from_data);
 		LOAD_SYMBOL(lib_gtk, "gdk_pixbuf_new_from_file_at_size", gdk_pixbuf_new_from_file_at_size);
 		LOAD_SYMBOL(lib_gtk, "gdk_pixbuf_get_has_alpha", gdk_pixbuf_get_has_alpha);
 		LOAD_SYMBOL(lib_gtk, "gdk_pixbuf_get_pixels", gdk_pixbuf_get_pixels);
@@ -304,6 +327,12 @@ void start() {
 		LOAD_SYMBOL(lib_gtk, "gdk_pixbuf_get_rowstride", gdk_pixbuf_get_rowstride);
 
 		internal::GdkHelperLoad(lib_gtk);
+
+		LOAD_SYMBOL(lib_gtk, "gtk_clipboard_set_image", gtk_clipboard_set_image);
+		LOAD_SYMBOL(lib_gtk, "gtk_clipboard_wait_for_contents", gtk_clipboard_wait_for_contents);
+		LOAD_SYMBOL(lib_gtk, "gtk_clipboard_wait_for_image", gtk_clipboard_wait_for_image);
+		LOAD_SYMBOL(lib_gtk, "gtk_selection_data_targets_include_image", gtk_selection_data_targets_include_image);
+		LOAD_SYMBOL(lib_gtk, "gtk_selection_data_free", gtk_selection_data_free);
 
 		LOAD_SYMBOL(lib_gtk, "gtk_dialog_get_widget_for_response", gtk_dialog_get_widget_for_response);
 		LOAD_SYMBOL(lib_gtk, "gtk_button_set_label", gtk_button_set_label);
@@ -314,10 +343,12 @@ void start() {
 		LOAD_SYMBOL(lib_gtk, "gtk_app_chooser_get_type", gtk_app_chooser_get_type);
 
 		SetIconTheme();
+		SetCursorSize();
 
 		const auto settings = gtk_settings_get_default();
 		g_signal_connect(settings, "notify::gtk-icon-theme-name", G_CALLBACK(SetIconTheme), nullptr);
 		g_signal_connect(settings, "notify::gtk-theme-name", G_CALLBACK(DarkModeChanged), nullptr);
+		g_signal_connect(settings, "notify::gtk-cursor-theme-size", G_CALLBACK(SetCursorSize), nullptr);
 
 		if (!gtk_check_version(3, 0, 0)) {
 			g_signal_connect(settings, "notify::gtk-application-prefer-dark-theme", G_CALLBACK(DarkModeChanged), nullptr);

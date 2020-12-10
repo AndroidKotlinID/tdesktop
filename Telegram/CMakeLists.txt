@@ -33,6 +33,7 @@ include(cmake/td_mtproto.cmake)
 include(cmake/td_lang.cmake)
 include(cmake/td_scheme.cmake)
 include(cmake/td_ui.cmake)
+include(cmake/generate_appdata_changelog.cmake)
 
 set_target_properties(Telegram PROPERTIES AUTOMOC ON AUTORCC ON)
 
@@ -264,6 +265,14 @@ PRIVATE
     calls/calls_box_controller.h
     calls/calls_call.cpp
     calls/calls_call.h
+    calls/calls_group_call.cpp
+    calls/calls_group_call.h
+    calls/calls_group_members.cpp
+    calls/calls_group_members.h
+    calls/calls_group_panel.cpp
+    calls/calls_group_panel.h
+    calls/calls_group_settings.cpp
+    calls/calls_group_settings.h
     calls/calls_emoji_fingerprint.cpp
     calls/calls_emoji_fingerprint.h
     calls/calls_instance.cpp
@@ -385,6 +394,8 @@ PRIVATE
     data/data_file_origin.h
     data/data_flags.h
     data/data_game.h
+    data/data_group_call.cpp
+    data/data_group_call.h
     data/data_groups.cpp
     data/data_groups.h
     data/data_histories.cpp
@@ -536,6 +547,8 @@ PRIVATE
     history/view/history_view_cursor_state.h
     history/view/history_view_element.cpp
     history/view/history_view_element.h
+    history/view/history_view_group_call_tracker.cpp
+    history/view/history_view_group_call_tracker.h
     history/view/history_view_list_widget.cpp
     history/view/history_view_list_widget.h
     history/view/history_view_message.cpp
@@ -1307,6 +1320,7 @@ endif()
 if (LINUX AND DESKTOP_APP_USE_PACKAGED)
     include(GNUInstallDirs)
     configure_file("../lib/xdg/telegramdesktop.appdata.xml.in" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml" @ONLY)
+    generate_appdata_changelog(Telegram "../changelog.txt" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml")
     install(TARGETS Telegram RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" BUNDLE DESTINATION "${CMAKE_INSTALL_BINDIR}")
     install(FILES "Resources/art/icon16.png" DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps" RENAME "telegram.png")
     install(FILES "Resources/art/icon32.png" DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps" RENAME "telegram.png")
