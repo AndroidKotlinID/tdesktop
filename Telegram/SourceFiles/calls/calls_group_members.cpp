@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "calls/calls_group_call.h"
 #include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_changes.h"
 #include "data/data_group_call.h"
@@ -24,7 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h" // Core::App().domain().activate.
 #include "main/main_session.h"
 #include "base/timer.h"
-#include "boxes/peers/edit_participants_box.h"
+#include "boxes/peers/edit_participants_box.h" // SubscribeToMigration.
 #include "lang/lang_keys.h"
 #include "window/window_controller.h" // Controller::sessionController.
 #include "window/window_session_controller.h"
@@ -96,6 +97,9 @@ public:
 	[[nodiscard]] uint32 ssrc() const {
 		return _ssrc;
 	}
+	[[nodiscard]] bool sounding() const {
+		return _sounding;
+	}
 	[[nodiscard]] bool speaking() const {
 		return _speaking;
 	}
@@ -146,7 +150,7 @@ private:
 
 		Ui::Paint::Blobs blobs;
 		crl::time lastTime = 0;
-		crl::time lastSpeakingUpdateTime = 0;
+		crl::time lastSoundingUpdateTime = 0;
 		float64 enter = 0.;
 
 		QImage userpicCache;
@@ -155,6 +159,7 @@ private:
 		rpl::lifetime lifetime;
 	};
 	void refreshStatus() override;
+	void setSounding(bool sounding);
 	void setSpeaking(bool speaking);
 	void setState(State state);
 	void setSsrc(uint32 ssrc);
@@ -171,6 +176,7 @@ private:
 	Ui::Animations::Simple _mutedAnimation; // For gray/red icon.
 	Ui::Animations::Simple _activeAnimation; // For icon cross animation.
 	uint32 _ssrc = 0;
+	bool _sounding = false;
 	bool _speaking = false;
 	bool _skipLevelUpdate = false;
 
@@ -237,7 +243,7 @@ private:
 	[[nodiscard]] Data::GroupCall *resolvedRealCall() const;
 
 	const base::weak_ptr<GroupCall> _call;
-	const not_null<ChannelData*> _channel;
+	not_null<PeerData*> _peer;
 
 	// Use only resolvedRealCall() method, not this value directly.
 	Data::GroupCall *_realCallRawValue = nullptr;
@@ -251,10 +257,10 @@ private:
 	base::unique_qptr<Ui::PopupMenu> _menu;
 	base::flat_set<not_null<PeerData*>> _menuCheckRowsAfterHidden;
 
-	base::flat_map<uint32, not_null<Row*>> _speakingRowBySsrc;
-	Ui::Animations::Basic _speakingAnimation;
+	base::flat_map<uint32, not_null<Row*>> _soundingRowBySsrc;
+	Ui::Animations::Basic _soundingAnimation;
 
-	crl::time _speakingAnimationHideLastTime = 0;
+	crl::time _soundingAnimationHideLastTime = 0;
 	bool _skipRowLevelUpdate = false;
 
 	Ui::CrossLineAnimation _inactiveCrossLine;
@@ -283,16 +289,20 @@ void Row::updateState(const Data::GroupCall::Participant *participant) {
 			setCustomStatus(QString());
 		}
 		setState(State::Inactive);
+		setSounding(false);
 		setSpeaking(false);
 	} else if (!participant->muted
-		|| (participant->speaking && participant->ssrc != 0)) {
+		|| (participant->sounding && participant->ssrc != 0)) {
 		setState(State::Active);
+		setSounding(participant->sounding && participant->ssrc != 0);
 		setSpeaking(participant->speaking && participant->ssrc != 0);
 	} else if (participant->canSelfUnmute) {
 		setState(State::Inactive);
+		setSounding(false);
 		setSpeaking(false);
 	} else {
 		setState(State::Muted);
+		setSounding(false);
 		setSpeaking(false);
 	}
 }
@@ -307,7 +317,14 @@ void Row::setSpeaking(bool speaking) {
 		_speaking ? 0. : 1.,
 		_speaking ? 1. : 0.,
 		st::widgetFadeDuration);
-	if (!_speaking) {
+}
+
+void Row::setSounding(bool sounding) {
+	if (_sounding == sounding) {
+		return;
+	}
+	_sounding = sounding;
+	if (!_sounding) {
 		_blobsAnimation = nullptr;
 	} else if (!_blobsAnimation) {
 		_blobsAnimation = std::make_unique<BlobsAnimation>(
@@ -357,7 +374,7 @@ void Row::updateLevel(float level) {
 	}
 
 	if (level >= GroupCall::kSpeakLevelThreshold) {
-		_blobsAnimation->lastSpeakingUpdateTime = crl::now();
+		_blobsAnimation->lastSoundingUpdateTime = crl::now();
 	}
 	_blobsAnimation->blobs.setLevel(level);
 }
@@ -365,14 +382,14 @@ void Row::updateLevel(float level) {
 void Row::updateBlobAnimation(crl::time now) {
 	Expects(_blobsAnimation != nullptr);
 
-	const auto speakingFinishesAt = _blobsAnimation->lastSpeakingUpdateTime
-		+ Data::GroupCall::kSpeakStatusKeptFor;
-	const auto speakingStartsFinishing = speakingFinishesAt
+	const auto soundingFinishesAt = _blobsAnimation->lastSoundingUpdateTime
+		+ Data::GroupCall::kSoundStatusKeptFor;
+	const auto soundingStartsFinishing = soundingFinishesAt
 		- kBlobsEnterDuration;
-	const auto speakingFinishes = (speakingStartsFinishing < now);
-	if (speakingFinishes) {
+	const auto soundingFinishes = (soundingStartsFinishing < now);
+	if (soundingFinishes) {
 		_blobsAnimation->enter = std::clamp(
-			(speakingFinishesAt - now) / float64(kBlobsEnterDuration),
+			(soundingFinishesAt - now) / float64(kBlobsEnterDuration),
 			0.,
 			1.);
 	} else if (_blobsAnimation->enter < 1.) {
@@ -417,8 +434,13 @@ auto Row::generatePaintUserpicCallback() -> PaintRoundImageCallback {
 	return [=](Painter &p, int x, int y, int outerWidth, int size) mutable {
 		if (_blobsAnimation) {
 			const auto shift = QPointF(x + size / 2., y + size / 2.);
+			auto hq = PainterHighQualityEnabler(p);
 			p.translate(shift);
-			_blobsAnimation->blobs.paint(p, st::groupCallMemberActiveStatus);
+			const auto brush = anim::brush(
+				st::groupCallMemberInactiveStatus,
+				st::groupCallMemberActiveStatus,
+				_speakingAnimation.value(_speaking ? 1. : 0.));
+			_blobsAnimation->blobs.paint(p, brush);
 			p.translate(-shift);
 			p.setOpacity(1.);
 
@@ -517,7 +539,7 @@ MembersController::MembersController(
 	not_null<GroupCall*> call,
 	not_null<QWidget*> menuParent)
 : _call(call)
-, _channel(call->channel())
+, _peer(call->peer())
 , _menuParent(menuParent)
 , _inactiveCrossLine(st::groupCallMemberInactiveCrossLine)
 , _coloredCrossLine(st::groupCallMemberColoredCrossLine) {
@@ -535,28 +557,28 @@ MembersController::MembersController(
 	) | rpl::start_with_next([=](bool animDisabled, bool deactivated) {
 		const auto hide = !(!animDisabled && !deactivated);
 
-		if (!(hide && _speakingAnimationHideLastTime)) {
-			_speakingAnimationHideLastTime = hide ? crl::now() : 0;
+		if (!(hide && _soundingAnimationHideLastTime)) {
+			_soundingAnimationHideLastTime = hide ? crl::now() : 0;
 		}
-		for (const auto [_, row] : _speakingRowBySsrc) {
+		for (const auto [_, row] : _soundingRowBySsrc) {
 			if (hide) {
 				updateRowLevel(row, 0.);
 			}
 			row->setSkipLevelUpdate(hide);
 		}
-		if (!hide && !_speakingAnimation.animating()) {
-			_speakingAnimation.start();
+		if (!hide && !_soundingAnimation.animating()) {
+			_soundingAnimation.start();
 		}
 		_skipRowLevelUpdate = hide;
 	}, _lifetime);
 
-	_speakingAnimation.init([=](crl::time now) {
-		if (const auto &last = _speakingAnimationHideLastTime; (last > 0)
+	_soundingAnimation.init([=](crl::time now) {
+		if (const auto &last = _soundingAnimationHideLastTime; (last > 0)
 			&& (now - last >= kBlobsEnterDuration)) {
-			_speakingAnimation.stop();
+			_soundingAnimation.stop();
 			return false;
 		}
-		for (const auto [ssrc, row] : _speakingRowBySsrc) {
+		for (const auto [ssrc, row] : _soundingRowBySsrc) {
 			row->updateBlobAnimation(now);
 			delegate()->peerListUpdateRow(row);
 		}
@@ -572,12 +594,12 @@ MembersController::~MembersController() {
 }
 
 void MembersController::setupListChangeViewers(not_null<GroupCall*> call) {
-	const auto channel = call->channel();
-	channel->session().changes().peerFlagsValue(
-		channel,
+	const auto peer = call->peer();
+	peer->session().changes().peerFlagsValue(
+		peer,
 		Data::PeerUpdate::Flag::GroupCall
 	) | rpl::map([=] {
-		return channel->call();
+		return peer->groupCall();
 	}) | rpl::filter([=](Data::GroupCall *real) {
 		const auto call = _call.get();
 		return call && real && (real->id() == call->id());
@@ -590,7 +612,7 @@ void MembersController::setupListChangeViewers(not_null<GroupCall*> call) {
 	call->stateValue(
 	) | rpl::start_with_next([=] {
 		const auto call = _call.get();
-		const auto real = channel->call();
+		const auto real = peer->groupCall();
 		if (call && real && (real->id() == call->id())) {
 			//updateRow(channel->session().user());
 		}
@@ -598,8 +620,8 @@ void MembersController::setupListChangeViewers(not_null<GroupCall*> call) {
 
 	call->levelUpdates(
 	) | rpl::start_with_next([=](const LevelUpdate &update) {
-		const auto i = _speakingRowBySsrc.find(update.ssrc);
-		if (i != end(_speakingRowBySsrc)) {
+		const auto i = _soundingRowBySsrc.find(update.ssrc);
+		if (i != end(_soundingRowBySsrc)) {
 			updateRowLevel(i->second, update.value);
 		}
 	}, _lifetime);
@@ -697,41 +719,41 @@ void MembersController::checkSpeakingRowPosition(not_null<Row*> row) {
 void MembersController::updateRow(
 		not_null<Row*> row,
 		const Data::GroupCall::Participant *participant) {
-	const auto wasSpeaking = row->speaking();
+	const auto wasSounding = row->sounding();
 	const auto wasSsrc = row->ssrc();
 	row->setSkipLevelUpdate(_skipRowLevelUpdate);
 	row->updateState(participant);
-	const auto nowSpeaking = row->speaking();
+	const auto nowSounding = row->sounding();
 	const auto nowSsrc = row->ssrc();
 
-	const auto wasNoSpeaking = _speakingRowBySsrc.empty();
+	const auto wasNoSounding = _soundingRowBySsrc.empty();
 	if (wasSsrc == nowSsrc) {
-		if (nowSpeaking != wasSpeaking) {
-			if (nowSpeaking) {
-				_speakingRowBySsrc.emplace(nowSsrc, row);
+		if (nowSounding != wasSounding) {
+			if (nowSounding) {
+				_soundingRowBySsrc.emplace(nowSsrc, row);
 			} else {
-				_speakingRowBySsrc.remove(nowSsrc);
+				_soundingRowBySsrc.remove(nowSsrc);
 			}
 		}
 	} else {
-		_speakingRowBySsrc.remove(wasSsrc);
-		if (nowSpeaking) {
+		_soundingRowBySsrc.remove(wasSsrc);
+		if (nowSounding) {
 			Assert(nowSsrc != 0);
-			_speakingRowBySsrc.emplace(nowSsrc, row);
+			_soundingRowBySsrc.emplace(nowSsrc, row);
 		}
 	}
-	const auto nowNoSpeaking = _speakingRowBySsrc.empty();
-	if (wasNoSpeaking && !nowNoSpeaking) {
-		_speakingAnimation.start();
-	} else if (nowNoSpeaking && !wasNoSpeaking) {
-		_speakingAnimation.stop();
+	const auto nowNoSounding = _soundingRowBySsrc.empty();
+	if (wasNoSounding && !nowNoSounding) {
+		_soundingAnimation.start();
+	} else if (nowNoSounding && !wasNoSounding) {
+		_soundingAnimation.stop();
 	}
 
 	delegate()->peerListUpdateRow(row);
 }
 
 void MembersController::removeRow(not_null<Row*> row) {
-	_speakingRowBySsrc.remove(row->ssrc());
+	_soundingRowBySsrc.remove(row->ssrc());
 	delegate()->peerListRemoveRow(row);
 }
 
@@ -750,14 +772,14 @@ Row *MembersController::findRow(not_null<UserData*> user) const {
 
 Data::GroupCall *MembersController::resolvedRealCall() const {
 	return (_realCallRawValue
-		&& (_channel->call() == _realCallRawValue)
+		&& (_peer->groupCall() == _realCallRawValue)
 		&& (_realCallRawValue->id() == _realId))
 		? _realCallRawValue
 		: nullptr;
 }
 
 Main::Session &MembersController::session() const {
-	return _call->channel()->session();
+	return _call->peer()->session();
 }
 
 void MembersController::prepare() {
@@ -767,7 +789,7 @@ void MembersController::prepare() {
 	setSearchNoResultsText(tr::lng_blocked_list_not_found(tr::now));
 
 	const auto call = _call.get();
-	if (const auto real = _channel->call();
+	if (const auto real = _peer->groupCall();
 		real && call && real->id() == call->id()) {
 		prepareRows(real);
 	} else if (auto row = createSelfRow()) {
@@ -803,10 +825,10 @@ void MembersController::prepareRows(not_null<Data::GroupCall*> real) {
 		}
 	}
 	if (!foundSelf) {
-		const auto self = _channel->session().user();
+		const auto self = _peer->session().user();
 		const auto i = ranges::find(
 			participants,
-			_channel->session().user(),
+			_peer->session().user(),
 			&Data::GroupCall::Participant::user);
 		auto row = (i != end(participants)) ? createRow(*i) : createSelfRow();
 		if (row) {
@@ -826,7 +848,7 @@ void MembersController::prepareRows(not_null<Data::GroupCall*> real) {
 }
 
 void MembersController::loadMoreRows() {
-	if (const auto real = _channel->call()) {
+	if (const auto real = _peer->groupCall()) {
 		real->requestParticipants();
 	}
 }
@@ -837,7 +859,7 @@ auto MembersController::toggleMuteRequests() const
 }
 
 bool MembersController::rowCanMuteMembers() {
-	return _channel->canManageCall();
+	return _peer->canManageGroupCall();
 }
 
 void MembersController::rowUpdateRow(not_null<Row*> row) {
@@ -998,7 +1020,7 @@ base::unique_qptr<Ui::PopupMenu> MembersController::rowContextMenu(
 		_kickMemberRequests.fire_copy(user);
 	});
 
-	if (_channel->canManageCall()) {
+	if (_peer->canManageGroupCall()) {
 		result->addAction(
 			(mute
 				? tr::lng_group_call_context_mute(tr::now)
@@ -1011,7 +1033,16 @@ base::unique_qptr<Ui::PopupMenu> MembersController::rowContextMenu(
 	result->addAction(
 		tr::lng_context_send_message(tr::now),
 		showHistory);
-	if (_channel->canRestrictUser(user)) {
+	const auto canKick = [&] {
+		if (const auto chat = _peer->asChat()) {
+			return chat->amCreator()
+				|| (chat->canBanMembers() && !chat->admins.contains(user));
+		} else if (const auto group = _peer->asMegagroup()) {
+			return group->canRestrictUser(user);
+		}
+		return false;
+	}();
+	if (canKick) {
 		result->addAction(
 			tr::lng_context_remove_from_group(tr::now),
 			removeFromGroup);
@@ -1020,7 +1051,7 @@ base::unique_qptr<Ui::PopupMenu> MembersController::rowContextMenu(
 }
 
 std::unique_ptr<Row> MembersController::createSelfRow() {
-	const auto self = _channel->session().user();
+	const auto self = _peer->session().user();
 	auto result = std::make_unique<Row>(this, self);
 	updateRow(result.get(), nullptr);
 	return result;
@@ -1074,7 +1105,7 @@ int GroupMembers::desiredHeight() const {
 	auto desired = _header ? _header->height() : 0;
 	auto count = [&] {
 		if (const auto call = _call.get()) {
-			if (const auto real = call->channel()->call()) {
+			if (const auto real = call->peer()->groupCall()) {
 				if (call->id() == real->id()) {
 					return real->fullCount();
 				}
@@ -1137,9 +1168,15 @@ object_ptr<Ui::FlatLabel> GroupMembers::setupTitle(
 void GroupMembers::setupButtons(not_null<GroupCall*> call) {
 	using namespace rpl::mappers;
 
-	_addMember->showOn(Data::CanWriteValue(
-		call->channel().get()
-	));
+	_canAddMembers = Data::CanWriteValue(call->peer().get());
+	SubscribeToMigration(
+		call->peer(),
+		lifetime(),
+		[=](not_null<ChannelData*> channel) {
+			_canAddMembers = Data::CanWriteValue(channel.get());
+		});
+
+	_addMember->showOn(_canAddMembers.value());
 	_addMember->addClickHandler([=] { // TODO throttle(ripple duration)
 		_addMemberRequests.fire({});
 	});
