@@ -12,8 +12,8 @@ RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
 RUN yum -y install https://packages.endpoint.com/rhel/7/os/x86_64/endpoint-repo-1.7-1.x86_64.rpm
 RUN yum -y install centos-release-scl
 
-RUN yum -y install git cmake3 zlib-devel gtk2-devel gtk3-devel libICE-devel \
-	libSM-devel libdrm-devel autoconf automake libtool fontconfig-devel \
+RUN yum -y install git cmake3 zlib-devel gtk2-devel gtk3-devel \
+	libdrm-devel autoconf automake libtool fontconfig-devel \
 	freetype-devel libX11-devel at-spi2-core-devel alsa-lib-devel \
 	pulseaudio-libs-devel mesa-libGL-devel mesa-libEGL-devel \
 	pkgconfig bison yasm file which xorg-x11-util-macros \
@@ -28,7 +28,7 @@ WORKDIR $LibrariesPath
 
 FROM builder AS patches
 RUN git clone $GIT/desktop-app/patches.git
-RUN cd patches && git checkout f22ccc5
+RUN cd patches && git checkout 6afd91a
 
 FROM builder AS libffi
 RUN git clone -b v3.3 --depth=1 $GIT/libffi/libffi.git
@@ -436,6 +436,7 @@ RUN echo './configure -prefix '$'\"''$QT_PREFIX'$'\"'' \
 	-qt-pcre \
 	-no-icu \
 	-no-gtk \
+	-no-feature-xcb-sm \
 	-no-feature-wayland-server \
 	-static \
 	-dbus-runtime \

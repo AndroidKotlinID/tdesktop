@@ -25,6 +25,10 @@ class GlobalShortcutManager;
 class GlobalShortcutValue;
 } // namespace base
 
+namespace Webrtc {
+class MediaDevices;
+} // namespace Webrtc
+
 namespace Data {
 struct LastSpokeTimes;
 } // namespace Data
@@ -61,6 +65,13 @@ public:
 		virtual void groupCallFailed(not_null<GroupCall*> call) = 0;
 		virtual void groupCallRequestPermissionsOrFail(
 			Fn<void()> onSuccess) = 0;
+
+		enum class GroupCallSound {
+			Started,
+			Connecting,
+			Ended,
+		};
+		virtual void groupCallPlaySound(GroupCallSound sound) = 0;
 	};
 
 	using GlobalShortcutManager = base::GlobalShortcutManager;
@@ -109,6 +120,7 @@ public:
 	[[nodiscard]] rpl::producer<State> stateValue() const {
 		return _state.value();
 	}
+	[[nodiscard]] rpl::producer<bool> connectingValue() const;
 
 	[[nodiscard]] rpl::producer<LevelUpdate> levelUpdates() const {
 		return _levelUpdates.events();
@@ -125,6 +137,8 @@ public:
 
 	std::shared_ptr<GlobalShortcutManager> ensureGlobalShortcutManager();
 	void applyGlobalShortcutChanges();
+
+	void pushToTalk(bool pressed, crl::time delay);
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
@@ -160,6 +174,10 @@ private:
 	void checkGlobalShortcutAvailability();
 	void checkJoined();
 
+	void playConnectingSound();
+	void stopConnectingSound();
+	void playConnectingSoundOnce();
+
 	[[nodiscard]] MTPInputGroupCall inputCall() const;
 
 	const not_null<Delegate*> _delegate;
@@ -189,7 +207,12 @@ private:
 	std::shared_ptr<GlobalShortcutManager> _shortcutManager;
 	std::shared_ptr<GlobalShortcutValue> _pushToTalk;
 	base::Timer _pushToTalkCancelTimer;
-	bool _pushToTalkStarted = false;
+	base::Timer _connectingSoundTimer;
+	bool _hadJoinedState = false;
+
+	std::unique_ptr<Webrtc::MediaDevices> _mediaDevices;
+	QString _audioInputId;
+	QString _audioOutputId;
 
 	rpl::lifetime _lifetime;
 
