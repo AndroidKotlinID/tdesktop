@@ -110,13 +110,13 @@ private:
 
 	rpl::event_stream<> _accept;
 	rpl::event_stream<> _reject;
-	rpl::lifetime _lifetime;
 
 };
 
 class GtkFileDialog : public QDialog {
 public:
-	GtkFileDialog(QWidget *parent = nullptr,
+	GtkFileDialog(
+		QWidget *parent = nullptr,
 		const QString &caption = QString(),
 		const QString &directory = QString(),
 		const QString &filter = QString());
@@ -208,16 +208,17 @@ void QGtkDialog::exec() {
 	} else {
 		// block input to the window, allow input to other GTK dialogs
 		QEventLoop loop;
+		rpl::lifetime lifetime;
 
 		accept(
-		) | rpl::start_with_next([=, &loop] {
+		) | rpl::start_with_next([&] {
 			loop.quit();
-		}, _lifetime);
+		}, lifetime);
 
 		reject(
-		) | rpl::start_with_next([=, &loop] {
+		) | rpl::start_with_next([&] {
 			loop.quit();
-		}, _lifetime);
+		}, lifetime);
 
 		loop.exec();
 	}
@@ -640,24 +641,10 @@ bool Supported() {
 }
 
 bool Use(Type type) {
-	// use gtk file dialog on gtk-based desktop environments
-	// or if QT_QPA_PLATFORMTHEME=(gtk2|gtk3)
-	// or if portals are used and operation is to open folder
-	// and portal doesn't support folder choosing
-	const auto sandboxedOrCustomPortal = InFlatpak()
-		|| InSnap()
-		|| UseXDGDesktopPortal();
-
-	const auto neededForPortal = (type == Type::ReadFolder)
-		&& !CanOpenDirectoryWithPortal();
-
-	const auto neededNonForced = DesktopEnvironment::IsGtkBased()
-		|| (sandboxedOrCustomPortal && neededForPortal);
-
-	const auto excludeNonForced = sandboxedOrCustomPortal && !neededForPortal;
-
 	return IsGtkIntegrationForced()
-		|| (neededNonForced && !excludeNonForced);
+		|| DesktopEnvironment::IsGtkBased()
+		// use as a fallback for portal dialog
+		|| UseXDGDesktopPortal();
 }
 
 bool Get(

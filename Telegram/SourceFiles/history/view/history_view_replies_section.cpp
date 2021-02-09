@@ -221,6 +221,13 @@ RepliesWidget::RepliesWidget(
 		replyToMessage(fullId);
 	}, _inner->lifetime());
 
+	_inner->showMessageRequested(
+	) | rpl::start_with_next([=](auto fullId) {
+		if (const auto item = session().data().message(fullId)) {
+			showAtPosition(item->position());
+		}
+	}, _inner->lifetime());
+
 	_composeControls->sendActionUpdates(
 	) | rpl::start_with_next([=](ComposeControls::SendActionUpdate &&data) {
 		session().sendProgressManager().update(
@@ -488,29 +495,24 @@ void RepliesWidget::setupComposeControls() {
 		showAtPosition(pos);
 	}, lifetime());
 
-	_composeControls->keyEvents(
+	_composeControls->scrollKeyEvents(
 	) | rpl::start_with_next([=](not_null<QKeyEvent*> e) {
-		if (e->key() == Qt::Key_Up) {
-			if (!_composeControls->isEditingMessage()) {
-				if (const auto item = _replies->lastEditableMessage()) {
-					_inner->editMessageRequestNotify(item->fullId());
-				} else {
-					_scroll->keyPressEvent(e);
-				}
-			} else {
-				_scroll->keyPressEvent(e);
-			}
-			e->accept();
-		} else if (e->key() == Qt::Key_Down) {
+		_scroll->keyPressEvent(e);
+	}, lifetime());
+
+	_composeControls->editLastMessageRequests(
+	) | rpl::start_with_next([=](not_null<QKeyEvent*> e) {
+		if (!_inner->lastMessageEditRequestNotify()) {
 			_scroll->keyPressEvent(e);
-			e->accept();
-		} else if (e->key() == Qt::Key_PageDown) {
-			_scroll->keyPressEvent(e);
-			e->accept();
-		} else if (e->key() == Qt::Key_PageUp) {
-			_scroll->keyPressEvent(e);
-			e->accept();
 		}
+	}, lifetime());
+
+	_composeControls->replyNextRequests(
+	) | rpl::start_with_next([=](ComposeControls::ReplyNextRequest &&data) {
+		using Direction = ComposeControls::ReplyNextRequest::Direction;
+		_inner->replyNextMessage(
+			data.replyId,
+			data.direction == Direction::Next);
 	}, lifetime());
 
 	_composeControls->setMimeDataHook([=](

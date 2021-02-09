@@ -231,24 +231,15 @@ void ScheduledWidget::setupComposeControls() {
 		showAtPosition(pos);
 	}, lifetime());
 
-	_composeControls->keyEvents(
+	_composeControls->scrollKeyEvents(
 	) | rpl::start_with_next([=](not_null<QKeyEvent*> e) {
-		if (e->key() == Qt::Key_Up) {
-			if (!_composeControls->isEditingMessage()) {
-				const auto item = session().data().scheduledMessages()
-					.lastEditableMessage(_history);
-				if (item) {
-					_inner->editMessageRequestNotify(item->fullId());
-				} else {
-					_scroll->keyPressEvent(e);
-				}
-			} else {
-				_scroll->keyPressEvent(e);
-			}
-			e->accept();
-		} else if (e->key() == Qt::Key_Down) {
+		_scroll->keyPressEvent(e);
+	}, lifetime());
+
+	_composeControls->editLastMessageRequests(
+	) | rpl::start_with_next([=](not_null<QKeyEvent*> e) {
+		if (!_inner->lastMessageEditRequestNotify()) {
 			_scroll->keyPressEvent(e);
-			e->accept();
 		}
 	}, lifetime());
 
