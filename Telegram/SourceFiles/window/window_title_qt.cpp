@@ -27,6 +27,16 @@ namespace {
 	return st::callShadow.extend;
 }
 
+template <typename T>
+void RemoveDuplicates(std::vector<T> &v) {
+	auto end = v.end();
+	for (auto it = v.begin(); it != end; ++it) {
+		end = std::remove(it + 1, end, *it);
+	}
+
+	v.erase(end, v.end());
+}
+
 } // namespace
 
 TitleWidgetQt::TitleWidgetQt(QWidget *parent)
@@ -110,6 +120,16 @@ bool TitleWidgetQt::hasShadow() const {
 		&& Ui::Platform::TranslucentWindowsSupported(center);
 }
 
+Ui::IconButton *TitleWidgetQt::controlWidget(Control control) const {
+	switch (control) {
+	case Control::Minimize: return _minimize;
+	case Control::Maximize: return _maximizeRestore;
+	case Control::Close: return _close;
+	}
+
+	return nullptr;
+}
+
 void TitleWidgetQt::paintEvent(QPaintEvent *e) {
 	auto active = isActiveWindow();
 	if (_activeState != active) {
@@ -127,7 +147,7 @@ void TitleWidgetQt::updateWindowExtents() {
 	if (hasShadow()) {
 		Platform::SetWindowExtents(
 			window()->windowHandle(),
-			resizeArea());
+			resizeArea() * cIntRetinaFactor());
 
 		_extentsSet = true;
 	} else if (_extentsSet) {
@@ -141,22 +161,24 @@ void TitleWidgetQt::updateControlsPosition() {
 	const auto controlsLeft = controlsLayout.left;
 	const auto controlsRight = controlsLayout.right;
 
-	if (ranges::contains(controlsLeft, Control::Minimize)
-		|| ranges::contains(controlsRight, Control::Minimize)) {
+	const auto controlPresent = [&](Control control) {
+		return ranges::contains(controlsLeft, control)
+		|| ranges::contains(controlsRight, control);
+	};
+
+	if (controlPresent(Control::Minimize)) {
 		_minimize->show();
 	} else {
 		_minimize->hide();
 	}
 
-	if (ranges::contains(controlsLeft, Control::Maximize)
-		|| ranges::contains(controlsRight, Control::Maximize)) {
+	if (controlPresent(Control::Maximize)) {
 		_maximizeRestore->show();
 	} else {
 		_maximizeRestore->hide();
 	}
 
-	if (ranges::contains(controlsLeft, Control::Close)
-		|| ranges::contains(controlsRight, Control::Close)) {
+	if (controlPresent(Control::Close)) {
 		_close->show();
 	} else {
 		_close->hide();
@@ -169,41 +191,26 @@ void TitleWidgetQt::updateControlsPosition() {
 void TitleWidgetQt::updateControlsPositionBySide(
 		const std::vector<Control> &controls,
 		bool right) {
-	const auto preparedControls = right
+	auto preparedControls = right
 		? (ranges::view::reverse(controls) | ranges::to_vector)
 		: controls;
 
+	RemoveDuplicates(preparedControls);
+
 	auto position = 0;
 	for (const auto &control : preparedControls) {
-		switch (control) {
-		case Control::Minimize:
-			if (right) {
-				_minimize->moveToRight(position, 0);
-			} else {
-				_minimize->moveToLeft(position, 0);
-			}
-
-			position += _minimize->width();
-			break;
-		case Control::Maximize:
-			if (right) {
-				_maximizeRestore->moveToRight(position, 0);
-			} else {
-				_maximizeRestore->moveToLeft(position, 0);
-			}
-
-			position += _maximizeRestore->width();
-			break;
-		case Control::Close:
-			if (right) {
-				_close->moveToRight(position, 0);
-			} else {
-				_close->moveToLeft(position, 0);
-			}
-
-			position += _close->width();
-			break;
+		const auto widget = controlWidget(control);
+		if (!widget) {
+			continue;
 		}
+
+		if (right) {
+			widget->moveToRight(position, 0);
+		} else {
+			widget->moveToLeft(position, 0);
+		}
+
+		position += widget->width();
 	}
 }
 

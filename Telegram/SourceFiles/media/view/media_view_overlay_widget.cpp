@@ -473,10 +473,21 @@ void OverlayWidget::updateGeometry() {
 	if (geometry() == available) {
 		return;
 	}
+	DEBUG_LOG(("Viewer Pos: Setting %1, %2, %3, %4")
+		.arg(available.x())
+		.arg(available.y())
+		.arg(available.width())
+		.arg(available.height()));
 	setGeometry(available);
 }
 
 void OverlayWidget::resizeEvent(QResizeEvent *e) {
+	const auto newGeometry = geometry();
+	DEBUG_LOG(("Viewer Pos: Resized to %1, %2, %3, %4")
+		.arg(newGeometry.x())
+		.arg(newGeometry.y())
+		.arg(newGeometry.width())
+		.arg(newGeometry.height()));
 	updateControlsGeometry();
 	OverlayParent::resizeEvent(e);
 }
@@ -2425,6 +2436,7 @@ void OverlayWidget::displayFinished() {
 	updateControls();
 	if (isHidden()) {
 		Ui::Platform::UpdateOverlayed(this);
+		moveToScreen();
 		if (Platform::IsLinux()) {
 			showFullScreen();
 		} else {
@@ -3086,7 +3098,10 @@ void OverlayWidget::paintEvent(QPaintEvent *e) {
 	const auto r = e->rect();
 	const auto region = e->region();
 	const auto contentShown = _photo || documentContentShown();
-	const auto bgRegion = contentShown
+	const auto opaqueContentShown = contentShown
+		&& (!_document
+			|| (!_document->isVideoMessage() && !_document->sticker()));
+	const auto bgRegion = opaqueContentShown
 		? (region - contentRect())
 		: region;
 
@@ -3373,9 +3388,9 @@ void OverlayWidget::paintTransformedStaticContent(Painter &p) {
 	const auto rect = contentRect();
 
 	PainterHighQualityEnabler hq(p);
-	if ((!_document || !_documentMedia->getStickerLarge())
-		&& (_staticContent.isNull()
-			|| _staticContent.hasAlpha())) {
+	if ((!_document
+		|| (!_document->sticker() && !_document->isVideoMessage()))
+		&& (_staticContent.isNull() || _staticContent.hasAlpha())) {
 		p.fillRect(rect, _transparentBrush);
 	}
 	if (_staticContent.isNull()) {
