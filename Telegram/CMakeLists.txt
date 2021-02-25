@@ -240,8 +240,6 @@ PRIVATE
     boxes/photo_crop_box.h
     boxes/rate_call_box.cpp
     boxes/rate_call_box.h
-    boxes/report_box.cpp
-    boxes/report_box.h
     boxes/self_destruction_box.cpp
     boxes/self_destruction_box.h
     boxes/send_files_box.cpp
@@ -497,6 +495,8 @@ PRIVATE
     history/view/controls/compose_controls_common.h
     history/view/controls/history_view_compose_controls.cpp
     history/view/controls/history_view_compose_controls.h
+    history/view/controls/history_view_ttl_button.cpp
+    history/view/controls/history_view_ttl_button.h
     history/view/controls/history_view_voice_record_bar.cpp
     history/view/controls/history_view_voice_record_bar.h
     history/view/controls/history_view_voice_record_button.cpp

@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "platform/platform_window_title.h"
 #include "base/platform/base_platform_info.h"
+#include "base/platform/base_platform_process.h"
 #include "ui/platform/ui_platform_utility.h"
 #include "history/history.h"
 #include "window/themes/window_theme.h"
@@ -280,7 +281,6 @@ void MainWindow::handleActiveChanged() {
 		Core::App().checkMediaViewActivation();
 	}
 	base::call_delayed(1, this, [this] {
-		updateTrayMenu();
 		handleActiveChangedHook();
 	});
 }
@@ -300,7 +300,6 @@ void MainWindow::handleVisibleChanged(bool visible) {
 
 void MainWindow::showFromTray() {
 	base::call_delayed(1, this, [this] {
-		updateTrayMenu();
 		updateGlobalMenu();
 	});
 	activate();
@@ -316,8 +315,16 @@ void MainWindow::activate() {
 	setWindowState(windowState() & ~Qt::WindowMinimized);
 	setVisible(true);
 	psActivateProcess();
-	raise();
-	activateWindow();
+	// allow to focus even if X11 native code is disabled
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+	if (Platform::IsX11()) {
+		base::Platform::ActivateThisProcessWindow(winId());
+	} else
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+	{
+		raise();
+		activateWindow();
+	}
 	controller().updateIsActiveFocus();
 	if (wasHidden) {
 		if (const auto session = sessionController()) {
@@ -556,7 +563,6 @@ void MainWindow::attachToTrayIcon(not_null<QSystemTrayIcon*> icon) {
 			handleTrayIconActication(reason);
 		});
 	});
-	App::wnd()->updateTrayMenu();
 }
 
 void MainWindow::paintEvent(QPaintEvent *e) {
@@ -694,7 +700,6 @@ bool MainWindow::minimizeToTray() {
 
 	closeWithoutDestroy();
 	controller().updateIsActiveBlur();
-	updateTrayMenu();
 	updateGlobalMenu();
 	showTrayTooltip();
 	return true;
