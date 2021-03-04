@@ -19,7 +19,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_replies_section.h"
-//#include "history/feed/history_feed_section.h" // #feed
 #include "media/player/media_player_instance.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
@@ -34,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/shortcuts.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/click_handler_types.h"
 #include "base/unixtime.h"
 #include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
@@ -79,7 +79,10 @@ void DateClickHandler::setDate(QDate date) {
 }
 
 void DateClickHandler::onClick(ClickContext context) const {
-	App::wnd()->sessionController()->showJumpToDate(_chat, _date);
+	const auto my = context.other.value<ClickHandlerContext>();
+	if (const auto window = my.sessionWindow.get()) {
+		window->showJumpToDate(_chat, _date);
+	}
 }
 
 SessionNavigation::SessionNavigation(not_null<Main::Session*> session)
@@ -639,12 +642,6 @@ bool SessionController::jumpToChatListEntry(Dialogs::RowDescriptor row) {
 	if (const auto history = row.key.history()) {
 		Ui::showPeerHistory(history, row.fullId.msg);
 		return true;
-	//} else if (const auto feed = row.key.feed()) { // #feed
-	//	if (const auto item = session().data().message(row.fullId)) {
-	//		showSection(std::make_shared<HistoryFeed::Memento>(feed, item->position()));
-	//	} else {
-	//		showSection(std::make_shared<HistoryFeed::Memento>(feed));
-	//	}
 	}
 	return false;
 }
@@ -991,12 +988,6 @@ void SessionController::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 			} else if (history->chatListTimeId() != 0) {
 				return base::unixtime::parse(history->chatListTimeId()).date();
 			}
-		//} else if (const auto feed = chat.feed()) { // #feed
-		//	if (chatScrollPosition(feed)) { // #TODO feeds save position
-
-		//	} else if (feed->chatListTimeId() != 0) {
-		//		return base::unixtime::parse(feed->chatListTimeId()).date();
-		//	}
 		}
 		return QDate();
 	}();
@@ -1008,10 +999,6 @@ void SessionController::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 			if (history && history->chatListTimeId() != 0) {
 				return base::unixtime::parse(history->chatListTimeId()).date();
 			}
-		//} else if (const auto feed = chat.feed()) { // #feed
-		//	if (feed->chatListTimeId() != 0) {
-		//		return base::unixtime::parse(feed->chatListTimeId()).date();
-		//	}
 		}
 		return QDate::currentDate();
 	};
@@ -1038,8 +1025,6 @@ void SessionController::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 				}
 				return QDate::currentDate();
 			}
-		//} else if (const auto feed = chat.feed()) { // #feed
-		//	return startDate();
 		}
 		return startDate();
 	};
