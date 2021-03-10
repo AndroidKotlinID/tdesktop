@@ -11,7 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/linux/linux_gtk_integration_p.h"
 #include "platform/linux/linux_gdk_helper.h"
 #include "platform/linux/linux_desktop_environment.h"
-#include "platform/linux/specific_linux.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "base/qt_adapters.h"
@@ -68,6 +67,42 @@ QStringList cleanFilterList(const QString &filter) {
 	if (i >= 0)
 		f = regexp.cap(2);
 	return f.split(QLatin1Char(' '), base::QStringSkipEmptyParts);
+}
+
+bool Supported() {
+	return internal::GdkHelperLoaded()
+		&& (gtk_widget_hide_on_delete != nullptr)
+		&& (gtk_clipboard_store != nullptr)
+		&& (gtk_clipboard_get != nullptr)
+		&& (gtk_widget_destroy != nullptr)
+		&& (gtk_dialog_get_type != nullptr)
+		&& (gtk_dialog_run != nullptr)
+		&& (gtk_widget_realize != nullptr)
+		&& (gdk_window_set_modal_hint != nullptr)
+		&& (gtk_widget_show != nullptr)
+		&& (gdk_window_focus != nullptr)
+		&& (gtk_widget_hide != nullptr)
+		&& (gtk_widget_hide_on_delete != nullptr)
+		&& (gtk_file_chooser_dialog_new != nullptr)
+		&& (gtk_file_chooser_get_type != nullptr)
+		&& (gtk_file_chooser_set_current_folder != nullptr)
+		&& (gtk_file_chooser_get_current_folder != nullptr)
+		&& (gtk_file_chooser_set_current_name != nullptr)
+		&& (gtk_file_chooser_select_filename != nullptr)
+		&& (gtk_file_chooser_get_filenames != nullptr)
+		&& (gtk_file_chooser_set_filter != nullptr)
+		&& (gtk_file_chooser_get_filter != nullptr)
+		&& (gtk_window_get_type != nullptr)
+		&& (gtk_window_set_title != nullptr)
+		&& (gtk_file_chooser_set_local_only != nullptr)
+		&& (gtk_file_chooser_set_action != nullptr)
+		&& (gtk_file_chooser_set_select_multiple != nullptr)
+		&& (gtk_file_chooser_set_do_overwrite_confirmation != nullptr)
+		&& (gtk_file_chooser_remove_filter != nullptr)
+		&& (gtk_file_filter_set_name != nullptr)
+		&& (gtk_file_filter_add_pattern != nullptr)
+		&& (gtk_file_chooser_add_filter != nullptr)
+		&& (gtk_file_filter_new != nullptr);
 }
 
 bool PreviewSupported() {
@@ -603,47 +638,13 @@ void GtkFileDialog::setNameFilters(const QStringList &filters) {
 
 } // namespace
 
-bool Supported() {
-	return internal::GdkHelperLoaded()
-		&& (gtk_widget_hide_on_delete != nullptr)
-		&& (gtk_clipboard_store != nullptr)
-		&& (gtk_clipboard_get != nullptr)
-		&& (gtk_widget_destroy != nullptr)
-		&& (gtk_dialog_get_type != nullptr)
-		&& (gtk_dialog_run != nullptr)
-		&& (gtk_widget_realize != nullptr)
-		&& (gdk_window_set_modal_hint != nullptr)
-		&& (gtk_widget_show != nullptr)
-		&& (gdk_window_focus != nullptr)
-		&& (gtk_widget_hide != nullptr)
-		&& (gtk_widget_hide_on_delete != nullptr)
-		&& (gtk_file_chooser_dialog_new != nullptr)
-		&& (gtk_file_chooser_get_type != nullptr)
-		&& (gtk_file_chooser_set_current_folder != nullptr)
-		&& (gtk_file_chooser_get_current_folder != nullptr)
-		&& (gtk_file_chooser_set_current_name != nullptr)
-		&& (gtk_file_chooser_select_filename != nullptr)
-		&& (gtk_file_chooser_get_filenames != nullptr)
-		&& (gtk_file_chooser_set_filter != nullptr)
-		&& (gtk_file_chooser_get_filter != nullptr)
-		&& (gtk_window_get_type != nullptr)
-		&& (gtk_window_set_title != nullptr)
-		&& (gtk_file_chooser_set_local_only != nullptr)
-		&& (gtk_file_chooser_set_action != nullptr)
-		&& (gtk_file_chooser_set_select_multiple != nullptr)
-		&& (gtk_file_chooser_set_do_overwrite_confirmation != nullptr)
-		&& (gtk_file_chooser_remove_filter != nullptr)
-		&& (gtk_file_filter_set_name != nullptr)
-		&& (gtk_file_filter_add_pattern != nullptr)
-		&& (gtk_file_chooser_add_filter != nullptr)
-		&& (gtk_file_filter_new != nullptr);
-}
-
 bool Use(Type type) {
+	if (!Supported()) {
+		return false;
+	}
+
 	return qEnvironmentVariableIsSet("TDESKTOP_USE_GTK_FILE_DIALOG")
-		|| DesktopEnvironment::IsGtkBased()
-		// use as a fallback for portal dialog
-		|| UseXDGDesktopPortal();
+		|| DesktopEnvironment::IsGtkBased();
 }
 
 bool Get(
