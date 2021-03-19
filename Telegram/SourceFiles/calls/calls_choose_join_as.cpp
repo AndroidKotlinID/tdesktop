@@ -163,6 +163,37 @@ void ChooseJoinAsBox(
 	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 }
 
+[[nodiscard]] TextWithEntities CreateOrJoinConfirmation(
+		not_null<PeerData*> peer,
+		ChooseJoinAsProcess::Context context,
+		bool joinAsAlreadyUsed) {
+	const auto existing = peer->groupCall();
+	if (!existing) {
+		return { peer->isBroadcast()
+			? tr::lng_group_call_create_sure_channel(tr::now)
+			: tr::lng_group_call_create_sure(tr::now) };
+	}
+	const auto channel = peer->asChannel();
+	const auto anonymouseAdmin = channel
+		&& ((channel->isMegagroup() && channel->amAnonymous())
+			|| (channel->isBroadcast()
+				&& (channel->amCreator()
+					|| channel->hasAdminRights())));
+	if (anonymouseAdmin && !joinAsAlreadyUsed) {
+		return { tr::lng_group_call_join_sure_personal(tr::now) };
+	} else if (context != ChooseJoinAsProcess::Context::JoinWithConfirm) {
+		return {};
+	}
+	const auto name = !existing->title().isEmpty()
+		? existing->title()
+		: peer->name;
+	return tr::lng_group_call_join_confirm(
+		tr::now,
+		lt_chat,
+		Ui::Text::Bold(name),
+		Ui::Text::WithEntities);
+}
+
 } // namespace
 
 ChooseJoinAsProcess::~ChooseJoinAsProcess() {
@@ -240,38 +271,6 @@ void ChooseJoinAsProcess::start(
 		if (list.empty()) {
 			_request->showToast(Lang::Hard::ServerError());
 			return;
-		} else if (!changingJoinAsFrom
-			&& list.size() == 1
-			&& list.front() == self
-			&& (!peer->isChannel()
-				|| !peer->asChannel()->amAnonymous()
-				|| (peer->isBroadcast() && !peer->canWrite()))) {
-			info.possibleJoinAs = std::move(list);
-			if (context != Context::JoinWithConfirm
-				|| (selectedId && self->id == selectedId)) {
-				finish(info);
-				return;
-			}
-			const auto real = peer->groupCall();
-			const auto name = (real && !real->title().isEmpty())
-				? real->title()
-				: peer->name;
-			auto box = Box<::ConfirmBox>(
-				tr::lng_group_call_join_confirm(
-					tr::now,
-					lt_chat,
-					Ui::Text::Bold(name),
-					Ui::Text::WithEntities),
-				tr::lng_group_call_join(tr::now),
-				crl::guard(&_request->guard, [=] { finish(info); }));
-			box->boxClosing(
-			) | rpl::start_with_next([=] {
-				_request = nullptr;
-			}, _request->lifetime);
-
-			_request->box = box.data();
-			_request->showBox(std::move(box));
-			return;
 		}
 		info.joinAs = [&]() -> not_null<PeerData*> {
 			const auto loaded = selectedId
@@ -288,11 +287,36 @@ void ChooseJoinAsProcess::start(
 		}();
 		info.possibleJoinAs = std::move(list);
 
-		if (!changingJoinAsFrom
-			&& selectedId
-			&& info.joinAs->id == selectedId) {
-			// We already joined this voice chat, just rejoin with the same.
-			finish(info);
+		const auto onlyByMe = (info.possibleJoinAs.size() == 1)
+			&& (info.possibleJoinAs.front() == self);
+
+		// We already joined this voice chat, just rejoin with the same.
+		const auto byAlreadyUsed = selectedId
+			&& (info.joinAs->id == selectedId)
+			&& (peer->groupCall() != nullptr);
+
+		if (!changingJoinAsFrom && (onlyByMe || byAlreadyUsed)) {
+			const auto confirmation = CreateOrJoinConfirmation(
+				peer,
+				context,
+				byAlreadyUsed);
+			if (confirmation.text.isEmpty()) {
+				finish(info);
+				return;
+			}
+			auto box = Box<::ConfirmBox>(
+				confirmation,
+				(peer->groupCall()
+					? tr::lng_group_call_join(tr::now)
+					: tr::lng_create_group_create(tr::now)),
+				crl::guard(&_request->guard, [=] { finish(info); }));
+			box->boxClosing(
+			) | rpl::start_with_next([=] {
+				_request = nullptr;
+			}, _request->lifetime);
+
+			_request->box = box.data();
+			_request->showBox(std::move(box));
 			return;
 		}
 		auto box = Box(

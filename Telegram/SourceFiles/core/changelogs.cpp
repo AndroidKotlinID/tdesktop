@@ -127,6 +127,26 @@ std::map<int, const char*> BetaLogs() {
 
 		"- Fix voice chat admin menu on macOS.\n"
 	},
+	{
+		2006004,
+		"- Fix freeze in voice chats.\n"
+
+		"- Make default interface scale 110% on macOS Retina screens.\n"
+	},
+	{
+		2006005,
+		"- Improvements and fixes in new voice chat features.\n"
+	},
+	{
+		2006007,
+		"- Improve voice chat participants list updating.\n"
+	},
+	{
+		2006008,
+		"- Fix connecting and getting allowed to speak on voice chats.\n"
+
+		"- MPRIS support on Linux.\n"
+	},
 	};
 };
 

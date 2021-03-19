@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_group_common.h"
 #include "main/main_session.h"
 #include "api/api_send_progress.h"
+#include "api/api_updates.h"
 #include "apiwrap.h"
 #include "lang/lang_keys.h"
 #include "lang/lang_hardcoded.h"
@@ -272,11 +273,6 @@ void GroupCall::setState(State state) {
 
 	if (state == State::Joined) {
 		stopConnectingSound();
-		if (!_hadJoinedState) {
-			_hadJoinedState = true;
-			applyGlobalShortcutChanges();
-			_delegate->groupCallPlaySound(Delegate::GroupCallSound::Started);
-		}
 		if (const auto call = _peer->groupCall(); call && call->id() == _id) {
 			call->setInCall();
 		}
@@ -392,8 +388,11 @@ void GroupCall::join(const MTPInputGroupCall &inputCall) {
 
 	addParticipantsToInstance();
 
+	_peer->session().updates().addActiveChat(
+		_peerStream.events_starting_with_copy(_peer));
 	SubscribeToMigration(_peer, _lifetime, [=](not_null<ChannelData*> group) {
 		_peer = group;
+		_peerStream.fire_copy(group);
 	});
 }
 
@@ -472,6 +471,7 @@ void GroupCall::rejoin(not_null<PeerData*> as) {
 				MTP_dataJSON(MTP_bytes(json))
 			)).done([=](const MTPUpdates &updates) {
 				_mySsrc = ssrc;
+				_mySsrcs.emplace(ssrc);
 				setState((_instanceState.current()
 					== InstanceState::Disconnected)
 					? State::Connecting
@@ -479,6 +479,7 @@ void GroupCall::rejoin(not_null<PeerData*> as) {
 				applyMeInCallLocally();
 				maybeSendMutedUpdate(wasMuteState);
 				_peer->session().api().applyUpdates(updates);
+				checkFirstTimeJoined();
 			}).fail([=](const MTP::Error &error) {
 				const auto type = error.type();
 				LOG(("Call Error: Could not join, error: %1").arg(type));
@@ -547,7 +548,7 @@ void GroupCall::applyMeInCallLocally() {
 		| Flag::f_volume_by_admin // Self volume can only be set by admin.
 		| ((muted() != MuteState::Active) ? Flag::f_muted : Flag(0))
 		| (raisedHandRating > 0 ? Flag::f_raise_hand_rating : Flag(0));
-	call->applyUpdateChecked(
+	call->applyLocalUpdate(
 		MTP_updateGroupCallParticipants(
 			inputCall(),
 			MTP_vector<MTPGroupCallParticipant>(
@@ -592,7 +593,7 @@ void GroupCall::applyParticipantLocally(
 		| (participant->raisedHandRating
 			? Flag::f_raise_hand_rating
 			: Flag(0));
-	_peer->groupCall()->applyUpdateChecked(
+	_peer->groupCall()->applyLocalUpdate(
 		MTP_updateGroupCallParticipants(
 			inputCall(),
 			MTP_vector<MTPGroupCallParticipant>(
@@ -717,99 +718,110 @@ void GroupCall::setMutedAndUpdate(MuteState mute) {
 	}
 }
 
-void GroupCall::handleUpdate(const MTPGroupCall &call) {
-	return call.match([&](const MTPDgroupCall &data) {
-		if (_acceptFields) {
-			if (!_instance && !_id) {
-				join(MTP_inputGroupCall(data.vid(), data.vaccess_hash()));
-			}
+void GroupCall::handlePossibleCreateOrJoinResponse(
+		const MTPDupdateGroupCall &data) {
+	data.vcall().match([&](const MTPDgroupCall &data) {
+		handlePossibleCreateOrJoinResponse(data);
+	}, [&](const MTPDgroupCallDiscarded &data) {
+		handlePossibleDiscarded(data);
+	});
+}
+
+void GroupCall::handlePossibleCreateOrJoinResponse(
+		const MTPDgroupCall &data) {
+	if (_acceptFields) {
+		if (!_instance && !_id) {
+			join(MTP_inputGroupCall(data.vid(), data.vaccess_hash()));
+		}
+		return;
+	} else if (_id != data.vid().v || !_instance) {
+		return;
+	}
+	const auto streamDcId = MTP::BareDcId(
+		data.vstream_dc_id().value_or_empty());
+	const auto params = data.vparams();
+	if (!params) {
+		return;
+	}
+	params->match([&](const MTPDdataJSON &data) {
+		auto error = QJsonParseError{ 0, QJsonParseError::NoError };
+		const auto document = QJsonDocument::fromJson(
+			data.vdata().v,
+			&error);
+		if (error.error != QJsonParseError::NoError) {
+			LOG(("API Error: "
+				"Failed to parse group call params, error: %1."
+				).arg(error.errorString()));
 			return;
-		} else if (_id != data.vid().v
-			|| _accessHash != data.vaccess_hash().v
-			|| !_instance) {
+		} else if (!document.isObject()) {
+			LOG(("API Error: "
+				"Not an object received in group call params."));
 			return;
 		}
-		const auto streamDcId = MTP::BareDcId(
-			data.vstream_dc_id().value_or_empty());
-		if (const auto params = data.vparams()) {
-			params->match([&](const MTPDdataJSON &data) {
-				auto error = QJsonParseError{ 0, QJsonParseError::NoError };
-				const auto document = QJsonDocument::fromJson(
-					data.vdata().v,
-					&error);
-				if (error.error != QJsonParseError::NoError) {
-					LOG(("API Error: "
-						"Failed to parse group call params, error: %1."
-						).arg(error.errorString()));
-					return;
-				} else if (!document.isObject()) {
-					LOG(("API Error: "
-						"Not an object received in group call params."));
-					return;
-				}
 
-				const auto guard = gsl::finally([&] {
-					addParticipantsToInstance();
-				});
+		const auto guard = gsl::finally([&] {
+			addParticipantsToInstance();
+		});
 
-				if (document.object().value("stream").toBool()) {
-					if (!streamDcId) {
-						LOG(("Api Error: Empty stream_dc_id in groupCall."));
-					}
-					_broadcastDcId = streamDcId
-						? streamDcId
-						: _peer->session().mtp().mainDcId();
-					setInstanceMode(InstanceMode::Stream);
-					return;
-				}
+		if (document.object().value("stream").toBool()) {
+			if (!streamDcId) {
+				LOG(("Api Error: Empty stream_dc_id in groupCall."));
+			}
+			_broadcastDcId = streamDcId
+				? streamDcId
+				: _peer->session().mtp().mainDcId();
+			setInstanceMode(InstanceMode::Stream);
+			return;
+		}
 
-				const auto readString = [](
-						const QJsonObject &object,
-						const char *key) {
-					return object.value(key).toString().toStdString();
-				};
-				const auto root = document.object().value("transport").toObject();
-				auto payload = tgcalls::GroupJoinResponsePayload();
-				payload.ufrag = readString(root, "ufrag");
-				payload.pwd = readString(root, "pwd");
-				const auto prints = root.value("fingerprints").toArray();
-				const auto candidates = root.value("candidates").toArray();
-				for (const auto &print : prints) {
-					const auto object = print.toObject();
-					payload.fingerprints.push_back(tgcalls::GroupJoinPayloadFingerprint{
-						.hash = readString(object, "hash"),
-						.setup = readString(object, "setup"),
-						.fingerprint = readString(object, "fingerprint"),
-					});
-				}
-				for (const auto &candidate : candidates) {
-					const auto object = candidate.toObject();
-					payload.candidates.push_back(tgcalls::GroupJoinResponseCandidate{
-						.port = readString(object, "port"),
-						.protocol = readString(object, "protocol"),
-						.network = readString(object, "network"),
-						.generation = readString(object, "generation"),
-						.id = readString(object, "id"),
-						.component = readString(object, "component"),
-						.foundation = readString(object, "foundation"),
-						.priority = readString(object, "priority"),
-						.ip = readString(object, "ip"),
-						.type = readString(object, "type"),
-						.tcpType = readString(object, "tcpType"),
-						.relAddr = readString(object, "relAddr"),
-						.relPort = readString(object, "relPort"),
-					});
-				}
-				setInstanceMode(InstanceMode::Rtc);
-				_instance->setJoinResponsePayload(payload, {});
+		const auto readString = [](
+				const QJsonObject &object,
+				const char *key) {
+			return object.value(key).toString().toStdString();
+		};
+		const auto root = document.object().value("transport").toObject();
+		auto payload = tgcalls::GroupJoinResponsePayload();
+		payload.ufrag = readString(root, "ufrag");
+		payload.pwd = readString(root, "pwd");
+		const auto prints = root.value("fingerprints").toArray();
+		const auto candidates = root.value("candidates").toArray();
+		for (const auto &print : prints) {
+			const auto object = print.toObject();
+			payload.fingerprints.push_back(tgcalls::GroupJoinPayloadFingerprint{
+				.hash = readString(object, "hash"),
+				.setup = readString(object, "setup"),
+				.fingerprint = readString(object, "fingerprint"),
 			});
 		}
-	}, [&](const MTPDgroupCallDiscarded &data) {
-		if (data.vid().v == _id) {
-			_mySsrc = 0;
-			hangup();
+		for (const auto &candidate : candidates) {
+			const auto object = candidate.toObject();
+			payload.candidates.push_back(tgcalls::GroupJoinResponseCandidate{
+				.port = readString(object, "port"),
+				.protocol = readString(object, "protocol"),
+				.network = readString(object, "network"),
+				.generation = readString(object, "generation"),
+				.id = readString(object, "id"),
+				.component = readString(object, "component"),
+				.foundation = readString(object, "foundation"),
+				.priority = readString(object, "priority"),
+				.ip = readString(object, "ip"),
+				.type = readString(object, "type"),
+				.tcpType = readString(object, "tcpType"),
+				.relAddr = readString(object, "relAddr"),
+				.relPort = readString(object, "relPort"),
+			});
 		}
+		setInstanceMode(InstanceMode::Rtc);
+		_instance->setJoinResponsePayload(payload, {});
 	});
+}
+
+void GroupCall::handlePossibleDiscarded(const MTPDgroupCallDiscarded &data) {
+	if (data.vid().v == _id) {
+		LOG(("Call Info: Hangup after groupCallDiscarded."));
+		_mySsrc = 0;
+		hangup();
+	}
 }
 
 void GroupCall::addParticipantsToInstance() {
@@ -853,7 +865,30 @@ void GroupCall::addPreparedParticipantsDelayed() {
 	crl::on_main(this, [=] { addPreparedParticipants(); });
 }
 
+void GroupCall::handleUpdate(const MTPUpdate &update) {
+	update.match([&](const MTPDupdateGroupCall &data) {
+		handleUpdate(data);
+	}, [&](const MTPDupdateGroupCallParticipants &data) {
+		handleUpdate(data);
+	}, [](const auto &) {
+		Unexpected("Type in Instance::applyGroupCallUpdateChecked.");
+	});
+}
+
+void GroupCall::handleUpdate(const MTPDupdateGroupCall &data) {
+	data.vcall().match([](const MTPDgroupCall &) {
+	}, [&](const MTPDgroupCallDiscarded &data) {
+		handlePossibleDiscarded(data);
+	});
+}
+
 void GroupCall::handleUpdate(const MTPDupdateGroupCallParticipants &data) {
+	const auto callId = data.vcall().match([](const auto &data) {
+		return data.vid().v;
+	});
+	if (_id != callId) {
+		return;
+	}
 	const auto state = _state.current();
 	if (state != State::Joined && state != State::Connecting) {
 		return;
@@ -893,18 +928,27 @@ void GroupCall::handleUpdate(const MTPDupdateGroupCallParticipants &data) {
 			if (data.is_left()) {
 				if (data.vsource().v == _mySsrc) {
 					// I was removed from the call, rejoin.
-					LOG(("Call Info: Rejoin after got 'left' with my ssrc."));
+					LOG(("Call Info: "
+						"Rejoin after got 'left' with my ssrc."));
 					setState(State::Joining);
 					rejoin();
 				}
 				return;
 			} else if (data.vsource().v != _mySsrc) {
-				// I joined from another device, hangup.
-				LOG(("Call Info: Hangup after '!left' with ssrc %1, my %2."
-					).arg(data.vsource().v
-					).arg(_mySsrc));
-				_mySsrc = 0;
-				hangup();
+				if (!_mySsrcs.contains(data.vsource().v)) {
+					// I joined from another device, hangup.
+					LOG(("Call Info: "
+						"Hangup after '!left' with ssrc %1, my %2."
+						).arg(data.vsource().v
+						).arg(_mySsrc));
+					_mySsrc = 0;
+					hangup();
+				} else {
+					LOG(("Call Info: "
+						"Some old 'self' with '!left' and ssrc %1, my %2."
+						).arg(data.vsource().v
+						).arg(_mySsrc));
+				}
 				return;
 			}
 			if (data.is_muted() && !data.is_can_self_unmute()) {
@@ -1091,7 +1135,8 @@ void GroupCall::broadcastPartStart(std::shared_ptr<LoadPartTask> task) {
 			});
 		});
 	}).fail([=](const MTP::Error &error, const MTP::Response &response) {
-		if (error.type() == u"GROUPCALL_JOIN_MISSING"_q) {
+		if (error.type() == u"GROUPCALL_JOIN_MISSING"_q
+			|| error.type() == u"GROUPCALL_FORBIDDEN"_q) {
 			for (const auto &[task, part] : _broadcastParts) {
 				_api.request(part.requestId).cancel();
 			}
@@ -1312,9 +1357,24 @@ void GroupCall::setInstanceConnected(
 	if (nowCanSpeak) {
 		notifyAboutAllowedToSpeak();
 	}
+	if (!_hadJoinedState && state() == State::Joined) {
+		checkFirstTimeJoined();
+	}
+}
+
+void GroupCall::checkFirstTimeJoined() {
+	if (_hadJoinedState || state() != State::Joined) {
+		return;
+	}
+	_hadJoinedState = true;
+	applyGlobalShortcutChanges();
+	_delegate->groupCallPlaySound(Delegate::GroupCallSound::Started);
 }
 
 void GroupCall::notifyAboutAllowedToSpeak() {
+	if (!_hadJoinedState) {
+		return;
+	}
 	_delegate->groupCallPlaySound(
 		Delegate::GroupCallSound::AllowedToSpeak);
 	_allowedToSpeakNotifications.fire({});

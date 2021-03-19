@@ -116,8 +116,8 @@ public:
 	void rejoinAs(Group::JoinInfo info);
 	void rejoinWithHash(const QString &hash);
 	void join(const MTPInputGroupCall &inputCall);
-	void handleUpdate(const MTPGroupCall &call);
-	void handleUpdate(const MTPDupdateGroupCallParticipants &data);
+	void handleUpdate(const MTPUpdate &update);
+	void handlePossibleCreateOrJoinResponse(const MTPDupdateGroupCall &data);
 	void changeTitle(const QString &title);
 	void toggleRecording(bool enabled, const QString &title);
 	[[nodiscard]] bool recordingStoppedByMe() const {
@@ -227,6 +227,10 @@ private:
 		RaiseHand,
 	};
 
+	void handlePossibleCreateOrJoinResponse(const MTPDgroupCall &data);
+	void handlePossibleDiscarded(const MTPDgroupCallDiscarded &data);
+	void handleUpdate(const MTPDupdateGroupCall &data);
+	void handleUpdate(const MTPDupdateGroupCallParticipants &data);
 	void handleRequestError(const MTP::Error &error);
 	void handleControllerError(const QString &error);
 	void ensureControllerCreated();
@@ -250,6 +254,7 @@ private:
 
 	void checkGlobalShortcutAvailability();
 	void checkJoined();
+	void checkFirstTimeJoined();
 	void notifyAboutAllowedToSpeak();
 
 	void playConnectingSound();
@@ -276,6 +281,7 @@ private:
 
 	const not_null<Delegate*> _delegate;
 	not_null<PeerData*> _peer; // Can change in legacy group migration.
+	rpl::event_stream<PeerData*> _peerStream;
 	not_null<History*> _history; // Can change in legacy group migration.
 	MTP::Sender _api;
 	rpl::variable<State> _state = State::Creating;
@@ -304,6 +310,7 @@ private:
 	uint64 _id = 0;
 	uint64 _accessHash = 0;
 	uint32 _mySsrc = 0;
+	base::flat_set<uint32> _mySsrcs;
 	mtpRequestId _createRequestId = 0;
 	mtpRequestId _updateMuteRequestId = 0;
 

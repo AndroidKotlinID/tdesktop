@@ -42,6 +42,7 @@ public:
 	~GroupCall();
 
 	[[nodiscard]] uint64 id() const;
+	[[nodiscard]] bool loaded() const;
 	[[nodiscard]] not_null<PeerData*> peer() const;
 	[[nodiscard]] MTPInputGroupCall input() const;
 	[[nodiscard]] QString title() const {
@@ -82,10 +83,10 @@ public:
 	[[nodiscard]] rpl::producer<> participantsSliceAdded();
 	[[nodiscard]] rpl::producer<ParticipantUpdate> participantUpdated() const;
 
-	void applyUpdate(const MTPGroupCall &update);
-	void applyUpdate(const MTPDupdateGroupCallParticipants &update);
-	void applyUpdateChecked(
+	void enqueueUpdate(const MTPUpdate &update);
+	void applyLocalUpdate(
 		const MTPDupdateGroupCallParticipants &update);
+
 	void applyLastSpoke(uint32 ssrc, LastSpokeTimes when, crl::time now);
 	void applyActiveUpdate(
 		PeerId participantPeerId,
@@ -104,6 +105,7 @@ public:
 	void setJoinMutedLocally(bool muted);
 	[[nodiscard]] bool joinMuted() const;
 	[[nodiscard]] bool canChangeJoinMuted() const;
+	[[nodiscard]] bool joinedToTop() const;
 
 private:
 	enum class ApplySliceSource {
@@ -111,16 +113,32 @@ private:
 		UnknownLoaded,
 		UpdateReceived,
 	};
+	enum class QueuedType : uint8 {
+		VersionedParticipant,
+		Participant,
+		Call,
+	};
 	[[nodiscard]] ApiWrap &api() const;
 
+	void discard(const MTPDgroupCallDiscarded &data);
 	[[nodiscard]] bool inCall() const;
-	void applyCall(const MTPGroupCall &call, bool force);
 	void applyParticipantsSlice(
 		const QVector<MTPGroupCallParticipant> &list,
 		ApplySliceSource sliceSource);
 	void requestUnknownParticipants();
 	void changePeerEmptyCallFlag();
 	void checkFinishSpeakingByActive();
+	void applyCallFields(const MTPDgroupCall &data);
+	void applyEnqueuedUpdate(const MTPUpdate &update);
+	void setServerParticipantsCount(int count);
+	void computeParticipantsCount();
+	void processQueuedUpdates();
+	void processFullCallUsersChats(const MTPphone_GroupCall &call);
+	void processFullCallFields(const MTPphone_GroupCall &call);
+	[[nodiscard]] bool requestParticipantsAfterReload(
+		const MTPphone_GroupCall &call) const;
+	void processSavedFullCall();
+	void finishParticipantsSliceRequest();
 
 	const uint64 _id = 0;
 	const uint64 _accessHash = 0;
@@ -131,11 +149,18 @@ private:
 	mtpRequestId _reloadRequestId = 0;
 	rpl::variable<QString> _title;
 
+	base::flat_multi_map<
+		std::pair<int, QueuedType>,
+		MTPUpdate> _queuedUpdates;
+	base::Timer _reloadByQueuedUpdatesTimer;
+	std::optional<MTPphone_GroupCall> _savedFull;
+
 	std::vector<Participant> _participants;
 	base::flat_map<uint32, not_null<PeerData*>> _participantPeerBySsrc;
 	base::flat_map<not_null<PeerData*>, crl::time> _speakingByActiveFinishes;
 	base::Timer _speakingByActiveFinishTimer;
 	QString _nextOffset;
+	int _serverParticipantsCount = 0;
 	rpl::variable<int> _fullCount = 0;
 	rpl::variable<TimeId> _recordStartDate = 0;
 
@@ -148,7 +173,9 @@ private:
 
 	bool _joinMuted = false;
 	bool _canChangeJoinMuted = true;
-	bool _allReceived = false;
+	bool _allParticipantsLoaded = false;
+	bool _joinedToTop = false;
+	bool _applyingQueuedUpdates = false;
 
 };
 
