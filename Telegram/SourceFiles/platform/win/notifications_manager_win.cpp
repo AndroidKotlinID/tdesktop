@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "main/main_session.h"
 #include "mainwindow.h"
+#include "facades.h" // Global::ScreenIsLocked.
 #include "windows_quiethours_h.h"
 
 #include <Shobjidl.h>
@@ -689,6 +690,7 @@ void QueryQuietHours() {
 
 bool FocusAssistBlocks = false;
 
+// Thanks https://www.withinrafael.com/2019/09/19/determine-if-your-app-is-in-a-focus-assist-profiles-priority-list/
 void QueryFocusAssist() {
 	ComPtr<IQuietHoursSettings> quietHoursSettings;
 	auto hr = CoCreateInstance(
@@ -709,16 +711,20 @@ void QueryFocusAssist() {
 		return;
 	}
 	const auto profileName = QString::fromWCharArray(profileId);
-	if (profileName.endsWith(".unrestricted", Qt::CaseInsensitive)) {
-		if (FocusAssistBlocks) {
-			LOG(("Focus Assist: Unrestricted."));
-			FocusAssistBlocks = false;
-		}
-		return;
-	} else if (profileName.endsWith(".alarmsonly", Qt::CaseInsensitive)) {
+	if (profileName.endsWith(".alarmsonly", Qt::CaseInsensitive)) {
 		if (!FocusAssistBlocks) {
 			LOG(("Focus Assist: Alarms Only."));
 			FocusAssistBlocks = true;
+		}
+		return;
+	} else if (!profileName.endsWith(".priorityonly", Qt::CaseInsensitive)) {
+		if (!profileName.endsWith(".unrestricted", Qt::CaseInsensitive)) {
+			LOG(("Focus Assist Warning: Unknown profile '%1'"
+				).arg(profileName));
+		}
+		if (FocusAssistBlocks) {
+			LOG(("Focus Assist: Unrestricted."));
+			FocusAssistBlocks = false;
 		}
 		return;
 	}
@@ -793,13 +799,9 @@ bool SkipAudio() {
 	if (UserNotificationState == QUNS_NOT_PRESENT
 		|| UserNotificationState == QUNS_PRESENTATION_MODE
 		|| QuietHoursEnabled
-		|| FocusAssistBlocks) {
+		|| FocusAssistBlocks
+		|| Global::ScreenIsLocked()) {
 		return true;
-	}
-	if (const auto filter = EventFilter::GetInstance()) {
-		if (filter->sessionLoggedOff()) {
-			return true;
-		}
 	}
 	return false;
 }
