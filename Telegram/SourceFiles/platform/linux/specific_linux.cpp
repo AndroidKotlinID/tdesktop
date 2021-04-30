@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/linux/base_linux_xdp_utilities.h"
 #include "platform/linux/linux_notification_service_watcher.h"
+#include "platform/linux/linux_xdp_file_dialog.h"
 #include "platform/linux/linux_mpris_support.h"
 #include "platform/linux/linux_gsd_media_keys.h"
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -747,13 +748,8 @@ void start() {
 
 	if (const auto integration = BaseGtkIntegration::Instance()) {
 		integration->prepareEnvironment();
-		integration->load();
 	} else {
 		g_warning("GTK integration is disabled, some features unavailable.");
-	}
-
-	if (const auto integration = GtkIntegration::Instance()) {
-		integration->load();
 	}
 
 #ifdef DESKTOP_APP_USE_PACKAGED_RLOTTIE
@@ -952,7 +948,12 @@ namespace ThirdParty {
 
 void start() {
 	if (const auto integration = BaseGtkIntegration::Instance()) {
+		integration->load();
 		integration->initializeSettings();
+	}
+
+	if (const auto integration = GtkIntegration::Instance()) {
+		integration->load();
 	}
 
 	SetGtkScaleFactor();
@@ -964,6 +965,7 @@ void start() {
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	NSWInstance = std::make_unique<internal::NotificationServiceWatcher>();
+	FileDialog::XDP::Start();
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
