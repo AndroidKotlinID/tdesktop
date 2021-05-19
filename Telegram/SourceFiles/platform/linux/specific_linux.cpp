@@ -59,6 +59,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <unistd.h>
 #include <dirent.h>
 #include <pwd.h>
+#include <malloc.h>
 
 #include <iostream>
 
@@ -644,9 +645,15 @@ bool TrayIconSupported() {
 }
 
 bool SkipTaskbarSupported() {
+	if (const auto integration = WaylandIntegration::Instance()) {
+		return integration->skipTaskbarSupported();
+	}
+
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-	return IsX11()
-		&& base::Platform::XCB::IsSupportedByWM("_NET_WM_STATE_SKIP_TASKBAR");
+	if (IsX11()) {
+		return base::Platform::XCB::IsSupportedByWM(
+			"_NET_WM_STATE_SKIP_TASKBAR");
+	}
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 	return false;
@@ -739,6 +746,20 @@ int psFixPrevious() {
 namespace Platform {
 
 void start() {
+	// Avoid stripping custom allocator methods.
+	const auto address = [](auto method) {
+		return reinterpret_cast<uint64>(method);
+	};
+	const auto value = address(malloc)
+		+ address(calloc)
+		+ address(realloc)
+		+ address(free)
+		+ address(aligned_alloc)
+		+ address(malloc_usable_size)
+		+ address(memalign)
+		+ address(posix_memalign);
+	DEBUG_LOG(("Malloc addresses %1.").arg(value ? "non-null" : "null"));
+
 	LOG(("Launcher filename: %1").arg(QGuiApplication::desktopFileName()));
 
 	qputenv("PULSE_PROP_application.name", AppName.utf8());

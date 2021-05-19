@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "styles/style_window.h"
 #include "platform/linux/specific_linux.h"
+#include "platform/linux/linux_wayland_integration.h"
 #include "history/history.h"
 #include "history/history_widget.h"
 #include "history/history_inner_widget.h"
@@ -24,7 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "base/platform/base_platform_info.h"
-#include "base/call_delayed.h"
+#include "base/event_filter.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/input_fields.h"
 #include "facades.h"
@@ -59,6 +60,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Platform {
 namespace {
 
+using internal::WaylandIntegration;
+
 constexpr auto kPanelTrayIconName = "telegram-panel"_cs;
 constexpr auto kMutePanelTrayIconName = "telegram-mute-panel"_cs;
 constexpr auto kAttentionPanelTrayIconName = "telegram-attention-panel"_cs;
@@ -83,15 +86,15 @@ QIcon TrayIcon;
 QString TrayIconThemeName, TrayIconName;
 
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-bool XCBSkipTaskbar(QWindow *window, bool set) {
+void XCBSkipTaskbar(QWindow *window, bool skip) {
 	const auto connection = base::Platform::XCB::GetConnectionFromQt();
 	if (!connection) {
-		return false;
+		return;
 	}
 
 	const auto root = base::Platform::XCB::GetRootWindowFromQt();
 	if (!root.has_value()) {
-		return false;
+		return;
 	}
 
 	const auto stateAtom = base::Platform::XCB::GetAtom(
@@ -99,7 +102,7 @@ bool XCBSkipTaskbar(QWindow *window, bool set) {
 		"_NET_WM_STATE");
 
 	if (!stateAtom.has_value()) {
-		return false;
+		return;
 	}
 
 	const auto skipTaskbarAtom = base::Platform::XCB::GetAtom(
@@ -107,7 +110,7 @@ bool XCBSkipTaskbar(QWindow *window, bool set) {
 		"_NET_WM_STATE_SKIP_TASKBAR");
 
 	if (!skipTaskbarAtom.has_value()) {
-		return false;
+		return;
 	}
 
 	xcb_client_message_event_t xev;
@@ -116,7 +119,7 @@ bool XCBSkipTaskbar(QWindow *window, bool set) {
 	xev.sequence = 0;
 	xev.window = window->winId();
 	xev.format = 32;
-	xev.data.data32[0] = set ? 1 : 0;
+	xev.data.data32[0] = skip ? 1 : 0;
 	xev.data.data32[1] = *skipTaskbarAtom;
 	xev.data.data32[2] = 0;
 	xev.data.data32[3] = 0;
@@ -129,19 +132,19 @@ bool XCBSkipTaskbar(QWindow *window, bool set) {
 		XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT
 			| XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
 		reinterpret_cast<const char*>(&xev));
-
-	return true;
 }
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
-bool SkipTaskbar(QWindow *window, bool set) {
+void SkipTaskbar(QWindow *window, bool skip) {
+	if (const auto integration = WaylandIntegration::Instance()) {
+		integration->skipTaskbar(window, skip);
+	}
+
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 	if (IsX11()) {
-		return XCBSkipTaskbar(window, set);
+		XCBSkipTaskbar(window, skip);
 	}
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
-
-	return false;
 }
 
 QString GetPanelIconName(int counter, bool muted) {
@@ -500,7 +503,15 @@ bool IsAppMenuSupported() {
 
 // This call must be made from the same bus connection as DBusMenuExporter
 // So it must use QDBusConnection
-void RegisterAppMenu(uint winId, const QString &menuPath) {
+void RegisterAppMenu(QWindow *window, const QString &menuPath) {
+	if (const auto integration = WaylandIntegration::Instance()) {
+		integration->registerAppMenu(
+			window,
+			QDBusConnection::sessionBus().baseService(),
+			menuPath);
+		return;
+	}
+
 	auto message = QDBusMessage::createMethodCall(
 		kAppMenuService.utf16(),
 		kAppMenuObjectPath.utf16(),
@@ -508,7 +519,7 @@ void RegisterAppMenu(uint winId, const QString &menuPath) {
 		qsl("RegisterWindow"));
 
 	message.setArguments({
-		winId,
+		window->winId(),
 		QVariant::fromValue(QDBusObjectPath(menuPath))
 	});
 
@@ -517,7 +528,11 @@ void RegisterAppMenu(uint winId, const QString &menuPath) {
 
 // This call must be made from the same bus connection as DBusMenuExporter
 // So it must use QDBusConnection
-void UnregisterAppMenu(uint winId) {
+void UnregisterAppMenu(QWindow *window) {
+	if (const auto integration = WaylandIntegration::Instance()) {
+		return;
+	}
+
 	auto message = QDBusMessage::createMethodCall(
 		kAppMenuService.utf16(),
 		kAppMenuObjectPath.utf16(),
@@ -525,7 +540,7 @@ void UnregisterAppMenu(uint winId) {
 		qsl("UnregisterWindow"));
 
 	message.setArguments({
-		winId
+		window->winId()
 	});
 
 	QDBusConnection::sessionBus().send(message);
@@ -633,6 +648,27 @@ void MainWindow::initHook() {
 			});
 	} catch (...) {
 	}
+
+	base::install_event_filter(windowHandle(), [=](not_null<QEvent*> e) {
+		if (e->type() == QEvent::Expose) {
+			auto ee = static_cast<QExposeEvent*>(e.get());
+			if (ee->region().isNull()) {
+				return base::EventFilterResult::Continue;
+			}
+			if (!windowHandle()
+				|| windowHandle()->parent()
+				|| !windowHandle()->isVisible()) {
+				return base::EventFilterResult::Continue;
+			}
+			handleNativeSurfaceChanged(true);
+		} else if (e->type() == QEvent::Hide) {
+			if (!windowHandle() || windowHandle()->parent()) {
+				return base::EventFilterResult::Continue;
+			}
+			handleNativeSurfaceChanged(false);
+		}
+		return base::EventFilterResult::Continue;
+	});
 
 	if (_appMenuSupported) {
 		LOG(("Using D-Bus global menu."));
@@ -803,9 +839,9 @@ void MainWindow::handleAppMenuOwnerChanged(
 	}
 
 	if (_appMenuSupported && _mainMenuExporter) {
-		RegisterAppMenu(winId(), kMainMenuObjectPath.utf16());
+		RegisterAppMenu(windowHandle(), kMainMenuObjectPath.utf16());
 	} else {
-		UnregisterAppMenu(winId());
+		UnregisterAppMenu(windowHandle());
 	}
 }
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -1130,7 +1166,7 @@ void MainWindow::createGlobalMenu() {
 		psMainMenu);
 
 	if (_appMenuSupported) {
-		RegisterAppMenu(winId(), kMainMenuObjectPath.utf16());
+		RegisterAppMenu(windowHandle(), kMainMenuObjectPath.utf16());
 	}
 
 	updateGlobalMenu();
@@ -1253,22 +1289,20 @@ void MainWindow::updateGlobalMenuHook() {
 
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-void MainWindow::handleVisibleChangedHook(bool visible) {
-	if (visible) {
-		base::call_delayed(1, this, [=] {
-			SkipTaskbar(
-				windowHandle(),
-				(Global::WorkMode().value() == dbiwmTrayOnly)
-					&& trayAvailable());
-		});
+void MainWindow::handleNativeSurfaceChanged(bool exist) {
+	if (exist) {
+		SkipTaskbar(
+			windowHandle(),
+			(Global::WorkMode().value() == dbiwmTrayOnly)
+				&& trayAvailable());
 	}
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	if (_appMenuSupported && _mainMenuExporter) {
-		if (visible) {
-			RegisterAppMenu(winId(), kMainMenuObjectPath.utf16());
+		if (exist) {
+			RegisterAppMenu(windowHandle(), kMainMenuObjectPath.utf16());
 		} else {
-			UnregisterAppMenu(winId());
+			UnregisterAppMenu(windowHandle());
 		}
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -1296,7 +1330,7 @@ MainWindow::~MainWindow() {
 	delete _sniTrayIcon;
 
 	if (_appMenuSupported) {
-		UnregisterAppMenu(winId());
+		UnregisterAppMenu(windowHandle());
 	}
 
 	delete _mainMenuExporter;
