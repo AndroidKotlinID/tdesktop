@@ -145,15 +145,25 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     cd win32\VS2015
     msbuild opus.sln /property:Configuration=Debug /property:Platform="Win32"
     msbuild opus.sln /property:Configuration=Release /property:Platform="Win32"
+    cd ..\..\..
 
-    cd ..\..\..\..
+    git clone https://github.com/desktop-app/rnnoise.git
+    cd rnnoise
+    mkdir out
+    cd out
+    cmake -A Win32 ..
+    cmake --build . --config Debug
+    cmake --build . --config Release
+    cd ..\..
+
+    cd ..
     SET PATH_BACKUP_=%PATH%
     SET PATH=%cd%\ThirdParty\msys64\usr\bin;%PATH%
     cd Libraries
 
     git clone https://github.com/FFmpeg/FFmpeg.git ffmpeg
     cd ffmpeg
-    git checkout release/4.2
+    git checkout release/4.4
 
     set CHERE_INVOKING=enabled_from_arguments
     set MSYS2_PATH_TYPE=inherit
@@ -180,7 +190,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
         -confirm-license ^
         -static ^
         -static-runtime ^
-        -no-opengl ^
+        -opengl dynamic ^
         -openssl-linked ^
         -I "%LibrariesPath%\openssl_1_1_1\include" ^
         OPENSSL_LIBS_DEBUG="%LibrariesPath%\openssl_1_1_1\out32.dbg\libssl.lib %LibrariesPath%\openssl_1_1_1\out32.dbg\libcrypto.lib Ws2_32.lib Gdi32.lib Advapi32.lib Crypt32.lib User32.lib" ^
@@ -197,14 +207,18 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     jom -j8 install
     cd ..
 
-    git clone --recursive https://github.com/desktop-app/tg_owt.git
+    git clone https://github.com/desktop-app/tg_owt.git
     cd tg_owt
+    git checkout 56f0e53eac
+    git submodule init
+    git submodule update
     mkdir out
     cd out
     mkdir Debug
     cd Debug
     cmake -G Ninja ^
         -DCMAKE_BUILD_TYPE=Debug ^
+        -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF ^
         -DTG_OWT_SPECIAL_TARGET=win ^
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=%cd%/../../../mozjpeg ^
         -DTG_OWT_OPENSSL_INCLUDE_PATH=%cd%/../../../openssl_1_1_1/include ^
@@ -216,6 +230,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     cd Release
     cmake -G Ninja ^
         -DCMAKE_BUILD_TYPE=Release ^
+        -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF ^
         -DTG_OWT_SPECIAL_TARGET=win ^
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=%cd%/../../../mozjpeg ^
         -DTG_OWT_OPENSSL_INCLUDE_PATH=%cd%/../../../openssl_1_1_1/include ^

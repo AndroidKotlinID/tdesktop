@@ -146,6 +146,7 @@ parts:
       - kwayland
       - mozjpeg
       - openal
+      - rnnoise
       - webrtc
 
   patches:
@@ -421,10 +422,22 @@ parts:
       - mozjpeg
       - patches
 
+  rnnoise:
+    source: https://gitlab.xiph.org/xiph/rnnoise.git
+    source-depth: 1
+    source-commit: 7f449bf8bd3b933891d12c30112268c4090e4d59
+    plugin: autotools
+    autotools-configure-parameters:
+      - --disable-examples
+      - --disable-doc
+    prime:
+      - -./usr/include
+      - -./usr/lib/$SNAPCRAFT_ARCH_TRIPLET/pkgconfig
+
   webrtc:
     source: https://github.com/desktop-app/tg_owt.git
     source-depth: 1
-    source-commit: 18cb4cd9bb4c2f5f5f5e760ec808f74c302bc1bf
+    source-commit: 19e418c988a42d954418f32b1df34d3693ef22ca
     plugin: cmake
     build-packages:
       - yasm
@@ -459,6 +472,7 @@ parts:
       - -DBUILD_SHARED_LIBS=OFF
       - -DJPEG_LIBRARY_RELEASE=$SNAPCRAFT_STAGE/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/libjpeg.so
       - -DJPEG_INCLUDE_DIR=$SNAPCRAFT_STAGE/usr/include
+      - -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF
     prime: [-./*]
     after:
       - ffmpeg
