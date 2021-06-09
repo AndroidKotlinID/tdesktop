@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/tooltip.h"
+#include "ui/gl/gl_detection.h"
 #include "ui/chat/group_call_bar.h"
 #include "ui/layers/layer_manager.h"
 #include "ui/layers/generic_box.h"
@@ -46,6 +47,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "base/event_filter.h"
 #include "base/unixtime.h"
+#include "base/platform/base_platform_info.h"
 #include "base/qt_signal_producer.h"
 #include "base/timer_rpl.h"
 #include "app.h"
@@ -85,14 +87,14 @@ struct Panel::ControlsBackgroundNarrow {
 Panel::Panel(not_null<GroupCall*> call)
 : _call(call)
 , _peer(call->peer())
-, _window(std::make_unique<Ui::Window>())
+, _window(createWindow())
 , _layerBg(std::make_unique<Ui::LayerManager>(_window->body()))
 #ifndef Q_OS_MAC
 , _controls(std::make_unique<Ui::Platform::TitleControls>(
 	_window->body(),
 	st::groupCallTitle))
 #endif // !Q_OS_MAC
-, _viewport(std::make_unique<Viewport>(widget(), PanelMode::Wide))
+, _viewport(std::make_unique<Viewport>(widget(), PanelMode::Wide, _backend))
 , _mute(std::make_unique<Ui::CallMuteButton>(
 	widget(),
 	st::callMuteButton,
@@ -135,6 +137,25 @@ Panel::Panel(not_null<GroupCall*> call)
 Panel::~Panel() {
 	_menu.destroy();
 	_viewport = nullptr;
+}
+
+std::unique_ptr<Ui::Window> Panel::createWindow() {
+	auto result = std::make_unique<Ui::Window>();
+	const auto capabilities = Ui::GL::CheckCapabilities(result.get());
+	const auto use = Platform::IsMac()
+		? true
+		: Platform::IsWindows()
+		? capabilities.supported
+		: capabilities.transparency;
+	LOG(("OpenGL: %1 (Calls::Group::Viewport)").arg(Logs::b(use)));
+	_backend = use ? Ui::GL::Backend::OpenGL : Ui::GL::Backend::Raster;
+
+	if (use) {
+		return result;
+	}
+
+	// We have to create a new window, if OpenGL initialization failed.
+	return std::make_unique<Ui::Window>();
 }
 
 void Panel::setupRealCallViewers() {
@@ -447,12 +468,8 @@ void Panel::refreshLeftButton() {
 
 void Panel::refreshVideoButtons(std::optional<bool> overrideWideMode) {
 	const auto real = _call->lookupReal();
-	const auto canStartVideo = !_call->scheduleDate()
-		&& real
-		&& real->canStartVideo();
 	const auto create = overrideWideMode.value_or(mode() == PanelMode::Wide)
-		|| canStartVideo
-		|| _call->isSharingCamera();
+		|| (!_call->scheduleDate() && _call->videoIsWorking());
 	const auto created = _video && _screenShare;
 	if (created == create) {
 		return;
@@ -679,7 +696,7 @@ void Panel::setupMembers() {
 	_countdown.destroy();
 	_startsWhen.destroy();
 
-	_members.create(widget(), _call, mode());
+	_members.create(widget(), _call, mode(), _backend);
 
 	setupVideo(_viewport.get());
 	setupVideo(_members->viewport());
@@ -843,8 +860,8 @@ void Panel::setupVideo(not_null<Viewport*> viewport) {
 		setupTile(endpoint, track);
 	}
 	_call->videoStreamActiveUpdates(
-	) | rpl::start_with_next([=](const VideoActiveToggle &update) {
-		if (update.active) {
+	) | rpl::start_with_next([=](const VideoStateToggle &update) {
+		if (update.value) {
 			// Add async (=> the participant row is definitely in Members).
 			const auto endpoint = update.endpoint;
 			crl::on_main(viewport->widget(), [=] {
@@ -966,14 +983,14 @@ void Panel::subscribeToChanges(not_null<Data::GroupCall*> real) {
 	validateRecordingMark(real->recordStartDate() != 0);
 
 	rpl::combine(
-		real->canStartVideoValue(),
+		_call->videoIsWorkingValue(),
 		_call->isSharingCameraValue()
 	) | rpl::start_with_next([=] {
 		refreshVideoButtons();
 	}, widget()->lifetime());
 
 	rpl::combine(
-		real->canStartVideoValue(),
+		_call->videoIsWorkingValue(),
 		_call->isSharingScreenValue()
 	) | rpl::start_with_next([=] {
 		refreshTopButton();
@@ -993,8 +1010,7 @@ void Panel::refreshTopButton() {
 	const auto hasJoinAs = _call->showChooseJoinAs();
 	const auto wide = (_mode.current() == PanelMode::Wide);
 	const auto showNarrowMenu = _call->canManage()
-		|| (real && real->canStartVideo())
-		|| _call->isSharingScreen();
+		|| _call->videoIsWorking();
 	const auto showNarrowUserpic = !showNarrowMenu && hasJoinAs;
 	if (showNarrowMenu) {
 		_joinAsToggle.destroy();
@@ -1031,12 +1047,46 @@ void Panel::refreshTopButton() {
 	}
 }
 
+void Panel::screenSharingPrivacyRequest() {
+#ifdef Q_OS_MAC
+	if (!Platform::IsMac10_15OrGreater()) {
+		return;
+	}
+	const auto requestInputMonitoring = Platform::IsMac10_15OrGreater();
+	_layerBg->showBox(Box([=](not_null<Ui::GenericBox*> box) {
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box.get(),
+				rpl::combine(
+					tr::lng_group_call_mac_screencast_access(),
+					tr::lng_group_call_mac_recording()
+				) | rpl::map([](QString a, QString b) {
+					auto result = Ui::Text::RichLangValue(a);
+					result.append("\n\n").append(Ui::Text::RichLangValue(b));
+					return result;
+				}),
+				st::groupCallBoxLabel),
+			style::margins(
+				st::boxRowPadding.left(),
+				st::boxPadding.top(),
+				st::boxRowPadding.right(),
+				st::boxPadding.bottom()));
+		box->addButton(tr::lng_group_call_mac_settings(), [=] {
+			Platform::OpenDesktopCapturePrivacySettings();
+		});
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	}));
+#endif // Q_OS_MAC
+}
+
 void Panel::chooseShareScreenSource() {
 	if (_call->emitShareScreenError()) {
 		return;
 	}
 	const auto choose = [=] {
-		if (const auto source = Webrtc::UniqueDesktopCaptureSource()) {
+		if (!Webrtc::DesktopCaptureAllowed()) {
+			screenSharingPrivacyRequest();
+		} else if (const auto source = Webrtc::UniqueDesktopCaptureSource()) {
 			if (_call->isSharingScreen()) {
 				_call->toggleScreenSharing(std::nullopt);
 			} else {
