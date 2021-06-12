@@ -31,6 +31,7 @@ class GlobalShortcutValue;
 namespace Webrtc {
 class MediaDevices;
 class VideoTrack;
+enum class VideoState;
 } // namespace Webrtc
 
 namespace Data {
@@ -369,9 +370,11 @@ public:
 	void setCurrentVideoDevice(const QString &deviceId);
 	[[nodiscard]] bool isSharingScreen() const;
 	[[nodiscard]] rpl::producer<bool> isSharingScreenValue() const;
+	[[nodiscard]] bool isScreenPaused() const;
 	[[nodiscard]] const std::string &screenSharingEndpoint() const;
 	[[nodiscard]] bool isSharingCamera() const;
 	[[nodiscard]] rpl::producer<bool> isSharingCameraValue() const;
+	[[nodiscard]] bool isCameraPaused() const;
 	[[nodiscard]] const std::string &cameraSharingEndpoint() const;
 	[[nodiscard]] QString screenSharingDeviceId() const;
 	void toggleVideo(bool active);
@@ -429,9 +432,11 @@ private:
 		Stream,
 	};
 	enum class SendUpdateType {
-		Mute,
-		RaiseHand,
-		VideoStopped,
+		Mute          = 0x01,
+		RaiseHand     = 0x02,
+		CameraStopped = 0x04,
+		CameraPaused  = 0x08,
+		ScreenPaused  = 0x10,
 	};
 	enum class JoinAction {
 		None,
@@ -448,6 +453,10 @@ private:
 			ssrc = updatedSsrc;
 		}
 	};
+
+	friend inline constexpr bool is_flag_type(SendUpdateType) {
+		return true;
+	}
 
 	[[nodiscard]] bool mediaChannelDescriptionsFill(
 		not_null<MediaChannelDescriptionsTask*> task,
@@ -514,11 +523,12 @@ private:
 		bool mute,
 		std::optional<int> volume);
 	void applyQueuedSelfUpdates();
+	void sendPendingSelfUpdates();
 	void applySelfUpdate(const MTPDgroupCallParticipant &data);
 	void applyOtherParticipantUpdate(const MTPDgroupCallParticipant &data);
 
 	void setupMediaDevices();
-	void ensureOutgoingVideo();
+	void setupOutgoingVideo();
 	void setScreenEndpoint(std::string endpoint);
 	void setCameraEndpoint(std::string endpoint);
 	void addVideoOutput(const std::string &endpoint, SinkPointer sink);
@@ -574,7 +584,7 @@ private:
 	TimeId _scheduleDate = 0;
 	base::flat_set<uint32> _mySsrcs;
 	mtpRequestId _createRequestId = 0;
-	mtpRequestId _updateMuteRequestId = 0;
+	mtpRequestId _selfUpdateRequestId = 0;
 
 	rpl::variable<InstanceState> _instanceState
 		= InstanceState::Disconnected;
@@ -583,7 +593,7 @@ private:
 	std::unique_ptr<tgcalls::GroupInstanceCustomImpl> _instance;
 	base::has_weak_ptr _instanceGuard;
 	std::shared_ptr<tgcalls::VideoCaptureInterface> _cameraCapture;
-	std::unique_ptr<Webrtc::VideoTrack> _cameraOutgoing;
+	rpl::variable<Webrtc::VideoState> _cameraState;
 	rpl::variable<bool> _isSharingCamera = false;
 	base::flat_map<std::string, SinkPointer> _pendingVideoOutputs;
 
@@ -593,10 +603,11 @@ private:
 	std::unique_ptr<tgcalls::GroupInstanceCustomImpl> _screenInstance;
 	base::has_weak_ptr _screenInstanceGuard;
 	std::shared_ptr<tgcalls::VideoCaptureInterface> _screenCapture;
-	std::unique_ptr<Webrtc::VideoTrack> _screenOutgoing;
+	rpl::variable<Webrtc::VideoState> _screenState;
 	rpl::variable<bool> _isSharingScreen = false;
 	QString _screenDeviceId;
 
+	base::flags<SendUpdateType> _pendingSelfUpdates;
 	bool _requireARGB32 = true;
 
 	rpl::event_stream<LevelUpdate> _levelUpdates;
