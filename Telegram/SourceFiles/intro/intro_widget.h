@@ -59,7 +59,7 @@ struct Data {
 
 	Window::TermsLock termsLock;
 
-	base::Observable<void> updated;
+	rpl::event_stream<> updated;
 
 };
 
@@ -87,8 +87,7 @@ enum class EnterPoint : uchar {
 class Widget
 	: public Ui::RpWidget
 	, private Media::Player::FloatDelegate
-	, private Media::Player::FloatSectionDelegate
-	, private base::Subscriber {
+	, private Media::Player::FloatSectionDelegate {
 public:
 	Widget(
 		QWidget *parent,

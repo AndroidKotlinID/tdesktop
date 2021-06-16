@@ -107,9 +107,10 @@ Widget::Widget(
 
 	fixOrder();
 
-	subscribe(Lang::CurrentCloudManager().firstLanguageSuggestion(), [=] {
+	Lang::CurrentCloudManager().firstLanguageSuggestion(
+	) | rpl::start_with_next([=] {
 		createLanguageLink();
-	});
+	}, lifetime());
 
 	_account->mtpUpdates(
 	) | rpl::start_with_next([=](const MTPUpdates &updates) {
@@ -566,7 +567,7 @@ void Widget::getNearestDC() {
 		const auto nearestCountry = qs(nearest.vcountry());
 		if (getData()->country != nearestCountry) {
 			getData()->country = nearestCountry;
-			getData()->updated.notify();
+			getData()->updated.fire({});
 		}
 	}).send();
 }

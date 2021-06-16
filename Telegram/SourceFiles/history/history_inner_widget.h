@@ -41,8 +41,7 @@ enum class ReportReason;
 class HistoryWidget;
 class HistoryInner
 	: public Ui::RpWidget
-	, public Ui::AbstractTooltipShower
-	, private base::Subscriber {
+	, public Ui::AbstractTooltipShower {
 	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
@@ -97,6 +96,7 @@ public:
 		const QString &command,
 		const FullMsgId &context);
 	void elementHandleViaClick(not_null<UserData*> bot);
+	bool elementIsChatWide();
 
 	void updateBotInfo(bool recount = true);
 
@@ -356,6 +356,8 @@ private:
 	style::cursor _cursor = style::cur_default;
 	SelectedItems _selected;
 	std::optional<Ui::ReportReason> _chooseForReportReason;
+
+	bool _isChatWide = false;
 
 	base::flat_set<not_null<const HistoryItem*>> _animatedStickersPlayed;
 	base::flat_map<

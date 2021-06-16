@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/add_contact_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
 #include "boxes/peer_list_controllers.h"
+#include "window/window_adaptive.h"
 #include "window/window_controller.h"
 #include "window/main_window.h"
 #include "window/window_filters_menu.h"
@@ -465,12 +466,14 @@ SessionController::SessionController(
 		enableGifPauseReason(GifPauseReason::RoundPlaying);
 	}
 
-	subscribe(session->api().fullPeerUpdated(), [=](PeerData *peer) {
+	base::ObservableViewer(
+		session->api().fullPeerUpdated()
+	) | rpl::start_with_next([=](PeerData *peer) {
 		if (peer == _showEditPeer) {
 			_showEditPeer = nullptr;
 			Ui::show(Box<EditPeerInfoBox>(this, peer));
 		}
-	});
+	}, lifetime());
 
 	session->data().chatsListChanges(
 	) | rpl::filter([=](Data::Folder *folder) {
@@ -753,7 +756,7 @@ void SessionController::enableGifPauseReason(GifPauseReason reason) {
 		auto notify = (static_cast<int>(_gifPauseReasons) < static_cast<int>(reason));
 		_gifPauseReasons |= reason;
 		if (notify) {
-			_gifPauseLevelChanged.notify();
+			_gifPauseLevelChanged.fire({});
 		}
 	}
 }
@@ -762,7 +765,7 @@ void SessionController::disableGifPauseReason(GifPauseReason reason) {
 	if (_gifPauseReasons & reason) {
 		_gifPauseReasons &= ~reason;
 		if (_gifPauseReasons < reason) {
-			_gifPauseLevelChanged.notify();
+			_gifPauseLevelChanged.fire({});
 		}
 	}
 }
@@ -904,7 +907,7 @@ bool SessionController::takeThirdSectionFromLayer() {
 }
 
 void SessionController::resizeForThirdSection() {
-	if (Adaptive::ThreeColumn()) {
+	if (adaptive().isThreeColumn()) {
 		return;
 	}
 
@@ -1180,7 +1183,7 @@ void SessionController::setActiveChatsFilter(FilterId id) {
 	if (id) {
 		closeFolder();
 	}
-	if (Adaptive::OneColumn()) {
+	if (adaptive().isOneColumn()) {
 		Ui::showChatsList(&session());
 	}
 }
@@ -1201,6 +1204,10 @@ void SessionController::showNewChannel() {
 	_window->show(
 		Box<GroupInfoBox>(this, GroupInfoBox::Type::Channel),
 		Ui::LayerOption::KeepOther);
+}
+
+Window::Adaptive &SessionController::adaptive() const {
+	return _window->adaptive();
 }
 
 SessionController::~SessionController() = default;

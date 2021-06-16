@@ -41,6 +41,7 @@ namespace Window {
 
 Controller::Controller()
 : _widget(this)
+, _adaptive(std::make_unique<Adaptive>())
 , _isActiveTimer([=] { updateIsActive(); }) {
 	_widget.init();
 }
@@ -315,7 +316,8 @@ void Controller::updateIsActive() {
 }
 
 void Controller::minimize() {
-	if (Global::WorkMode().value() == dbiwmTrayOnly) {
+	if (Core::App().settings().workMode()
+			== Core::Settings::WorkMode::TrayOnly) {
 		_widget.minimizeToTray();
 	} else {
 		_widget.setWindowState(_widget.windowState() | Qt::WindowMinimized);
@@ -365,6 +367,10 @@ void Controller::showLogoutConfirmation() {
 		tr::lng_settings_logout(tr::now),
 		st::attentionBoxButton,
 		callback));
+}
+
+Window::Adaptive &Controller::adaptive() const {
+	return *_adaptive;
 }
 
 } // namespace Window

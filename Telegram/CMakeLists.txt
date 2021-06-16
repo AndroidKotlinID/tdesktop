@@ -373,6 +373,8 @@ PRIVATE
     core/core_cloud_password.h
     core/core_settings.cpp
     core/core_settings.h
+    core/core_settings_proxy.cpp
+    core/core_settings_proxy.h
     core/crash_report_window.cpp
     core/crash_report_window.h
     core/crash_reports.cpp
@@ -1086,6 +1088,8 @@ PRIVATE
     window/section_memento.h
     window/section_widget.cpp
     window/section_widget.h
+    window/window_adaptive.cpp
+    window/window_adaptive.h
     window/window_connecting_widget.cpp
     window/window_connecting_widget.h
     window/window_controller.cpp
