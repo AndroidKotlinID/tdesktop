@@ -478,7 +478,8 @@ void InnerWidget::showFilter(Fn<void(FilterValue &&filter)> callback) {
 	if (_admins.empty()) {
 		_showFilterCallback = std::move(callback);
 	} else {
-		Ui::show(Box<FilterBox>(_channel, _admins, _filter, std::move(callback)));
+		_controller->show(
+			Box<FilterBox>(_channel, _admins, _filter, std::move(callback)));
 	}
 }
 
@@ -599,6 +600,19 @@ void InnerWidget::elementStartStickerLoop(not_null<const Element*> view) {
 void InnerWidget::elementShowPollResults(
 	not_null<PollData*> poll,
 	FullMsgId context) {
+}
+
+void InnerWidget::elementOpenPhoto(
+		not_null<PhotoData*> photo,
+		FullMsgId context) {
+	_controller->openPhoto(photo, context);
+}
+
+void InnerWidget::elementOpenDocument(
+		not_null<DocumentData*> document,
+		FullMsgId context,
+		bool showInMediaView) {
+	_controller->openDocument(document, context, showInMediaView);
 }
 
 void InnerWidget::elementShowTooltip(
@@ -1279,7 +1293,7 @@ void InnerWidget::openContextGif(FullMsgId itemId) {
 	if (const auto item = session().data().message(itemId)) {
 		if (const auto media = item->media()) {
 			if (const auto document = media->document()) {
-				Core::App().showDocument(document, item);
+				_controller->openDocument(document, itemId, true);
 			}
 		}
 	}
@@ -1317,7 +1331,8 @@ void InnerWidget::suggestRestrictUser(not_null<UserData*> user) {
 					(*weakBox)->closeBox();
 				}
 			});
-			*weakBox = Ui::show(
+			*weakBox = QPointer<EditRestrictedBox>(box.data());
+			_controller->show(
 				std::move(box),
 				Ui::LayerOption::KeepOther);
 		};

@@ -21,6 +21,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_replies_section.h"
 #include "media/player/media_player_instance.h"
+#include "media/view/media_view_open_common.h"
+#include "data/data_document_resolver.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
 #include "data/data_folder.h"
@@ -48,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
+#include "main/main_domain.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "apiwrap.h"
@@ -141,7 +144,7 @@ void SessionNavigation::resolveUsername(
 	}).fail([=](const MTP::Error &error) {
 		_resolveRequestId = 0;
 		if (error.code() == 400) {
-			Ui::show(Box<InformBox>(
+			show(Box<InformBox>(
 				tr::lng_username_not_found(tr::now, lt_user, username)));
 		}
 	}).send();
@@ -471,7 +474,7 @@ SessionController::SessionController(
 	) | rpl::start_with_next([=](PeerData *peer) {
 		if (peer == _showEditPeer) {
 			_showEditPeer = nullptr;
-			Ui::show(Box<EditPeerInfoBox>(this, peer));
+			show(Box<EditPeerInfoBox>(this, peer));
 		}
 	}, lifetime());
 
@@ -993,7 +996,7 @@ void SessionController::startOrJoinGroupCall(
 		GroupCallJoinConfirm confirm) {
 	auto &calls = Core::App().calls();
 	const auto askConfirmation = [&](QString text, QString button) {
-		Ui::show(Box<ConfirmBox>(text, button, crl::guard(this, [=] {
+		show(Box<ConfirmBox>(text, button, crl::guard(this, [=] {
 			Ui::hideLayer();
 			startOrJoinGroupCall(peer, joinHash, GroupCallJoinConfirm::None);
 		})));
@@ -1095,7 +1098,7 @@ void SessionController::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 	box->setMinDate(minPeerDate(chat));
 	box->setMaxDate(maxPeerDate(chat));
 	box->setBeginningButton(true);
-	Ui::show(std::move(box));
+	show(std::move(box));
 }
 
 void SessionController::showPassportForm(const Passport::FormRequest &request) {
@@ -1132,6 +1135,18 @@ void SessionController::showPeerHistory(
 		peerId,
 		params,
 		msgId);
+}
+
+void SessionController::showPeerHistoryAtItem(
+		not_null<const HistoryItem*> item) {
+	_window->invokeForSessionController(
+		&item->history()->peer->session().account(),
+		[=](not_null<SessionController*> controller) {
+			controller->showPeerHistory(
+				item->history()->peer,
+				SectionShow::Way::ClearStack,
+				item->id);
+		});
 }
 
 void SessionController::showSection(
@@ -1208,6 +1223,45 @@ void SessionController::showNewChannel() {
 
 Window::Adaptive &SessionController::adaptive() const {
 	return _window->adaptive();
+}
+
+QPointer<Ui::BoxContent> SessionController::show(
+		object_ptr<Ui::BoxContent> content,
+		Ui::LayerOptions options,
+		anim::type animated) {
+	return _window->show(std::move(content), options, animated);
+}
+
+void SessionController::openPhoto(
+		not_null<PhotoData*> photo,
+		FullMsgId contextId) {
+	_window->openInMediaView(Media::View::OpenRequest(
+		this,
+		photo,
+		session().data().message(contextId)));
+}
+
+void SessionController::openPhoto(
+		not_null<PhotoData*> photo,
+		not_null<PeerData*> peer) {
+	_window->openInMediaView(Media::View::OpenRequest(this, photo, peer));
+}
+
+void SessionController::openDocument(
+		not_null<DocumentData*> document,
+		FullMsgId contextId,
+		bool showInMediaView) {
+	if (showInMediaView) {
+		_window->openInMediaView(Media::View::OpenRequest(
+			this,
+			document,
+			session().data().message(contextId)));
+		return;
+	}
+	Data::ResolveDocument(
+		this,
+		document,
+		session().data().message(contextId));
 }
 
 SessionController::~SessionController() = default;

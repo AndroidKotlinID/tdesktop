@@ -44,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "media/view/media_view_overlay_widget.h"
+#include "media/view/media_view_open_common.h"
 #include "mtproto/mtproto_dc_options.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtp_instance.h"
@@ -284,6 +285,13 @@ void Application::run() {
 		&& Ui::Integration::Instance().openglLastCheckFailed()) {
 		showOpenGLCrashNotification();
 	}
+
+	_window->openInMediaViewRequests(
+	) | rpl::start_with_next([=](Media::View::OpenRequest &&request) {
+		if (_mediaView) {
+			_mediaView->show(std::move(request));
+		}
+	}, _window->lifetime());
 }
 
 void Application::showOpenGLCrashNotification() {
@@ -380,49 +388,6 @@ bool Application::hideMediaView() {
 		return true;
 	}
 	return false;
-}
-
-void Application::showPhoto(not_null<const PhotoOpenClickHandler*> link) {
-	const auto photo = link->photo();
-	const auto peer = link->peer();
-	const auto item = photo->owner().message(link->context());
-	return (!item && peer)
-		? showPhoto(photo, peer)
-		: showPhoto(photo, item);
-}
-
-void Application::showPhoto(not_null<PhotoData*> photo, HistoryItem *item) {
-	Expects(_mediaView != nullptr);
-
-	_mediaView->showPhoto(photo, item);
-}
-
-void Application::showPhoto(
-		not_null<PhotoData*> photo,
-		not_null<PeerData*> peer) {
-	Expects(_mediaView != nullptr);
-
-	_mediaView->showPhoto(photo, peer);
-}
-
-void Application::showDocument(not_null<DocumentData*> document, HistoryItem *item) {
-	Expects(_mediaView != nullptr);
-
-	if (cUseExternalVideoPlayer()
-		&& document->isVideoFile()
-		&& !document->filepath().isEmpty()) {
-		File::Launch(document->location(false).fname);
-	} else {
-		_mediaView->showDocument(document, item);
-	}
-}
-
-void Application::showTheme(
-		not_null<DocumentData*> document,
-		const Data::CloudTheme &cloud) {
-	Expects(_mediaView != nullptr);
-
-	_mediaView->showTheme(document, cloud);
 }
 
 PeerData *Application::ui_getPeerForMouseAction() {

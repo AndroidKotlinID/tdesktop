@@ -1957,7 +1957,7 @@ void HistoryInner::openContextGif(FullMsgId itemId) {
 	if (const auto item = session().data().message(itemId)) {
 		if (const auto media = item->media()) {
 			if (const auto document = media->document()) {
-				Core::App().showDocument(document, item);
+				_controller->openDocument(document, itemId, true);
 			}
 		}
 	}
@@ -2565,6 +2565,19 @@ void HistoryInner::elementShowPollResults(
 		not_null<PollData*> poll,
 		FullMsgId context) {
 	_controller->showPollResults(poll, context);
+}
+
+void HistoryInner::elementOpenPhoto(
+		not_null<PhotoData*> photo,
+		FullMsgId context) {
+	_controller->openPhoto(photo, context);
+}
+
+void HistoryInner::elementOpenDocument(
+		not_null<DocumentData*> document,
+		FullMsgId context,
+		bool showInMediaView) {
+	_controller->openDocument(document, context, showInMediaView);
 }
 
 void HistoryInner::elementShowTooltip(
@@ -3226,7 +3239,7 @@ void HistoryInner::deleteItem(not_null<HistoryItem*> item) {
 		}
 	}
 	const auto suggestModerateActions = true;
-	Ui::show(Box<DeleteMessagesBox>(item, suggestModerateActions));
+	_controller->show(Box<DeleteMessagesBox>(item, suggestModerateActions));
 }
 
 bool HistoryInner::hasPendingResizedItems() const {
@@ -3240,7 +3253,7 @@ void HistoryInner::deleteAsGroup(FullMsgId itemId) {
 		if (!group) {
 			return deleteItem(item);
 		}
-		Ui::show(Box<DeleteMessagesBox>(
+		_controller->show(Box<DeleteMessagesBox>(
 			&session(),
 			session().data().itemsToIds(group->items)));
 	}
@@ -3263,7 +3276,7 @@ void HistoryInner::reportAsGroup(FullMsgId itemId) {
 
 void HistoryInner::blockSenderItem(FullMsgId itemId) {
 	if (const auto item = session().data().message(itemId)) {
-		Ui::show(Box(
+		_controller->show(Box(
 			Window::BlockSenderFromRepliesBox,
 			_controller,
 			itemId));
@@ -3443,6 +3456,24 @@ not_null<HistoryView::ElementDelegate*> HistoryInner::ElementDelegate() {
 				FullMsgId context) override {
 			if (Instance) {
 				Instance->elementShowPollResults(poll, context);
+			}
+		}
+		void elementOpenPhoto(
+				not_null<PhotoData*> photo,
+				FullMsgId context) override {
+			if (Instance) {
+				Instance->elementOpenPhoto(photo, context);
+			}
+		}
+		void elementOpenDocument(
+				not_null<DocumentData*> document,
+				FullMsgId context,
+				bool showInMediaView = false) override {
+			if (Instance) {
+				Instance->elementOpenDocument(
+					document,
+					context,
+					showInMediaView);
 			}
 		}
 		void elementShowTooltip(

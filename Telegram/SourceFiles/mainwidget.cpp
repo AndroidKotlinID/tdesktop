@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
+#include "data/data_document_resolver.h"
 #include "data/data_web_page.h"
 #include "data/data_game.h"
 #include "data/data_peer_values.h"
@@ -510,6 +511,11 @@ void MainWidget::floatPlayerClosed(FullMsgId itemId) {
 	}
 }
 
+void MainWidget::floatPlayerDoubleClickEvent(
+		not_null<const HistoryItem*> item) {
+	_controller->showPeerHistoryAtItem(item);
+}
+
 bool MainWidget::setForwardDraft(PeerId peerId, MessageIdsList &&items) {
 	Expects(peerId != 0);
 
@@ -938,6 +944,10 @@ void MainWidget::createPlayer() {
 			[this] { playerHeightUpdated(); },
 			_player->lifetime());
 		_player->entity()->setCloseCallback([=] { closeBothPlayers(); });
+		_player->entity()->setShowItemCallback([=](
+				not_null<const HistoryItem*> item) {
+			_controller->showPeerHistoryAtItem(item);
+		});
 		_playerVolume.create(this, _controller);
 		_player->entity()->volumeWidgetCreated(_playerVolume);
 		orderWidgets();

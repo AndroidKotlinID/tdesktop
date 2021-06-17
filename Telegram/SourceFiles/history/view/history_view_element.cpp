@@ -107,6 +107,17 @@ void SimpleElementDelegate::elementShowPollResults(
 	FullMsgId context) {
 }
 
+void SimpleElementDelegate::elementOpenPhoto(
+	not_null<PhotoData*> photo,
+	FullMsgId context) {
+}
+
+void SimpleElementDelegate::elementOpenDocument(
+	not_null<DocumentData*> document,
+	FullMsgId context,
+	bool showInMediaView) {
+}
+
 void SimpleElementDelegate::elementShowTooltip(
 	const TextWithEntities &text,
 	Fn<void()> hiddenCallback) {
