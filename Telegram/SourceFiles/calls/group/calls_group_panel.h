@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/object_ptr.h"
 #include "calls/group/calls_group_call.h"
+#include "calls/group/calls_group_common.h"
 #include "calls/group/calls_choose_join_as.h"
 #include "calls/group/ui/desktop_capture_choose_source.h"
 #include "ui/effects/animations.h"
@@ -64,6 +65,7 @@ class Toasts;
 class Members;
 class Viewport;
 enum class PanelMode;
+enum class StickedTooltip;
 
 class Panel final : private Ui::DesktopCapture::ChooseSourceDelegate {
 public:
@@ -83,6 +85,17 @@ public:
 private:
 	using State = GroupCall::State;
 	struct ControlsBackgroundNarrow;
+
+	enum class NiceTooltipType {
+		Normal,
+		Sticked,
+	};
+	enum class StickedTooltipHide {
+		Unavailable,
+		Activated,
+		Discarded,
+	};
+	class MicLevelTester;
 
 	std::unique_ptr<Ui::Window> createWindow();
 	[[nodiscard]] not_null<Ui::RpWidget*> widget() const;
@@ -111,11 +124,18 @@ private:
 
 	void trackControl(Ui::RpWidget *widget, rpl::lifetime &lifetime);
 	void trackControlOver(not_null<Ui::RpWidget*> control, bool over);
-	void showNiceTooltip(not_null<Ui::RpWidget*> control);
+	void showNiceTooltip(
+		not_null<Ui::RpWidget*> control,
+		NiceTooltipType type = NiceTooltipType::Normal);
+	void showStickedTooltip();
+	void hideStickedTooltip(StickedTooltipHide hide);
+	void hideStickedTooltip(StickedTooltip type, StickedTooltipHide hide);
+	void hideNiceTooltip();
 
 	bool updateMode();
 	void updateControlsGeometry();
 	void updateButtonsGeometry();
+	void updateTooltipGeometry();
 	void updateButtonsStyles();
 	void updateMembersGeometry();
 	void refreshControlsBackground();
@@ -127,6 +147,7 @@ private:
 		std::optional<bool> overrideWideMode = std::nullopt);
 	void refreshTopButton();
 	void toggleWideControls(bool shown);
+	void updateWideControlsVisibility();
 	[[nodiscard]] bool videoButtonInNarrowMode() const;
 
 	void endCall();
@@ -202,10 +223,15 @@ private:
 	std::unique_ptr<Ui::CallMuteButton> _mute;
 	object_ptr<Ui::CallButton> _hangup;
 	object_ptr<Ui::ImportantTooltip> _niceTooltip = { nullptr };
+	QPointer<Ui::IconButton> _stickedTooltipClose;
+	QPointer<Ui::RpWidget> _niceTooltipControl;
+	StickedTooltips _stickedTooltipsShown;
 	Fn<void()> _callShareLinkCallback;
 
 	const std::unique_ptr<Toasts> _toasts;
 	base::weak_ptr<Ui::Toast::Instance> _lastToast;
+
+	std::unique_ptr<MicLevelTester> _micLevelTester;
 
 	rpl::lifetime _peerLifetime;
 
