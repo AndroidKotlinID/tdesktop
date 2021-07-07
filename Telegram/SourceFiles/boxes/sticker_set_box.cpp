@@ -69,9 +69,16 @@ public:
 
 	void install();
 	[[nodiscard]] rpl::producer<uint64> setInstalled() const;
+	[[nodiscard]] rpl::producer<uint64> setArchived() const;
 	[[nodiscard]] rpl::producer<> updateControls() const;
 
 	[[nodiscard]] rpl::producer<Error> errors() const;
+
+	void archiveStickers();
+
+	bool isMasksSet() const {
+		return (_setFlags & MTPDstickerSet::Flag::f_masks);
+	}
 
 	~Inner();
 
@@ -105,10 +112,6 @@ private:
 	void gotSet(const MTPmessages_StickerSet &set);
 	void installDone(const MTPmessages_StickerSetInstallResult &result);
 
-	bool isMasksSet() const {
-		return (_setFlags & MTPDstickerSet::Flag::f_masks);
-	}
-
 	not_null<Lottie::MultiPlayer*> getLottiePlayer();
 
 	void showPreview();
@@ -141,6 +144,7 @@ private:
 	int _previewShown = -1;
 
 	rpl::event_stream<uint64> _setInstalled;
+	rpl::event_stream<uint64> _setArchived;
 	rpl::event_stream<> _updateControls;
 	rpl::event_stream<Error> _errors;
 
@@ -189,13 +193,48 @@ void StickerSetBox::prepare() {
 
 	_inner->setInstalled(
 	) | rpl::start_with_next([=](uint64 setId) {
-		_controller->session().api().stickerSetInstalled(setId);
+		if (_inner->isMasksSet()) {
+			Ui::Toast::Show(tr::lng_masks_installed(tr::now));
+		} else {
+			auto &stickers = _controller->session().data().stickers();
+			stickers.notifyStickerSetInstalled(setId);
+		}
 		closeBox();
 	}, lifetime());
 
 	_inner->errors(
 	) | rpl::start_with_next([=](Error error) {
 		handleError(error);
+	}, lifetime());
+
+	_inner->setArchived(
+	) | rpl::start_with_next([=](uint64 setId) {
+		const auto isMasks = _inner->isMasksSet();
+
+		Ui::Toast::Show(isMasks
+			? tr::lng_masks_has_been_archived(tr::now)
+			: tr::lng_stickers_has_been_archived(tr::now));
+
+		auto &order = isMasks
+			? _controller->session().data().stickers().maskSetsOrderRef()
+			: _controller->session().data().stickers().setsOrderRef();
+		const auto index = order.indexOf(setId);
+		if (index != -1) {
+			order.removeAt(index);
+
+			auto &local = _controller->session().local();
+			if (isMasks) {
+				local.writeInstalledMasks();
+				local.writeArchivedMasks();
+			} else {
+				local.writeInstalledStickers();
+				local.writeArchivedStickers();
+			}
+		}
+
+		_controller->session().data().stickers().notifyUpdated();
+
+		closeBox();
 	}, lifetime());
 }
 
@@ -223,38 +262,6 @@ void StickerSetBox::handleError(Error error) {
 	}
 }
 
-void StickerSetBox::archiveStickers() {
-	const auto weak = base::make_weak(_controller.get());
-	const auto setId = _set.c_inputStickerSetID().vid().v;
-	_controller->session().api().request(MTPmessages_InstallStickerSet(
-		_set,
-		MTP_boolTrue()
-	)).done([=](const MTPmessages_StickerSetInstallResult &result) {
-		const auto controller = weak.get();
-		if (!controller) {
-			return;
-		}
-		if (result.type() == mtpc_messages_stickerSetInstallResultSuccess) {
-			Ui::Toast::Show(tr::lng_stickers_has_been_archived(tr::now));
-
-			const auto &session = controller->session();
-			auto &order = session.data().stickers().setsOrderRef();
-			const auto index = order.indexOf(setId);
-			if (index == -1) {
-				return;
-			}
-			order.removeAt(index);
-
-			session.local().writeInstalledStickers();
-			session.local().writeArchivedStickers();
-
-			session.data().stickers().notifyUpdated();
-		}
-	}).fail([](const MTP::Error &error) {
-		Ui::Toast::Show(Lang::Hard::ServerError());
-	}).send();
-}
-
 void StickerSetBox::updateTitleAndButtons() {
 	setTitle(_inner->title());
 	updateButtons();
@@ -263,8 +270,12 @@ void StickerSetBox::updateTitleAndButtons() {
 void StickerSetBox::updateButtons() {
 	clearButtons();
 	if (_inner->loaded()) {
+		const auto isMasks = _inner->isMasksSet();
 		if (_inner->notInstalled()) {
-			addButton(tr::lng_stickers_add_pack(), [=] { addStickers(); });
+			auto addText = isMasks
+				? tr::lng_stickers_add_masks()
+				: tr::lng_stickers_add_pack();
+			addButton(std::move(addText), [=] { addStickers(); });
 			addButton(tr::lng_cancel(), [=] { closeBox(); });
 
 			if (!_inner->shortName().isEmpty()) {
@@ -279,7 +290,9 @@ void StickerSetBox::updateButtons() {
 				top->setClickedCallback([=] {
 					*menu = base::make_unique_q<Ui::PopupMenu>(top);
 					(*menu)->addAction(
-						tr::lng_stickers_share_pack(tr::now),
+						(isMasks
+							? tr::lng_stickers_share_masks
+							: tr::lng_stickers_share_pack)(tr::now),
 						share);
 					(*menu)->popup(QCursor::pos());
 					return true;
@@ -292,21 +305,25 @@ void StickerSetBox::updateButtons() {
 				copyStickersLink();
 				Ui::Toast::Show(tr::lng_stickers_copied(tr::now));
 			};
-			addButton(tr::lng_stickers_share_pack(), std::move(share));
+			auto shareText = isMasks
+				? tr::lng_stickers_share_masks()
+				: tr::lng_stickers_share_pack();
+			addButton(std::move(shareText), std::move(share));
 			addButton(tr::lng_cancel(), [=] { closeBox(); });
 
 			if (!_inner->shortName().isEmpty()) {
 				const auto top = addTopButton(st::infoTopBarMenu);
 				const auto archive = [=] {
-					archiveStickers();
-					closeBox();
+					_inner->archiveStickers();
 				};
 				const auto menu =
 					std::make_shared<base::unique_qptr<Ui::PopupMenu>>();
 				top->setClickedCallback([=] {
 					*menu = base::make_unique_q<Ui::PopupMenu>(top);
 					(*menu)->addAction(
-						tr::lng_stickers_archive_pack(tr::now),
+						isMasks
+							? tr::lng_masks_archive_pack(tr::now)
+							: tr::lng_stickers_archive_pack(tr::now),
 						archive);
 					(*menu)->popup(QCursor::pos());
 					return true;
@@ -464,6 +481,10 @@ rpl::producer<uint64> StickerSetBox::Inner::setInstalled() const {
 	return _setInstalled.events();
 }
 
+rpl::producer<uint64> StickerSetBox::Inner::setArchived() const {
+	return _setArchived.events();
+}
+
 rpl::producer<> StickerSetBox::Inner::updateControls() const {
 	return _updateControls.events();
 }
@@ -474,13 +495,19 @@ rpl::producer<StickerSetBox::Error> StickerSetBox::Inner::errors() const {
 
 void StickerSetBox::Inner::installDone(
 		const MTPmessages_StickerSetInstallResult &result) {
-	auto &sets = _controller->session().data().stickers().setsRef();
+	auto &stickers = _controller->session().data().stickers();
+	auto &sets = stickers.setsRef();
+	const auto isMasks = isMasksSet();
 
-	bool wasArchived = (_setFlags & MTPDstickerSet::Flag::f_archived);
+	const bool wasArchived = (_setFlags & MTPDstickerSet::Flag::f_archived);
 	if (wasArchived) {
-		auto index = _controller->session().data().stickers().archivedSetsOrderRef().indexOf(_setId);
+		const auto index = (isMasks
+			? stickers.archivedMaskSetsOrderRef()
+			: stickers.archivedSetsOrderRef()).indexOf(_setId);
 		if (index >= 0) {
-			_controller->session().data().stickers().archivedSetsOrderRef().removeAt(index);
+			(isMasks
+				? stickers.archivedMaskSetsOrderRef()
+				: stickers.archivedSetsOrderRef()).removeAt(index);
 		}
 	}
 	_setInstallDate = base::unixtime::now();
@@ -509,8 +536,10 @@ void StickerSetBox::Inner::installDone(
 	set->stickers = _pack;
 	set->emoji = _emoji;
 
-	auto &order = _controller->session().data().stickers().setsOrderRef();
-	int insertAtIndex = 0, currentIndex = order.indexOf(_setId);
+	auto &order = isMasks
+		? stickers.maskSetsOrderRef()
+		: stickers.setsOrderRef();
+	const auto insertAtIndex = 0, currentIndex = order.indexOf(_setId);
 	if (currentIndex != insertAtIndex) {
 		if (currentIndex > 0) {
 			order.removeAt(currentIndex);
@@ -522,8 +551,10 @@ void StickerSetBox::Inner::installDone(
 	if (customIt != sets.cend()) {
 		const auto custom = customIt->second.get();
 		for (const auto sticker : std::as_const(_pack)) {
-			int removeIndex = custom->stickers.indexOf(sticker);
-			if (removeIndex >= 0) custom->stickers.removeAt(removeIndex);
+			const int removeIndex = custom->stickers.indexOf(sticker);
+			if (removeIndex >= 0) {
+				custom->stickers.removeAt(removeIndex);
+			}
 		}
 		if (custom->stickers.isEmpty()) {
 			sets.erase(customIt);
@@ -531,14 +562,23 @@ void StickerSetBox::Inner::installDone(
 	}
 
 	if (result.type() == mtpc_messages_stickerSetInstallResultArchive) {
-		_controller->session().data().stickers().applyArchivedResult(
+		stickers.applyArchivedResult(
 			result.c_messages_stickerSetInstallResultArchive());
 	} else {
+		auto &storage = _controller->session().local();
 		if (wasArchived) {
-			_controller->session().local().writeArchivedStickers();
+			if (isMasks) {
+				storage.writeArchivedMasks();
+			} else {
+				storage.writeArchivedStickers();
+			}
 		}
-		_controller->session().local().writeInstalledStickers();
-		_controller->session().data().stickers().notifyUpdated();
+		if (isMasks) {
+			storage.writeInstalledMasks();
+		} else {
+			storage.writeInstalledStickers();
+		}
+		stickers.notifyUpdated();
 	}
 	_setInstalled.fire_copy(_setId);
 }
@@ -837,12 +877,7 @@ QString StickerSetBox::Inner::shortName() const {
 }
 
 void StickerSetBox::Inner::install() {
-	if (isMasksSet()) {
-		_controller->show(
-			Box<InformBox>(tr::lng_stickers_masks_pack(tr::now)),
-			Ui::LayerOption::KeepOther);
-		return;
-	} else if (_installRequest) {
+	if (_installRequest) {
 		return;
 	}
 	_installRequest = _api.request(MTPmessages_InstallStickerSet(
@@ -852,6 +887,19 @@ void StickerSetBox::Inner::install() {
 		installDone(result);
 	}).fail([=](const MTP::Error &error) {
 		_errors.fire(Error::NotFound);
+	}).send();
+}
+
+void StickerSetBox::Inner::archiveStickers() {
+	_api.request(MTPmessages_InstallStickerSet(
+		_input,
+		MTP_boolTrue()
+	)).done([=](const MTPmessages_StickerSetInstallResult &result) {
+		if (result.type() == mtpc_messages_stickerSetInstallResultSuccess) {
+			_setArchived.fire_copy(_setId);
+		}
+	}).fail([](const MTP::Error &error) {
+		Ui::Toast::Show(Lang::Hard::ServerError());
 	}).send();
 }
 
