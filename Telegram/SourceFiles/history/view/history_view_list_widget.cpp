@@ -382,6 +382,9 @@ void ListWidget::refreshRows(const Data::MessagesSlice &old) {
 	if (!_itemsRevealHeight) {
 		mouseActionUpdate(QCursor::pos());
 	}
+	if (_emptyInfo) {
+		_emptyInfo->setVisible(isEmpty());
+	}
 	_delegate->listContentRefreshed();
 }
 
@@ -1470,7 +1473,9 @@ void ListWidget::revealItemsCallback() {
 			? (_minHeight - _itemsHeight - st::historyPaddingBottom)
 			: 0;
 		const auto wasHeight = height();
-		const auto nowHeight = std::max(_minHeight, wasHeight + delta);
+		const auto nowHeight = _itemsTop
+			+ _itemsHeight
+			+ st::historyPaddingBottom;
 		if (wasHeight != nowHeight) {
 			resize(width(), nowHeight);
 		}
@@ -2938,6 +2943,10 @@ void ListWidget::replyNextMessage(FullMsgId fullId, bool next) {
 	}
 }
 
+void ListWidget::setEmptyInfoWidget(base::unique_qptr<Ui::RpWidget> &&w) {
+	_emptyInfo = std::move(w);
+}
+
 ListWidget::~ListWidget() = default;
 
 void ConfirmDeleteSelectedItems(not_null<ListWidget*> widget) {
@@ -3004,11 +3013,16 @@ void ConfirmSendNowSelectedItems(not_null<ListWidget*> widget) {
 	if (!history) {
 		return;
 	}
+	const auto clearSelection = [weak = Ui::MakeWeak(widget)] {
+		if (const auto strong = weak.data()) {
+			strong->cancelSelection();
+		}
+	};
 	Window::ShowSendNowMessagesBox(
 		navigation,
 		history,
 		widget->getSelectedIds(),
-		[=] { navigation->showBackFromStack(); });
+		clearSelection);
 }
 
 QString WrapBotCommandInChat(
