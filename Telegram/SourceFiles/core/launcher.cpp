@@ -286,10 +286,7 @@ void Launcher::init() {
 	initQtMessageLogging();
 
 	QApplication::setApplicationName(qsl("TelegramDesktop"));
-
-#ifndef OS_MAC_OLD
 	QApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
-#endif // OS_MAC_OLD
 
 	// fallback session management is useless for tdesktop since it doesn't have
 	// any "are you sure you want to close this window?" dialogs
@@ -427,14 +424,13 @@ void Launcher::initQtMessageLogging() {
 			QtMsgType type,
 			const QMessageLogContext &context,
 			const QString &msg) {
-		if (OriginalMessageHandler) {
-			OriginalMessageHandler(type, context, msg);
-		}
 		if (Logs::DebugEnabled() || !Logs::started()) {
 			if (!Logs::WritingEntry()) {
 				// Sometimes Qt logs something inside our own logging.
 				LOG((msg));
 			}
+		} else if (OriginalMessageHandler) {
+			OriginalMessageHandler(type, context, msg);
 		}
 	});
 }
@@ -450,7 +446,6 @@ void Launcher::processArguments() {
 		AllLeftValues,
 	};
 	auto parseMap = std::map<QByteArray, KeyFormat> {
-		{ "-testmode"       , KeyFormat::NoValues },
 		{ "-debug"          , KeyFormat::NoValues },
 		{ "-freetype"       , KeyFormat::NoValues },
 		{ "-many"           , KeyFormat::NoValues },
@@ -459,7 +454,6 @@ void Launcher::processArguments() {
 		{ "-fixprevious"    , KeyFormat::NoValues },
 		{ "-cleanup"        , KeyFormat::NoValues },
 		{ "-noupdate"       , KeyFormat::NoValues },
-		{ "-externalupdater", KeyFormat::NoValues },
 		{ "-tosettings"     , KeyFormat::NoValues },
 		{ "-startintray"    , KeyFormat::NoValues },
 		{ "-sendpath"       , KeyFormat::AllLeftValues },
@@ -490,9 +484,6 @@ void Launcher::processArguments() {
 		}
 	}
 
-	if (parseResult.contains("-externalupdater")) {
-		SetUpdaterDisabledAtStartup();
-	}
 	gUseFreeType = parseResult.contains("-freetype");
 	gDebugMode = parseResult.contains("-debug");
 	gManyInstance = parseResult.contains("-many");

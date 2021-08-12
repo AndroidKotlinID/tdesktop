@@ -34,7 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mtproto/mtproto_config.h"
 #include "boxes/rate_call_box.h"
-#include "app.h"
+#include "app.h" // App::quitting
 
 #include <tgcalls/VideoCaptureInterface.h>
 #include <tgcalls/StaticThreads.h>
@@ -64,8 +64,10 @@ public:
 		Fn<void()> onSuccess,
 		bool video) override;
 	void callPlaySound(CallSound sound) override;
-	auto callGetVideoCapture(const QString &deviceId)
-		-> std::shared_ptr<tgcalls::VideoCaptureInterface> override;
+	auto callGetVideoCapture(
+		const QString &deviceId,
+		bool isScreenCapture)
+	-> std::shared_ptr<tgcalls::VideoCaptureInterface> override;
 
 	void groupCallFinished(not_null<GroupCall*> call) override;
 	void groupCallFailed(not_null<GroupCall*> call) override;
@@ -123,9 +125,11 @@ void Instance::Delegate::callPlaySound(CallSound sound) {
 	}());
 }
 
-auto Instance::Delegate::callGetVideoCapture(const QString &deviceId)
+auto Instance::Delegate::callGetVideoCapture(
+	const QString &deviceId,
+	bool isScreenCapture)
 -> std::shared_ptr<tgcalls::VideoCaptureInterface> {
-	return _instance->getVideoCapture(deviceId);
+	return _instance->getVideoCapture(deviceId, isScreenCapture);
 }
 
 void Instance::Delegate::groupCallFinished(not_null<GroupCall*> call) {
@@ -159,7 +163,7 @@ void Instance::Delegate::groupCallPlaySound(GroupCallSound sound) {
 
 auto Instance::Delegate::groupCallGetVideoCapture(const QString &deviceId)
 -> std::shared_ptr<tgcalls::VideoCaptureInterface> {
-	return _instance->getVideoCapture(deviceId);
+	return _instance->getVideoCapture(deviceId, false);
 }
 
 FnMut<void()> Instance::Delegate::groupCallAddAsyncWaiter() {
@@ -699,12 +703,15 @@ void Instance::requestPermissionOrFail(Platform::PermissionType type, Fn<void()>
 }
 
 std::shared_ptr<tgcalls::VideoCaptureInterface> Instance::getVideoCapture(
-		std::optional<QString> deviceId) {
+		std::optional<QString> deviceId,
+		bool isScreenCapture) {
 	if (auto result = _videoCapture.lock()) {
 		if (deviceId) {
-			result->switchToDevice((deviceId->isEmpty()
-				? Core::App().settings().callVideoInputDeviceId()
-				: *deviceId).toStdString());
+			result->switchToDevice(
+				(deviceId->isEmpty()
+					? Core::App().settings().callVideoInputDeviceId()
+					: *deviceId).toStdString(),
+				isScreenCapture);
 		}
 		return result;
 	}

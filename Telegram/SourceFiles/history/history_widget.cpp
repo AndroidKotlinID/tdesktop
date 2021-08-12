@@ -3541,15 +3541,12 @@ void HistoryWidget::chooseAttach() {
 		}
 
 		if (!result.remoteContent.isEmpty()) {
-			auto animated = false;
-			auto image = App::readImage(
-				result.remoteContent,
-				nullptr,
-				false,
-				&animated);
-			if (!image.isNull() && !animated) {
+			auto read = Images::Read({
+				.content = result.remoteContent,
+			});
+			if (!read.image.isNull() && !read.animated) {
 				confirmSendingFiles(
-					std::move(image),
+					std::move(read.image),
 					std::move(result.remoteContent));
 			} else {
 				uploadFile(result.remoteContent, SendMediaType::File);
@@ -6263,11 +6260,7 @@ void HistoryWidget::updatePreview() {
 				st::msgNameStyle,
 				tr::lng_preview_loading(tr::now),
 				Ui::NameTextOptions());
-#ifndef OS_MAC_OLD
 			auto linkText = _previewLinks.splitRef(' ').at(0).toString();
-#else // OS_MAC_OLD
-			auto linkText = _previewLinks.split(' ').at(0);
-#endif // OS_MAC_OLD
 			_previewDescription.setText(
 				st::messageTextStyle,
 				TextUtilities::Clean(linkText),

@@ -177,7 +177,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
 
     git clone https://github.com/desktop-app/tg_angle.git
     cd tg_angle
-    git checkout f7b17cd
+    git checkout ec51cc6
     mkdir out
     cd out
     mkdir Debug
@@ -200,9 +200,9 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     SET LibrariesPath=%cd%
     git clone git://code.qt.io/qt/qt5.git qt_5_15_2
     cd qt_5_15_2
-    perl init-repository --module-subset=qtbase,qtimageformats
+    perl init-repository --module-subset=qtbase,qtimageformats,qtsvg
     git checkout v5.15.2
-    git submodule update qtbase qtimageformats
+    git submodule update qtbase qtimageformats qtsvg
     cd qtbase
     for /r %i in (..\..\patches\qtbase_5_15_2\*) do git apply %i
     cd ..
