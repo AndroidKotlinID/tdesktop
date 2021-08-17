@@ -171,7 +171,7 @@ const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 HistoryWidget::HistoryWidget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
-: Window::AbstractSectionWidget(parent, controller)
+: Window::AbstractSectionWidget(parent, controller, PaintedBackground::Section)
 , _api(&controller->session().mtp())
 , _updateEditTimeLeftDisplay([=] { updateField(); })
 , _fieldBarCancel(this, st::historyReplyCancel)
@@ -430,6 +430,11 @@ HistoryWidget::HistoryWidget(
 			updateHistoryGeometry();
 			update();
 		}
+	}, lifetime());
+
+	controller->repaintBackgroundRequests(
+	) | rpl::start_with_next([=] {
+		update();
 	}, lifetime());
 
 	session().data().newItemAdded(
@@ -4924,6 +4929,9 @@ void HistoryWidget::startItemRevealAnimations() {
 							1.,
 							HistoryView::ListWidget::kItemRevealDuration,
 							anim::easeOutCirc);
+						if (item->out()) {
+							controller()->rotateComplexGradientBackground();
+						}
 					}
 				}
 			}

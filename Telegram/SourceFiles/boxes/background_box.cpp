@@ -326,8 +326,18 @@ void BackgroundBox::Inner::validatePaperThumbnail(
 				paper.dataMedia = document->createMediaView();
 				paper.dataMedia->thumbnailWanted(paper.data.fileOrigin());
 			}
-		}
-		if (!paper.dataMedia || !paper.dataMedia->thumbnail()) {
+			if (!paper.dataMedia->thumbnail()) {
+				return;
+			}
+		} else if (!paper.data.backgroundColors().empty()) {
+			paper.thumbnail = Ui::PixmapFromImage(
+				Data::GenerateWallPaper(
+					st::backgroundSize * cIntRetinaFactor(),
+					paper.data.backgroundColors(),
+					paper.data.gradientRotation()));
+			paper.thumbnail.setDevicePixelRatio(cRetinaFactor());
+			return;
+		} else {
 			return;
 		}
 	}
@@ -336,13 +346,11 @@ void BackgroundBox::Inner::validatePaperThumbnail(
 		: paper.dataMedia->thumbnail();
 	auto original = thumbnail->original();
 	if (paper.data.isPattern()) {
-		// #TODO themes gradients
-		const auto color = *paper.data.backgroundColor();
 		original = Data::PreparePatternImage(
 			std::move(original),
-			color,
-			Data::PatternColor(color),
-			paper.data.patternIntensity());
+			paper.data.backgroundColors(),
+			paper.data.gradientRotation(),
+			paper.data.patternOpacity());
 	}
 	paper.thumbnail = Ui::PixmapFromImage(TakeMiddleSample(
 		original,

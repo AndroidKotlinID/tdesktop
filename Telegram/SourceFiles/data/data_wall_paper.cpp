@@ -55,6 +55,10 @@ constexpr auto kVersion = 1;
 			int(serialized & 0xFFU)));
 }
 
+[[nodiscard]] QColor DefaultBackgroundColor() {
+	return QColor(213, 223, 233);
+}
+
 [[nodiscard]] std::optional<QColor> MaybeColorFromSerialized(
 		const tl::conditional<MTPint> &mtp) {
 	return mtp ? MaybeColorFromSerialized(mtp->v) : std::nullopt;
@@ -117,17 +121,18 @@ constexpr auto kVersion = 1;
 }
 
 [[nodiscard]] std::vector<QColor> ColorsFromString(const QString &string) {
-	constexpr auto kMaxColors = 1; // #TODO themes gradients replace to 4
+	constexpr auto kMaxColors = 4;
 	const auto view = QStringView(string);
 	const auto count = int(view.size() / 6);
 	if (!count || count > kMaxColors || view.size() != count * 7 - 1) {
 		return {};
 	}
-	const auto separator = QChar(count > 2 ? '~' : '-');
 	auto result = std::vector<QColor>();
 	result.reserve(count);
 	for (auto i = 0; i != count; ++i) {
-		if (i + 1 < count && view[i * 7 + 6] != separator) {
+		if (i + 1 < count
+			&& view[i * 7 + 6] != '~'
+			&& (count > 2 || view[i * 7 + 6] != '-')) {
 			return {};
 		} else if (const auto parsed = ColorFromString(view.mid(i * 7, 6))) {
 			result.push_back(*parsed);
@@ -237,6 +242,15 @@ int WallPaper::patternIntensity() const {
 	return _intensity;
 }
 
+float64 WallPaper::patternOpacity() const {
+	return _intensity / 100.;
+}
+
+int WallPaper::gradientRotation() const {
+	// In case of complex gradients rotation value is dynamic.
+	return (_backgroundColors.size() < 3) ? _rotation : 0;
+}
+
 bool WallPaper::hasShareUrl() const {
 	return !_slug.isEmpty();
 }
@@ -255,6 +269,9 @@ QString WallPaper::shareUrl(not_null<Main::Session*> session) const {
 		if (_intensity) {
 			params.push_back("intensity=" + QString::number(_intensity));
 		}
+	}
+	if (_rotation && backgroundColors().size() == 2) {
+		params.push_back("rotation=" + QString::number(_rotation));
 	}
 	auto mode = QStringList();
 	if (_blurred) {
@@ -343,13 +360,21 @@ WallPaper WallPaper::withUrlParams(
 	if (result._backgroundColors.empty()) {
 		result._backgroundColors = ColorsFromString(params.value("bg_color"));
 	}
+	if (result._backgroundColors.empty()) {
+		result._backgroundColors = ColorsFromString(params.value("gradient"));
+	}
+	if (result._backgroundColors.empty()) {
+		result._backgroundColors = ColorsFromString(params.value("color"));
+	}
 	if (const auto string = params.value("intensity"); !string.isEmpty()) {
 		auto ok = false;
 		const auto intensity = string.toInt(&ok);
-		if (ok && base::in_range(intensity, 0, 101)) {
+		if (ok && base::in_range(intensity, -100, 101)) {
 			result._intensity = intensity;
 		}
 	}
+	result._rotation = params.value("rotation").toInt();
+	result._rotation = (std::clamp(result._rotation, 0, 315) / 45) * 45;
 
 	return result;
 }
@@ -418,15 +443,6 @@ std::optional<WallPaper> WallPaper::Create(
 	if (!document->checkWallPaperProperties()) {
 		return std::nullopt;
 	}
-	const auto unsupported = data.vsettings()
-		&& data.vsettings()->match([&](const MTPDwallPaperSettings &data) {
-			return data.vsecond_background_color()
-				|| data.vthird_background_color()
-				|| data.vfourth_background_color(); // #TODO themes gradients
-		});
-	if (unsupported) {
-		return std::nullopt;
-	}
 	auto result = WallPaper(data.vid().v);
 	result._accessHash = data.vaccess_hash().v;
 	result._ownerId = session->userId();
@@ -454,15 +470,6 @@ std::optional<WallPaper> WallPaper::Create(
 }
 
 std::optional<WallPaper> WallPaper::Create(const MTPDwallPaperNoFile &data) {
-	const auto unsupported = data.vsettings()
-		&& data.vsettings()->match([&](const MTPDwallPaperSettings &data) {
-			return data.vsecond_background_color()
-				|| data.vthird_background_color()
-				|| data.vfourth_background_color(); // #TODO themes gradients
-		});
-	if (unsupported) {
-		return std::nullopt;
-	}
 	auto result = WallPaper(data.vid().v);
 	result._flags = (data.is_dark() ? WallPaperFlag::Dark : WallPaperFlag(0))
 		| (data.is_default() ? WallPaperFlag::Default : WallPaperFlag(0));
@@ -553,8 +560,7 @@ std::optional<WallPaper> WallPaper::FromSerialized(
 			>> slug
 			>> blurred
 			>> backgroundColorsCount;
-		// #TODO themes gradients replace with 4
-		if (backgroundColorsCount < 0 || backgroundColorsCount > 1) {
+		if (backgroundColorsCount < 0 || backgroundColorsCount > 4) {
 			return std::nullopt;
 		}
 		backgroundColors.reserve(backgroundColorsCount);
@@ -598,7 +604,7 @@ std::optional<WallPaper> WallPaper::FromSerialized(
 	}
 	if (stream.status() != QDataStream::Ok) {
 		return std::nullopt;
-	} else if (intensity < 0 || intensity > 100) {
+	} else if (intensity < -100 || intensity > 100) {
 		return std::nullopt;
 	}
 	auto result = WallPaper(id);
@@ -695,78 +701,54 @@ bool IsCloudWallPaper(const WallPaper &paper) {
 		&& !details::IsTestingEditorWallPaper(paper);
 }
 
-QColor PatternColor(QColor background) {
-	const auto hue = background.hueF();
-	const auto saturation = background.saturationF();
-	const auto value = background.valueF();
-	return QColor::fromHsvF(
-		hue,
-		std::min(1.0, saturation + 0.05 + 0.1 * (1. - saturation)),
-		(value > 0.5
-			? std::max(0., value * 0.65)
-			: std::max(0., std::min(1., 1. - value * 0.65))),
-		0.4
-	).toRgb();
+QImage GenerateWallPaper(
+		QSize size,
+		const std::vector<QColor> &bg,
+		int gradientRotation,
+		float64 patternOpacity,
+		Fn<void(QPainter&)> drawPattern) {
+	auto result = bg.empty()
+		? Images::GenerateGradient(size, { DefaultBackgroundColor() })
+		: Images::GenerateGradient(size, bg, gradientRotation);
+	if (bg.size() > 1 && (!drawPattern || patternOpacity >= 0.)) {
+		result = Images::DitherImage(std::move(result));
+	}
+	if (drawPattern) {
+		auto p = QPainter(&result);
+		if (patternOpacity >= 0.) {
+			p.setCompositionMode(QPainter::CompositionMode_SoftLight);
+			p.setOpacity(patternOpacity);
+		} else {
+			p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+		}
+		drawPattern(p);
+		if (patternOpacity < 0. && patternOpacity > -1.) {
+			p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+			p.setOpacity(1. + patternOpacity);
+			p.fillRect(QRect{ QPoint(), size }, Qt::black);
+		}
+	}
+
+	return std::move(result).convertToFormat(
+		QImage::Format_ARGB32_Premultiplied);
 }
 
 QImage PreparePatternImage(
-		QImage image,
-		QColor bg,
-		QColor fg,
-		int intensity) {
-	if (image.format() != QImage::Format_ARGB32_Premultiplied) {
-		image = std::move(image).convertToFormat(
-			QImage::Format_ARGB32_Premultiplied);
-	}
-	// Similar to ColorizePattern.
-	// But here we set bg to all 'alpha=0' pixels and fg to opaque ones.
+		QImage pattern,
+		const std::vector<QColor> &bg,
+		int gradientRotation,
+		float64 patternOpacity) {
+	auto result = GenerateWallPaper(
+		pattern.size(),
+		bg,
+		gradientRotation,
+		patternOpacity,
+		[&](QPainter &p) {
+			p.drawImage(QRect(QPoint(), pattern.size()), pattern);
+		});
 
-	const auto width = image.width();
-	const auto height = image.height();
-	const auto alpha = anim::interpolate(
-		0,
-		255,
-		fg.alphaF() * std::clamp(intensity / 100., 0., 1.));
-	if (!alpha) {
-		image.fill(bg);
-		return image;
-	}
-	fg.setAlpha(255);
-	const auto patternBg = anim::shifted(bg);
-	const auto patternFg = anim::shifted(fg);
-
-	constexpr auto resultIntsPerPixel = 1;
-	const auto resultIntsPerLine = (image.bytesPerLine() >> 2);
-	const auto resultIntsAdded = resultIntsPerLine - width * resultIntsPerPixel;
-	auto resultInts = reinterpret_cast<uint32*>(image.bits());
-	Assert(resultIntsAdded >= 0);
-	Assert(image.depth() == static_cast<int>((resultIntsPerPixel * sizeof(uint32)) << 3));
-	Assert(image.bytesPerLine() == (resultIntsPerLine << 2));
-
-	const auto maskBytesPerPixel = (image.depth() >> 3);
-	const auto maskBytesPerLine = image.bytesPerLine();
-	const auto maskBytesAdded = maskBytesPerLine - width * maskBytesPerPixel;
-
-	// We want to read the last byte of four available.
-	// This is the difference with style::colorizeImage.
-	auto maskBytes = image.constBits() + (maskBytesPerPixel - 1);
-	Assert(maskBytesAdded >= 0);
-	Assert(image.depth() == (maskBytesPerPixel << 3));
-	for (auto y = 0; y != height; ++y) {
-		for (auto x = 0; x != width; ++x) {
-			const auto maskOpacity = static_cast<anim::ShiftedMultiplier>(
-				*maskBytes) + 1;
-			const auto fgOpacity = (maskOpacity * alpha) >> 8;
-			const auto bgOpacity = 256 - fgOpacity;
-			*resultInts = anim::unshifted(
-				patternBg * bgOpacity + patternFg * fgOpacity);
-			maskBytes += maskBytesPerPixel;
-			resultInts += resultIntsPerPixel;
-		}
-		maskBytes += maskBytesAdded;
-		resultInts += resultIntsAdded;
-	}
-	return image;
+	pattern = QImage();
+	return result;
 }
 
 QImage PrepareBlurredBackground(QImage image) {
@@ -780,6 +762,30 @@ QImage PrepareBlurredBackground(QImage image) {
 			Qt::SmoothTransformation);
 	}
 	return Images::BlurLargeImage(image, kRadius);
+}
+
+QImage GenerateDitheredGradient(
+		const std::vector<QColor> &colors,
+		int rotation) {
+	constexpr auto kSize = 512;
+	const auto size = QSize(kSize, kSize);
+	if (colors.empty()) {
+		return Images::GenerateGradient(size, { DefaultBackgroundColor() });
+	}
+	auto result = Images::GenerateGradient(size, colors, rotation);
+	if (colors.size() > 1) {
+		result = Images::DitherImage(std::move(result));
+	}
+	return result;
+}
+
+QImage GenerateDitheredGradient(const Data::WallPaper &paper) {
+	if (paper.backgroundColors().empty()) {
+		return GenerateDitheredGradient({ DefaultBackgroundColor() }, 0);
+	}
+	return GenerateDitheredGradient(
+		paper.backgroundColors(),
+		paper.gradientRotation());
 }
 
 namespace details {
