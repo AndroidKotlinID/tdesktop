@@ -78,6 +78,31 @@ static_assert(kDisplaySkipped != kTimeUnknown);
 	return result;
 }
 
+[[nodiscard]] float64 SafeRound(float64 value) {
+	Expects(!std::isnan(value));
+
+	if (const auto result = std::round(value); !std::isnan(result)) {
+		return result;
+	}
+	const auto errors = std::fetestexcept(FE_ALL_EXCEPT);
+	LOG(("Streaming Error: Got NAN in std::round(%1), fe: %2."
+		).arg(value
+		).arg(errors));
+	if (const auto result = std::round(value); !std::isnan(result)) {
+		return result;
+	}
+	std::feclearexcept(FE_ALL_EXCEPT);
+	if (const auto result = std::round(value); !std::isnan(result)) {
+		return result;
+	}
+	CrashReports::SetAnnotation("FE-Error-Value", QString::number(value));
+	CrashReports::SetAnnotation("FE-Errors-Were", QString::number(errors));
+	CrashReports::SetAnnotation(
+		"FE-Errors-Now",
+		QString::number(std::fetestexcept(FE_ALL_EXCEPT)));
+	Unexpected("NAN after third std::round.");
+}
+
 } // namespace
 
 class VideoTrackObject final {
@@ -379,6 +404,7 @@ void VideoTrackObject::debugLog(const QString &entry) const {
 	_debugLog.push_back("stp.worldTime:"
 		+ QString::number(_syncTimePoint.worldTime)
 		+ ";stp.trackTime:" + QString::number(_syncTimePoint.trackTime)
+		+ ";fe:" + QString::number(std::fetestexcept(FE_ALL_EXCEPT))
 		+ ";" + entry);
 }
 
@@ -826,8 +852,6 @@ void VideoTrackObject::callReady() {
 }
 
 TimePoint VideoTrackObject::trackTime() const {
-	const auto errors1 = std::fetestexcept(FE_ALL_EXCEPT);
-
 	debugAssertKnownTime(7, _syncTimePoint.trackTime);
 
 	auto result = TimePoint();
@@ -855,108 +879,8 @@ TimePoint VideoTrackObject::trackTime() const {
 	}
 	const auto adjust = (result.worldTime - _syncTimePoint.worldTime);
 	const auto adjustSpeed = adjust * _options.speed;
-	const auto errors2 = std::fetestexcept(FE_ALL_EXCEPT);
-	auto roundAdjustSpeed = std::round(adjustSpeed);
-	if (std::isnan(roundAdjustSpeed)) {
-		TO_LOG(("NAN1,errors1:%1,errors2:%2,errors:%3").arg(errors1).arg(errors2).arg(std::fetestexcept(FE_ALL_EXCEPT)));
-		roundAdjustSpeed = std::round(adjustSpeed);
-		if (!std::isnan(roundAdjustSpeed)) {
-			TO_LOG(("WELL2,adjust:%1,rounded:%2").arg(adjustSpeed).arg(roundAdjustSpeed));
-			debugAssertKnownTime(-1, kTimeUnknown);
-		} else {
-			TO_LOG(("NAN2,adjust:%1").arg(adjustSpeed));
-		}
-		std::feclearexcept(FE_ALL_EXCEPT);
-		const auto errors3 = std::fetestexcept(FE_ALL_EXCEPT);
-		roundAdjustSpeed = std::round(adjustSpeed);
-		if (!std::isnan(roundAdjustSpeed)) {
-			TO_LOG(("WELL3,adjust:%1,rounded:%2").arg(adjustSpeed).arg(roundAdjustSpeed));
-			debugAssertKnownTime(-2, kTimeUnknown);
-		} else {
-			TO_LOG(("NAN3,adjust:%1,errors3:%2,errors:%3").arg(adjustSpeed).arg(errors3).arg(std::fetestexcept(FE_ALL_EXCEPT)));
-		}
-		TO_LOG(("qRound:%1,qRound64:%2").arg(qRound(adjustSpeed)).arg(qRound64(adjustSpeed)));
-	}
-	auto timeRoundAdjustSpeed = crl::time(roundAdjustSpeed);
-	const auto fpuErrorHappened = [](crl::time value) {
-		return uint64(value) == 0x8000'0000'0000'0000ULL
-			|| uint64(value) == 0x8000'0000ULL
-			|| uint64(value) == 0xFFFF'FFFF'FFFF'FFFFULL
-			|| uint64(value) == 0xFFFF'FFFFULL;
-	};
-	if (roundAdjustSpeed > -1000'000'000.
-		&& roundAdjustSpeed < 1000'000'000.
-		&& fpuErrorHappened(timeRoundAdjustSpeed)) {
-		TO_LOG(("BAD1,round:%1").arg(roundAdjustSpeed));
-		timeRoundAdjustSpeed = crl::time(roundAdjustSpeed);
-		if (!fpuErrorHappened(timeRoundAdjustSpeed)) {
-			TO_LOG(("GOOD2,round:%1,result:%2").arg(roundAdjustSpeed).arg(timeRoundAdjustSpeed));
-			debugAssertKnownTime(-1, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD2,round:%1").arg(roundAdjustSpeed));
-		}
-		const auto floatRoundAdjustSpeed = float(roundAdjustSpeed);
-		timeRoundAdjustSpeed = crl::time(floatRoundAdjustSpeed);
-		if (!fpuErrorHappened(timeRoundAdjustSpeed)) {
-			TO_LOG(("GOOD3,round:%1,result:%2").arg(floatRoundAdjustSpeed).arg(timeRoundAdjustSpeed));
-			debugAssertKnownTime(-2, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD3,round:%1").arg(floatRoundAdjustSpeed));
-		}
-		const auto intRoundAdjustSpeet = int(roundAdjustSpeed);
-		timeRoundAdjustSpeed = crl::time(intRoundAdjustSpeet);
-		if (!fpuErrorHappened(timeRoundAdjustSpeed)) {
-			TO_LOG(("GOOD4,int:%1,result:%2").arg(intRoundAdjustSpeet).arg(timeRoundAdjustSpeed));
-			debugAssertKnownTime(-3, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD4,int:%1").arg(intRoundAdjustSpeet));
-		}
-		const auto intFloatRoundAdjustSpeed = int(floatRoundAdjustSpeed);
-		timeRoundAdjustSpeed = crl::time(intFloatRoundAdjustSpeed);
-		if (!fpuErrorHappened(timeRoundAdjustSpeed)) {
-			TO_LOG(("GOOD5,int:%1,result:%2").arg(intFloatRoundAdjustSpeed).arg(timeRoundAdjustSpeed));
-			debugAssertKnownTime(-4, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD5,int:%1").arg(intFloatRoundAdjustSpeed));
-		}
-		const auto uint64RoundAdjustSpeed = uint64((roundAdjustSpeed >= 0.)
-			? roundAdjustSpeed
-			: -roundAdjustSpeed);
-		if (!fpuErrorHappened(uint64RoundAdjustSpeed)) {
-			TO_LOG(("GOOD6,round:%1,uint:%2").arg(roundAdjustSpeed).arg(uint64RoundAdjustSpeed));
-			debugAssertKnownTime(-5, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD6,uint:%1").arg(uint64RoundAdjustSpeed));
-		}
-		const auto uint64FloatRoundAdjustSpeed = uint64((floatRoundAdjustSpeed >= 0.)
-			? floatRoundAdjustSpeed
-			: -floatRoundAdjustSpeed);
-		if (!fpuErrorHappened(uint64FloatRoundAdjustSpeed)) {
-			TO_LOG(("GOOD7,round:%1,uint:%2").arg(floatRoundAdjustSpeed).arg(uint64FloatRoundAdjustSpeed));
-			debugAssertKnownTime(-6, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD7,uint:%1").arg(uint64FloatRoundAdjustSpeed));
-		}
-		const auto uint32RoundAdjustSpeed = uint32((roundAdjustSpeed >= 0.)
-			? roundAdjustSpeed
-			: -roundAdjustSpeed);
-		if (!fpuErrorHappened(uint32RoundAdjustSpeed)) {
-			TO_LOG(("GOOD8,round:%1,uint:%2").arg(roundAdjustSpeed).arg(uint32RoundAdjustSpeed));
-			debugAssertKnownTime(-7, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD8,uint:%1").arg(uint32RoundAdjustSpeed));
-		}
-		const auto uint32FloatRoundAdjustSpeed = uint32((floatRoundAdjustSpeed >= 0.)
-			? floatRoundAdjustSpeed
-			: -floatRoundAdjustSpeed);
-		if (!fpuErrorHappened(uint32FloatRoundAdjustSpeed)) {
-			TO_LOG(("GOOD9,round:%1,uint:%2").arg(floatRoundAdjustSpeed).arg(uint32FloatRoundAdjustSpeed));
-			debugAssertKnownTime(-8, kTimeUnknown);
-		} else {
-			TO_LOG(("BAD9,uint:%1").arg(uint32FloatRoundAdjustSpeed));
-		}
-		debugAssertKnownTime(-9, kTimeUnknown);
-	}
+	const auto roundAdjustSpeed = SafeRound(adjustSpeed);
+	const auto timeRoundAdjustSpeed = crl::time(roundAdjustSpeed);
 	const auto trackTime = _syncTimePoint.trackTime + timeRoundAdjustSpeed;
 	TO_LOG(("track_time_adjusted,world:%1,adjust:%2,speed:%3,delta:%4,rounded:%5,casted:%6,final:%7"
 		).arg(result.worldTime
@@ -965,7 +889,7 @@ TimePoint VideoTrackObject::trackTime() const {
 		).arg(adjustSpeed
 		).arg(roundAdjustSpeed
 		).arg(timeRoundAdjustSpeed
-		).arg(result.trackTime));
+		).arg(trackTime));
 	result.trackTime = trackTime;
 	debugAssertKnownTime(11, result.trackTime);
 	return result;
@@ -1099,9 +1023,11 @@ auto VideoTrack::Shared::presentFrame(
 			return { kTimeUnknown, kTimeUnknown, addedWorldTimeDelay };
 		}
 		const auto trackLeft = position - time.trackTime;
+		const auto adjustedBySpeed = trackLeft / playbackSpeed;
+		const auto roundedAdjustedBySpeed = SafeRound(adjustedBySpeed);
 		frame->display = time.worldTime
 			+ addedWorldTimeDelay
-			+ crl::time(std::round(trackLeft / playbackSpeed));
+			+ crl::time(roundedAdjustedBySpeed);
 
 		// Release this frame to the main thread for rendering.
 		_counter.store(
