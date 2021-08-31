@@ -345,6 +345,8 @@ PRIVATE
     core/utils.cpp
     core/utils.h
     core/version.h
+    countries/countries_manager.cpp
+    countries/countries_manager.h
     data/stickers/data_stickers_set.cpp
     data/stickers/data_stickers_set.h
     data/stickers/data_stickers.cpp
@@ -420,6 +422,8 @@ PRIVATE
     data/data_reply_preview.h
     data/data_search_controller.cpp
     data/data_search_controller.h
+    data/data_send_action.cpp
+    data/data_send_action.h
     data/data_session.cpp
     data/data_session.h
     data/data_scheduled_messages.cpp
