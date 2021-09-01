@@ -260,6 +260,8 @@ const std::vector<Info> &CountriesInstance::list() {
 
 void CountriesInstance::setList(std::vector<Info> &&infos) {
 	_list = std::move(infos);
+	_byCode.clear();
+	_byISO2.clear();
 }
 
 const CountriesInstance::Map &CountriesInstance::byCode() {
@@ -319,7 +321,7 @@ FormatResult CountriesInstance::format(FormatArgs args) {
 	const Info *bestCountryPtr = nullptr;
 	const CallingCodeInfo *bestCallingCodePtr = nullptr;
 	auto bestLength = size_t(0);
-	auto isPrefix = false;
+	[[maybe_unused]] auto isPrefix = false;
 	for (const auto &country : list()) {
 		for (auto &callingCode : country.codes) {
 			if (phoneNumber.startsWith(callingCode.callingCode)) {
@@ -355,6 +357,9 @@ FormatResult CountriesInstance::format(FormatArgs args) {
 			? QVector<int>()
 			: QVector<int>{ codeSize };
 		auto groupSize = 0;
+		if (bestCallingCodePtr->patterns.empty()) {
+			return FormatResult{ .groups = std::move(groups) };
+		}
 		for (const auto &c : bestCallingCodePtr->patterns.front()) {
 			if (c == ' ') {
 				groups.push_back(base::take(groupSize));
