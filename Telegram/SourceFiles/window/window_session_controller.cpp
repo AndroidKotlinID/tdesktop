@@ -47,6 +47,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/message_bubble.h"
 #include "ui/chat/chat_style.h"
 #include "ui/chat/chat_theme.h"
+#include "ui/style/style_palette_colorizer.h"
 #include "ui/toast/toast.h"
 #include "ui/toasts/common_toasts.h"
 #include "calls/calls_instance.h" // Core::App().calls().inCall().
@@ -80,26 +81,30 @@ constexpr auto kMaxChatEntryHistorySize = 50;
 		std::optional<QColor> accent) {
 	return [=](style::palette &palette) {
 		using namespace Theme;
-		palette.finalize();
-		if (dark) {
-			const auto &embedded = EmbeddedThemes();
-			const auto i = ranges::find(
-				embedded,
-				EmbeddedType::Night,
-				&EmbeddedScheme::type);
-			Assert(i != end(embedded));
+		const auto &embedded = EmbeddedThemes();
+		const auto i = ranges::find(
+			embedded,
+			dark ? EmbeddedType::Night : EmbeddedType::Default,
+			&EmbeddedScheme::type);
+		Assert(i != end(embedded));
+		const auto colorizer = accent
+			? ColorizerFrom(*i, *accent)
+			: style::colorizer();
 
+		if (dark) {
 			auto instance = Instance();
 			const auto loaded = LoadFromFile(
 				i->path,
 				&instance,
 				nullptr,
 				nullptr,
-				accent ? ColorizerFrom(*i, *accent) : Colorizer());
+				colorizer);
 			Assert(loaded);
+
+			palette.finalize();
 			palette = instance.palette;
 		} else {
-			// #TODO themes apply accent color to classic theme
+			palette.finalize(colorizer);
 		}
 	};
 }

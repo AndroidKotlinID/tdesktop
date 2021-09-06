@@ -11,35 +11,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 
+namespace style {
+class palette;
+} // namespace style
+
 namespace Ui {
 
 class ChatStyle;
+struct ChatPaintContext;
 struct BubblePattern;
-
-struct ChatPaintContext {
-	not_null<const ChatStyle*> st;
-	const BubblePattern *bubblesPattern = nullptr;
-	QRect viewport;
-	QRect clip;
-	TextSelection selection;
-	crl::time now = 0;
-
-	void translate(int x, int y) {
-		viewport.translate(x, y);
-		clip.translate(x, y);
-	}
-	void translate(QPoint point) {
-		translate(point.x(), point.y());
-	}
-	[[nodiscard]] ChatPaintContext translated(int x, int y) const {
-		auto result = *this;
-		result.translate(x, y);
-		return result;
-	}
-	[[nodiscard]] ChatPaintContext translated(QPoint point) const {
-		return translated(point.x(), point.y());
-	}
-};
 
 struct ChatThemeBackground {
 	QImage prepared;
@@ -111,6 +91,8 @@ public:
 
 	// Expected to be invoked on a background thread. Invokes callbacks there.
 	ChatTheme(ChatThemeDescriptor &&descriptor);
+
+	~ChatTheme();
 
 	[[nodiscard]] uint64 key() const;
 	[[nodiscard]] const style::palette *palette() const {

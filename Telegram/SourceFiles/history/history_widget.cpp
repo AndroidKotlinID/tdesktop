@@ -107,6 +107,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/pinned_bar.h"
 #include "ui/chat/group_call_bar.h"
 #include "ui/chat/chat_theme.h"
+#include "ui/chat/chat_style.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/item_text_options.h"
 #include "ui/unread_badge.h"
@@ -179,6 +180,11 @@ const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 
 } // namespace
 
+struct HistoryWidget::CustomStyles {
+	style::TwoIconButton historyToDown;
+	style::TwoIconButton historyUnreadMentions;
+};
+
 HistoryWidget::HistoryWidget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
@@ -186,6 +192,7 @@ HistoryWidget::HistoryWidget(
 	parent,
 	controller,
 	ActivePeerValue(controller))
+, _styles(MakeCustomStyles(controller))
 , _api(&controller->session().mtp())
 , _updateEditTimeLeftDisplay([=] { updateField(); })
 , _fieldBarCancel(this, st::historyReplyCancel)
@@ -194,8 +201,8 @@ HistoryWidget::HistoryWidget(
 , _topBar(this, controller)
 , _scroll(this, st::historyScroll, false)
 , _updateHistoryItems([=] { updateHistoryItemsByTimer(); })
-, _historyDown(_scroll, st::historyToDown)
-, _unreadMentions(_scroll, st::historyUnreadMentions)
+, _historyDown(_scroll, _styles->historyToDown)
+, _unreadMentions(_scroll, _styles->historyUnreadMentions)
 , _fieldAutocomplete(this, controller)
 , _supportAutocomplete(session().supportMode()
 	? object_ptr<Support::Autocomplete>(this, &session())
@@ -3983,6 +3990,17 @@ bool HistoryWidget::kbWasHidden() const {
 	return _history && (_keyboard->forMsgId() == FullMsgId(_history->channelId(), _history->lastKeyboardHiddenId));
 }
 
+auto HistoryWidget::MakeCustomStyles(
+	not_null<Window::SessionController*> controller)
+-> std::unique_ptr<CustomStyles> {
+	const auto st = controller->chatStyle();
+
+	auto result = std::make_unique<CustomStyles>();
+	result->historyToDown = st->value(st::historyToDown);
+	result->historyUnreadMentions = st->value(st::historyUnreadMentions);
+	return result;
+}
+
 void HistoryWidget::toggleKeyboard(bool manual) {
 	auto fieldEnabled = canWriteMessage() && !_a_show.animating();
 	if (_kbShown || _kbReplyTo) {
@@ -7058,9 +7076,10 @@ void HistoryWidget::paintEvent(QPaintEvent *e) {
 				- st::msgServiceMargin.bottom()) / 2,
 			w,
 			h);
-		HistoryView::ServiceMessagePainter::paintBubble(p, tr.x(), tr.y(), tr.width(), tr.height());
+		const auto st = controller()->chatStyle();
+		HistoryView::ServiceMessagePainter::PaintBubble(p, st, tr);
 
-		p.setPen(st::msgServiceFg);
+		p.setPen(st->msgServiceFg());
 		p.setFont(st::msgServiceFont->f);
 		p.drawTextLeft(tr.left() + st::msgPadding.left(), tr.top() + st::msgServicePadding.top(), width(), tr::lng_willbe_history(tr::now));
 
