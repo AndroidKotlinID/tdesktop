@@ -690,10 +690,6 @@ webPageLeft: 10px;
 webPageBar: 2px;
 webPageTitleFont: semiboldFont;
 webPageTitleStyle: semiboldTextStyle;
-webPageTitleOutFg: historyTextOutFg;
-webPageTitleInFg: historyTextInFg;
-webPageDescriptionOutFg: historyTextOutFg;
-webPageDescriptionInFg: historyTextInFg;
 webPageDescriptionFont: normalFont;
 webPageDescriptionStyle: defaultTextStyle;
 webPagePhotoSize: 100px;
@@ -866,3 +862,40 @@ ttlDividerLabelPadding: margins(22px, 10px, 22px, 19px);
 
 ttlItemPadding: margins(0px, 4px, 0px, 4px);
 ttlItemTimerFont: font(12px);
+
+WhoRead {
+	userpics: GroupCallUserpics;
+	photoLeft: pixels;
+	photoSize: pixels;
+	photoSkip: pixels;
+	nameLeft: pixels;
+	iconPosition: point;
+	itemPadding: margins;
+}
+defaultWhoRead: WhoRead {
+	userpics: GroupCallUserpics {
+		size: 22px;
+		shift: 8px;
+		stroke: 4px;
+		align: align(right);
+	}
+	photoLeft: 13px;
+	photoSize: 30px;
+	photoSkip: 5px;
+	nameLeft: 57px;
+	iconPosition: point(14px, 9px);
+	itemPadding: margins(38px, 8px, 17px, 6px);
+}
+whoReadMenu: PopupMenu(defaultPopupMenu) {
+	scrollPadding: margins(0px, 6px, 0px, 6px);
+	maxHeight: 387px;
+	menu: Menu(defaultMenu) {
+		separatorPadding: margins(0px, 6px, 0px, 8px);
+	}
+}
+whoReadChecks: icon{{ "chat/seen_checks", windowFg }};
+whoReadChecksOver: icon{{ "chat/seen_checks", windowFgOver }};
+whoReadChecksDisabled: icon{{ "chat/seen_checks", menuFgDisabled }};
+whoReadPlayed: icon{{ "chat/seen_played", windowFg }};
+whoReadPlayedOver: icon{{ "chat/seen_played", windowFgOver }};
+whoReadPlayedDisabled: icon {{ "chat/seen_played", menuFgDisabled }};

@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace style {
 class palette;
+struct colorizer;
 } // namespace style
 
 namespace Ui {
@@ -35,6 +36,23 @@ struct ChatThemeBackground {
 
 bool operator==(const ChatThemeBackground &a, const ChatThemeBackground &b);
 bool operator!=(const ChatThemeBackground &a, const ChatThemeBackground &b);
+
+struct ChatThemeBackgroundData {
+	QString path;
+	QByteArray bytes;
+	bool gzipSvg = false;
+	std::vector<QColor> colors;
+	bool isPattern = false;
+	float64 patternOpacity = 0.;
+	bool isBlurred = false;
+	bool generateGradient = false;
+	int gradientRotation = 0;
+};
+
+struct ChatThemeBubblesData {
+	std::vector<QColor> colors;
+	std::optional<QColor> accent;
+};
 
 struct CacheBackgroundRequest {
 	ChatThemeBackground background;
@@ -82,7 +100,9 @@ struct BackgroundState {
 struct ChatThemeDescriptor {
 	uint64 id = 0;
 	Fn<void(style::palette&)> preparePalette;
-	Fn<ChatThemeBackground()> prepareBackground;
+	ChatThemeBackgroundData backgroundData;
+	ChatThemeBubblesData bubblesData;
+	bool basedOnDark = false;
 };
 
 class ChatTheme final : public base::has_weak_ptr {
@@ -131,6 +151,13 @@ private:
 	[[nodiscard]] bool readyForBackgroundRotation() const;
 	void generateNextBackgroundRotation();
 
+	[[nodiscard]] style::colorizer bubblesAccentColorizer(
+		const QColor &accent) const;
+	void adjustPalette(const ChatThemeDescriptor &descriptor);
+	void set(const style::color &my, const QColor &color);
+	void adjust(const style::color &my, const QColor &by);
+	void adjust(const style::color &my, const style::colorizer &by);
+
 	uint64 _id = 0;
 	std::unique_ptr<style::palette> _palette;
 	ChatThemeBackground _mutableBackground;
@@ -160,6 +187,10 @@ struct ChatBackgroundRects {
 	QSize imageSize);
 
 [[nodiscard]] QColor CountAverageColor(const QImage &image);
+[[nodiscard]] QColor CountAverageColor(const std::vector<QColor> &colors);
+[[nodiscard]] bool IsPatternInverted(
+	const std::vector<QColor> &background,
+	float64 patternOpacity);
 [[nodiscard]] QColor ThemeAdjustedColor(QColor original, QColor background);
 [[nodiscard]] QImage PreprocessBackgroundImage(QImage image);
 [[nodiscard]] std::optional<QColor> CalculateImageMonoColor(
@@ -175,7 +206,8 @@ struct ChatBackgroundRects {
 	const std::vector<QColor> &bg,
 	int gradientRotation,
 	float64 patternOpacity = 1.,
-	Fn<void(QPainter&)> drawPattern = nullptr);
+	Fn<void(QPainter&,bool)> drawPattern = nullptr);
+[[nodiscard]] QImage InvertPatternImage(QImage pattern);
 [[nodiscard]] QImage PreparePatternImage(
 	QImage pattern,
 	const std::vector<QColor> &bg,
@@ -185,14 +217,7 @@ struct ChatBackgroundRects {
 [[nodiscard]] QImage GenerateDitheredGradient(
 	const std::vector<QColor> &colors,
 	int rotation);
-
 [[nodiscard]] ChatThemeBackground PrepareBackgroundImage(
-	const QString &path,
-	const QByteArray &bytes,
-	bool gzipSvg,
-	const std::vector<QColor> &colors,
-	bool isPattern,
-	float64 patternOpacity,
-	bool isBlurred);
+	const ChatThemeBackgroundData &data);
 
 } // namespace Ui

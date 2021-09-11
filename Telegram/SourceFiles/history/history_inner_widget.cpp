@@ -32,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/boxes/report_box.h"
 #include "ui/layers/generic_box.h"
 #include "ui/controls/delete_message_context_action.h"
+#include "ui/controls/who_read_context_action.h"
 #include "ui/ui_utility.h"
 #include "ui/cached_round_corners.h"
 #include "ui/inactive_press.h"
@@ -55,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "api/api_attached_stickers.h"
 #include "api/api_toggling_media.h"
+#include "api/api_who_read.h"
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "data/data_media_types.h"
@@ -579,6 +581,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 		.theme = _theme.get(),
 		.visibleAreaTop = _visibleAreaTop,
 		.visibleAreaTopGlobal = visibleAreaTopGlobal,
+		.visibleAreaWidth = width(),
 		.clip = clip,
 	});
 	_pathGradient->startFrame(
@@ -1561,7 +1564,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		isUponSelected = hasSelected;
 	}
 
-	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	const auto hasWhoReadItem = _dragStateItem
+		&& Api::WhoReadExists(_dragStateItem);
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		hasWhoReadItem ? st::whoReadMenu : st::defaultPopupMenu);
 	const auto session = &this->session();
 	const auto controller = _controller;
 	const auto groupLeaderOrSelf = [](HistoryItem *item) -> HistoryItem* {
@@ -1582,6 +1589,16 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return;
 		}
 		const auto itemId = item->fullId();
+		if (hasWhoReadItem) {
+			const auto participantChosen = [=](uint64 id) {
+				controller->showPeerInfo(PeerId(id));
+			};
+			_menu->addAction(Ui::WhoReadContextAction(
+				_menu.get(),
+				Api::WhoRead(_dragStateItem, this, st::defaultWhoRead),
+				participantChosen));
+			_menu->addSeparator();
+		}
 		if (canSendMessages) {
 			_menu->addAction(tr::lng_context_reply_msg(tr::now), [=] {
 				_widget->replyToMessage(itemId);
@@ -2073,7 +2090,7 @@ TextForMimeData HistoryInner::getSelectedText() const {
 		wrapItem(group->items.back(), HistoryGroupText(group));
 	};
 
-	for (const auto [item, selection] : selected) {
+	for (const auto &[item, selection] : selected) {
 		if (const auto group = session().data().groups().find(item)) {
 			if (groups.contains(group)) {
 				continue;
@@ -3166,7 +3183,7 @@ bool HistoryInner::isSelected(
 bool HistoryInner::isSelectedGroup(
 		not_null<SelectedItems*> toItems,
 		not_null<const Data::Group*> group) const {
-	for (const auto other : group->items) {
+	for (const auto &other : group->items) {
 		if (!isSelected(toItems, other)) {
 			return false;
 		}
@@ -3255,7 +3272,7 @@ void HistoryInner::changeSelectionAsGroup(
 	}
 	auto total = int(toItems->size());
 	const auto canSelect = [&] {
-		for (const auto other : group->items) {
+		for (const auto &other : group->items) {
 			if (!goodForSelection(toItems, other, total)) {
 				return false;
 			}
@@ -3263,11 +3280,11 @@ void HistoryInner::changeSelectionAsGroup(
 		return (total <= MaxSelectedItems);
 	}();
 	if (action == SelectAction::Select && canSelect) {
-		for (const auto other : group->items) {
+		for (const auto &other : group->items) {
 			addToSelection(toItems, other);
 		}
 	} else {
-		for (const auto other : group->items) {
+		for (const auto &other : group->items) {
 			removeFromSelection(toItems, other);
 		}
 	}

@@ -56,7 +56,7 @@ std::vector<std::unique_ptr<Data::Media>> PrepareCollageMedia(
 		const WebPageCollage &data) {
 	auto result = std::vector<std::unique_ptr<Data::Media>>();
 	result.reserve(data.items.size());
-	for (const auto item : data.items) {
+	for (const auto &item : data.items) {
 		if (const auto document = std::get_if<DocumentData*>(&item)) {
 			result.push_back(std::make_unique<Data::MediaFile>(
 				parent,
@@ -521,8 +521,8 @@ void WebPage::draw(Painter &p, const PaintContext &context) const {
 		_siteName.drawLeftElided(p, padding.left(), tshift, paintw, width(), _siteNameLines, style::al_left, 0, -1, endskip, false, context.selection);
 		tshift += lineHeight;
 	}
+	p.setPen(stm->historyTextFg);
 	if (_titleLines) {
-		p.setPen(stm->webPageTitleFg);
 		auto endskip = 0;
 		if (_title.hasSkipBlock()) {
 			endskip = _parent->skipBlockWidth();
@@ -531,7 +531,6 @@ void WebPage::draw(Painter &p, const PaintContext &context) const {
 		tshift += _titleLines * lineHeight;
 	}
 	if (_descriptionLines) {
-		p.setPen(stm->webPageDescriptionFg);
 		auto endskip = 0;
 		if (_description.hasSkipBlock()) {
 			endskip = _parent->skipBlockWidth();

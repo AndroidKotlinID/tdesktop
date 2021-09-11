@@ -212,18 +212,6 @@ ChatStyle::ChatStyle() {
 		st::mediaOutFg,
 		st::mediaOutFgSelected);
 	make(
-		&MessageStyle::webPageTitleFg,
-		st::webPageTitleInFg,
-		st::webPageTitleInFg,
-		st::webPageTitleOutFg,
-		st::webPageTitleOutFg);
-	make(
-		&MessageStyle::webPageDescriptionFg,
-		st::webPageDescriptionInFg,
-		st::webPageDescriptionInFg,
-		st::webPageDescriptionOutFg,
-		st::webPageDescriptionOutFg);
-	make(
 		&MessageStyle::textPalette,
 		st::inTextPalette,
 		st::inTextPaletteSelected,
@@ -484,6 +472,8 @@ void ChatStyle::assignPalette(not_null<const style::palette*> palette) {
 	_msgBotKbOverBgAddCorners = {};
 	_msgSelectOverlayCornersSmall = {};
 	_msgSelectOverlayCornersLarge = {};
+
+	_paletteChanged.fire({});
 }
 
 const CornersPixmaps &ChatStyle::serviceBgCornersNormal() const {
@@ -626,6 +616,17 @@ void ChatStyle::make(
 	make(my.iconBelowOver, original.iconBelowOver);
 	make(my.iconAboveOver, original.iconAboveOver);
 	make(my.ripple.color, original.ripple.color);
+}
+
+void ChatStyle::make(
+		style::ScrollArea &my,
+		const style::ScrollArea &original) const {
+	my = original;
+	make(my.bg, original.bg);
+	make(my.bgOver, original.bgOver);
+	make(my.barBg, original.barBg);
+	make(my.barBgOver, original.barBgOver);
+	make(my.shColor, original.shColor);
 }
 
 template <typename Type>

@@ -49,6 +49,7 @@ class ChatStyle;
 class ChatTheme;
 struct ChatPaintContext;
 struct ChatThemeBackground;
+struct ChatThemeBackgroundData;
 } // namespace Ui
 
 namespace Data {
@@ -406,6 +407,7 @@ public:
 		const Data::CloudTheme &data)
 	-> rpl::producer<std::shared_ptr<Ui::ChatTheme>>;
 	void setChatStyleTheme(const std::shared_ptr<Ui::ChatTheme> &theme);
+	void clearCachedChatThemes();
 
 	struct PaintContextArgs {
 		not_null<Ui::ChatTheme*> theme;
@@ -455,9 +457,9 @@ private:
 	void cacheChatTheme(const Data::CloudTheme &data);
 	void cacheChatThemeDone(std::shared_ptr<Ui::ChatTheme> result);
 	void updateCustomThemeBackground(CachedTheme &theme);
-	[[nodiscard]] Fn<Ui::ChatThemeBackground()> backgroundGenerator(
+	[[nodiscard]] Ui::ChatThemeBackgroundData backgroundData(
 		CachedTheme &theme,
-		bool generateGradient = true);
+		bool generateGradient = true) const;
 
 	const not_null<Controller*> _window;
 

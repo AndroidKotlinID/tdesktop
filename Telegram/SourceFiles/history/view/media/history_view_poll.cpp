@@ -731,7 +731,7 @@ void Poll::draw(Painter &p, const PaintContext &context) const {
 	}
 	paintw -= padding.left() + padding.right();
 
-	p.setPen(stm->webPageTitleFg);
+	p.setPen(stm->historyTextFg);
 	_question.drawLeft(p, padding.left(), tshift, paintw, width(), style::al_left, 0, -1, context.selection);
 	tshift += _question.countHeight(paintw) + st::historyPollSubtitleSkip;
 
@@ -752,7 +752,7 @@ void Poll::draw(Painter &p, const PaintContext &context) const {
 	auto &&answers = ranges::views::zip(
 		_answers,
 		ranges::views::ints(0, int(_answers.size())));
-	for (const auto &[answer, index] : answers) {
+	for (const auto [answer, index] : answers) {
 		const auto animation = _answersAnimation
 			? &_answersAnimation->data[index]
 			: nullptr;
@@ -1099,7 +1099,7 @@ int Poll::paintAnswer(
 	}
 
 	top += st::historyPollAnswerPadding.top();
-	p.setPen(stm->webPageDescriptionFg);
+	p.setPen(stm->historyTextFg);
 	answer.text.drawLeft(p, aleft, top, awidth, outerWidth);
 
 	return height;
@@ -1182,7 +1182,7 @@ void Poll::paintPercent(
 	top += st::historyPollAnswerPadding.top();
 
 	p.setFont(st::historyPollPercentFont);
-	p.setPen(stm->webPageDescriptionFg);
+	p.setPen(stm->historyTextFg);
 	const auto pleft = aleft - percentWidth - st::historyPollPercentSkip;
 	p.drawTextLeft(pleft, top + st::historyPollPercentTop, outerWidth, percent, percentWidth);
 }

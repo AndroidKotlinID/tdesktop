@@ -109,6 +109,14 @@ constexpr auto kMaxChatEntryHistorySize = 50;
 	};
 }
 
+[[nodiscard]] Ui::ChatThemeBubblesData PrepareBubblesData(
+		const Data::CloudTheme &theme) {
+	return {
+		.colors = theme.outgoingMessagesColors,
+		.accent = theme.outgoingAccentColor,
+	};
+}
+
 } // namespace
 
 void ActivateWindow(not_null<SessionController*> controller) {
@@ -208,7 +216,7 @@ void SessionNavigation::resolveChannelById(
 	_resolveRequestId = _session->api().request(MTPchannels_GetChannels(
 		MTP_vector<MTPInputChannel>(
 			1,
-			MTP_inputChannel(MTP_int(channelId.bare), MTP_long(0))) // #TODO ids
+			MTP_inputChannel(MTP_long(channelId.bare), MTP_long(0)))
 	)).done([=](const MTPmessages_Chats &result) {
 		result.match([&](const auto &data) {
 			const auto peer = _session->data().processChats(data.vchats());
@@ -266,7 +274,7 @@ void SessionNavigation::showPeerByLinkResolved(
 				return;
 			}
 			const auto id = call->id();
-			const auto limit = 3;
+			const auto limit = 5;
 			_resolveRequestId = _session->api().request(
 				MTPphone_GetGroupCall(call->input(), MTP_int(limit))
 			).done([=](const MTPphone_GroupCall &result) {
@@ -1391,13 +1399,14 @@ auto SessionController::cachedChatThemeValue(
 	if (i == end(_customChatThemes)) {
 		cacheChatTheme(data);
 	}
+	const auto limit = Data::CloudThemes::TestingColors() ? (1 << 20) : 1;
 	using namespace rpl::mappers;
 	return rpl::single(
 		_defaultChatTheme
 	) | rpl::then(_cachedThemesStream.events(
 	) | rpl::filter([=](const std::shared_ptr<Ui::ChatTheme> &theme) {
 		return (theme->key() == key);
-	}) | rpl::take(1));
+	}) | rpl::take(limit));
 }
 
 void SessionController::setChatStyleTheme(
@@ -1407,6 +1416,10 @@ void SessionController::setChatStyleTheme(
 	}
 	_chatStyleTheme = theme;
 	_chatStyle->apply(theme.get());
+}
+
+void SessionController::clearCachedChatThemes() {
+	_customChatThemes.clear();
 }
 
 void SessionController::pushDefaultChatBackground() {
@@ -1442,7 +1455,9 @@ void SessionController::cacheChatTheme(const Data::CloudTheme &data) {
 		.preparePalette = PreparePaletteCallback(
 			data.basedOnDark,
 			data.accentColor),
-		.prepareBackground = backgroundGenerator(theme),
+		.backgroundData = backgroundData(theme),
+		.bubblesData = PrepareBubblesData(data),
+		.basedOnDark = data.basedOnDark,
 	};
 	crl::async([
 		this,
@@ -1500,8 +1515,11 @@ void SessionController::updateCustomThemeBackground(CachedTheme &theme) {
 	}
 	const auto key = theme.theme->key();
 	const auto weak = base::make_weak(this);
-	crl::async([=, generator = backgroundGenerator(theme, false)] {
-		crl::on_main(weak, [=, result = generator()]() mutable {
+	crl::async([=, data = backgroundData(theme, false)] {
+		crl::on_main(weak, [
+			=,
+			result = Ui::PrepareBackgroundImage(data)
+		]() mutable {
 			const auto i = _customChatThemes.find(key);
 			if (i != end(_customChatThemes)) {
 				i->second.theme->updateBackgroundImageFrom(std::move(result));
@@ -1510,9 +1528,9 @@ void SessionController::updateCustomThemeBackground(CachedTheme &theme) {
 	});
 }
 
-Fn<Ui::ChatThemeBackground()> SessionController::backgroundGenerator(
+Ui::ChatThemeBackgroundData SessionController::backgroundData(
 		CachedTheme &theme,
-		bool generateGradient) {
+		bool generateGradient) const {
 	const auto &paper = theme.paper;
 	const auto &media = theme.media;
 	const auto paperPath = media ? media->owner()->filepath() : QString();
@@ -1523,22 +1541,16 @@ Fn<Ui::ChatThemeBackground()> SessionController::backgroundGenerator(
 	const auto patternOpacity = paper.patternOpacity();
 	const auto isBlurred = paper.isBlurred();
 	const auto gradientRotation = paper.gradientRotation();
-	return [=] {
-		auto result = Ui::PrepareBackgroundImage(
-			paperPath,
-			paperBytes,
-			gzipSvg,
-			colors,
-			isPattern,
-			patternOpacity,
-			isBlurred);
-		if (generateGradient) {
-			result.gradientForFill = (colors.size() > 1)
-				? Ui::GenerateDitheredGradient(colors, gradientRotation)
-				: QImage();
-			result.gradientRotation = gradientRotation;
-		}
-		return result;
+	return {
+		.path = paperPath,
+		.bytes = paperBytes,
+		.gzipSvg = gzipSvg,
+		.colors = colors,
+		.isPattern = isPattern,
+		.patternOpacity = patternOpacity,
+		.isBlurred = isBlurred,
+		.generateGradient = generateGradient,
+		.gradientRotation = gradientRotation,
 	};
 }
 

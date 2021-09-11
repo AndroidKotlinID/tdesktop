@@ -434,14 +434,15 @@ void InnerWidget::applySearch(const QString &query) {
 }
 
 void InnerWidget::requestAdmins() {
-	auto participantsHash = 0;
+	const auto offset = 0;
+	const auto participantsHash = uint64(0);
 	_api.request(MTPchannels_GetParticipants(
 		_channel->inputChannel,
 		MTP_channelParticipantsAdmins(),
-		MTP_int(0),
+		MTP_int(offset),
 		MTP_int(kMaxChannelAdmins),
-		MTP_int(participantsHash)
-	)).done([this](const MTPchannels_ChannelParticipants &result) {
+		MTP_long(participantsHash)
+	)).done([=](const MTPchannels_ChannelParticipants &result) {
 		session().api().parseChannelParticipants(_channel, result, [&](
 				int availableCount,
 				const QVector<MTPChannelParticipant> &list) {
@@ -913,6 +914,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		.theme = _theme.get(),
 		.visibleAreaTop = _visibleTop,
 		.visibleAreaTopGlobal = mapToGlobal(QPoint(0, _visibleTop)).y(),
+		.visibleAreaWidth = width(),
 		.clip = clip,
 	});
 	if (_items.empty() && _upLoaded && _downLoaded) {
