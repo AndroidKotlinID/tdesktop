@@ -17,6 +17,7 @@ struct EmojiInteractionPlayRequest;
 
 namespace Lottie {
 class SinglePlayer;
+class FrameProvider;
 } // namespace Lottie
 
 namespace Main {
@@ -52,7 +53,7 @@ private:
 		bool finished = false;
 	};
 	struct Delayed {
-		QString emoji;
+		QString emoticon;
 		not_null<Element*> view;
 		std::shared_ptr<Data::DocumentMedia> media;
 		crl::time shouldHaveStartedAt = 0;
@@ -62,7 +63,7 @@ private:
 	[[nodiscard]] QRect computeRect(not_null<Element*> view) const;
 
 	void play(
-		QString emoji,
+		QString emoticon,
 		not_null<Element*> view,
 		std::shared_ptr<Data::DocumentMedia> media,
 		bool incoming);
@@ -81,6 +82,9 @@ private:
 	std::vector<Delayed> _delayed;
 	rpl::event_stream<QRect> _updateRequests;
 	rpl::event_stream<QString> _playStarted;
+	base::flat_map<
+		not_null<DocumentData*>,
+		std::weak_ptr<Lottie::FrameProvider>> _sharedProviders;
 
 	rpl::lifetime _lifetime;
 

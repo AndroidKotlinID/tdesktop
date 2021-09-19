@@ -59,16 +59,19 @@ EmojiInteractions::~EmojiInteractions() = default;
 void EmojiInteractions::play(
 		ChatHelpers::EmojiInteractionPlayRequest request,
 		not_null<Element*> view) {
-	if (_plays.empty()) {
+	if (!view->media()) {
+		// Large emoji may be disabled.
+		return;
+	} else if (_plays.empty()) {
 		play(
-			std::move(request.emoji),
+			std::move(request.emoticon),
 			view,
 			std::move(request.media),
 			request.incoming);
 	} else {
 		const auto now = crl::now();
 		_delayed.push_back({
-			request.emoji,
+			request.emoticon,
 			view,
 			std::move(request.media),
 			now,
@@ -79,7 +82,7 @@ void EmojiInteractions::play(
 }
 
 void EmojiInteractions::play(
-		QString emoji,
+		QString emoticon,
 		not_null<Element*> view,
 		std::shared_ptr<Data::DocumentMedia> media,
 		bool incoming) {
@@ -111,7 +114,7 @@ void EmojiInteractions::play(
 		.shift = shift,
 	});
 	if (incoming) {
-		_playStarted.fire(std::move(emoji));
+		_playStarted.fire(std::move(emoticon));
 	}
 	if (const auto media = view->media()) {
 		media->stickerClearLoopPlayed();
@@ -145,14 +148,25 @@ std::unique_ptr<Lottie::SinglePlayer> EmojiInteractions::preparePlayer(
 	};
 	const auto data = media->bytes();
 	const auto filepath = document->filepath();
-	return std::make_unique<Lottie::SinglePlayer>(
-		kCachesCount,
-		get,
-		put,
-		Lottie::ReadContent(data, filepath),
-		Lottie::FrameRequest{
-			_emojiSize * kSizeMultiplier * style::DevicePixelRatio() },
+	const auto request = Lottie::FrameRequest{
+		_emojiSize * kSizeMultiplier * style::DevicePixelRatio(),
+	};
+	auto &weakProvider = _sharedProviders[document];
+	auto shared = [&] {
+		if (const auto result = weakProvider.lock()) {
+			return result;
+		}
+		const auto result = Lottie::SinglePlayer::SharedProvider(
+			kCachesCount,
+			get,
+			put,
+			Lottie::ReadContent(data, filepath),
+			request,
 			Lottie::Quality::High);
+		weakProvider = result;
+		return result;
+	}();
+	return std::make_unique<Lottie::SinglePlayer>(std::move(shared), request);
 }
 
 void EmojiInteractions::visibleAreaUpdated(
@@ -243,8 +257,11 @@ void EmojiInteractions::checkDelayed() {
 	}
 	auto good = std::move(*i);
 	_delayed.erase(begin(_delayed), i + 1);
-	const auto incoming = good.incoming;
-	play(std::move(good.emoji), good.view, std::move(good.media), incoming);
+	play(
+		std::move(good.emoticon),
+		good.view,
+		std::move(good.media),
+		good.incoming);
 }
 
 rpl::producer<QRect> EmojiInteractions::updateRequests() const {
