@@ -453,11 +453,12 @@ void HistoryMessage::FillForwardedInfo(
 
 HistoryMessage::HistoryMessage(
 	not_null<History*> history,
+	MsgId id,
 	const MTPDmessage &data,
 	MessageFlags localFlags)
 : HistoryItem(
 		history,
-		data.vid().v,
+		id,
 		FlagsFromMTP(data.vflags().v) | localFlags,
 		data.vdate().v,
 		data.vfrom_id() ? peerFromMTP(*data.vfrom_id()) : PeerId(0)) {
@@ -477,7 +478,7 @@ HistoryMessage::HistoryMessage(
 			}
 			config.replyTo = data.vreply_to_msg_id().v;
 			config.replyToTop = data.vreply_to_top_id().value_or(
-				config.replyTo);
+				data.vreply_to_msg_id().v);
 		});
 	}
 	config.viaBotId = data.vvia_bot_id().value_or_empty();
@@ -509,11 +510,12 @@ HistoryMessage::HistoryMessage(
 
 HistoryMessage::HistoryMessage(
 	not_null<History*> history,
+	MsgId id,
 	const MTPDmessageService &data,
 	MessageFlags localFlags)
 : HistoryItem(
 		history,
-		data.vid().v,
+		id,
 		FlagsFromMTP(data.vflags().v) | localFlags,
 		data.vdate().v,
 		data.vfrom_id() ? peerFromMTP(*data.vfrom_id()) : PeerId(0)) {
@@ -527,7 +529,7 @@ HistoryMessage::HistoryMessage(
 			if (!peer || peer == history->peer->id) {
 				config.replyTo = data.vreply_to_msg_id().v;
 				config.replyToTop = data.vreply_to_top_id().value_or(
-					config.replyTo);
+					data.vreply_to_msg_id().v);
 			}
 		});
 	}
@@ -820,7 +822,7 @@ void HistoryMessage::setRepliesInboxReadTill(
 		MsgId readTillId,
 		std::optional<int> unreadCount) {
 	if (const auto views = Get<HistoryMessageViews>()) {
-		const auto newReadTillId = std::max(readTillId, 1);
+		const auto newReadTillId = std::max(readTillId.bare, int64(1));
 		const auto ignore = (newReadTillId < views->repliesInboxReadTillId);
 		if (ignore) {
 			return;
@@ -870,7 +872,7 @@ MsgId HistoryMessage::repliesOutboxReadTill() const {
 
 void HistoryMessage::setRepliesOutboxReadTill(MsgId readTillId) {
 	if (const auto views = Get<HistoryMessageViews>()) {
-		const auto newReadTillId = std::max(readTillId, 1);
+		const auto newReadTillId = std::max(readTillId.bare, int64(1));
 		if (newReadTillId > views->repliesOutboxReadTillId) {
 			views->repliesOutboxReadTillId = newReadTillId;
 			if (!repliesAreComments()) {
@@ -1747,10 +1749,15 @@ void HistoryMessage::setReplies(const MTPMessageReplies &data) {
 		const auto channelId = ChannelId(
 			data.vchannel_id().value_or_empty());
 		const auto readTillId = data.vread_max_id()
-			? std::max(
-				{ views->repliesInboxReadTillId, data.vread_max_id()->v, 1 })
+			? std::max({
+				views->repliesInboxReadTillId.bare,
+				int64(data.vread_max_id()->v),
+				int64(1),
+			})
 			: views->repliesInboxReadTillId;
-		const auto maxId = data.vmax_id().value_or(views->repliesMaxId);
+		const auto maxId = data.vmax_id()
+			? data.vmax_id()->v
+			: views->repliesMaxId;
 		const auto countsChanged = (views->replies.count != count)
 			|| (views->repliesInboxReadTillId != readTillId)
 			|| (views->repliesMaxId != maxId);

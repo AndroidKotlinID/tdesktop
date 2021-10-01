@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_global_privacy.h"
 #include "api/api_updates.h"
 #include "api/api_user_privacy.h"
+#include "api/api_views.h"
 #include "data/stickers/data_stickers.h"
 #include "data/data_drafts.h"
 #include "data/data_changes.h"
@@ -141,7 +142,8 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 , _sensitiveContent(std::make_unique<Api::SensitiveContent>(this))
 , _globalPrivacy(std::make_unique<Api::GlobalPrivacy>(this))
 , _userPrivacy(std::make_unique<Api::UserPrivacy>(this))
-, _inviteLinks(std::make_unique<Api::InviteLinks>(this)) {
+, _inviteLinks(std::make_unique<Api::InviteLinks>(this))
+, _views(std::make_unique<Api::ViewsManager>(this)) {
 	crl::on_main(session, [=] {
 		// You can't use _session->lifetime() in the constructor,
 		// only queued, because it is not constructed yet.
@@ -662,8 +664,8 @@ QString ApiWrap::exportDirectMessageLink(
 	const auto fallback = [&] {
 		auto linkChannel = channel;
 		auto linkItemId = item->id;
-		auto linkCommentId = 0;
-		auto linkThreadId = 0;
+		auto linkCommentId = MsgId();
+		auto linkThreadId = MsgId();
 		if (inRepliesContext) {
 			if (const auto rootId = item->replyToTop()) {
 				const auto root = item->history()->owner().message(
@@ -693,11 +695,11 @@ QString ApiWrap::exportDirectMessageLink(
 			: "c/" + QString::number(peerToChannel(linkChannel->id).bare);
 		const auto query = base
 			+ '/'
-			+ QString::number(linkItemId)
+			+ QString::number(linkItemId.bare)
 			+ (linkCommentId
-				? "?comment=" + QString::number(linkCommentId)
+				? "?comment=" + QString::number(linkCommentId.bare)
 				: linkThreadId
-				? "?thread=" + QString::number(linkThreadId)
+				? "?thread=" + QString::number(linkThreadId.bare)
 				: "");
 		if (linkChannel->hasUsername()
 			&& !linkChannel->isMegagroup()
@@ -1759,7 +1761,7 @@ void ApiWrap::deleteAllFromUser(
 		? history->collectMessagesFromUserToDelete(from)
 		: QVector<MsgId>();
 	const auto channelId = peerToChannel(channel->id);
-	for (const auto msgId : ids) {
+	for (const auto &msgId : ids) {
 		if (const auto item = _session->data().message(channelId, msgId)) {
 			item->destroy();
 		}
@@ -4731,6 +4733,10 @@ Api::UserPrivacy &ApiWrap::userPrivacy() {
 
 Api::InviteLinks &ApiWrap::inviteLinks() {
 	return *_inviteLinks;
+}
+
+Api::ViewsManager &ApiWrap::views() {
+	return *_views;
 }
 
 void ApiWrap::createPoll(

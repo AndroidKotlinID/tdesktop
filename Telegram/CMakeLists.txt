@@ -139,6 +139,8 @@ PRIVATE
     api/api_updates.h
     api/api_user_privacy.cpp
     api/api_user_privacy.h
+    api/api_views.cpp
+    api/api_views.h
     api/api_who_read.cpp
     api/api_who_read.h
     boxes/filters/edit_filter_box.cpp
@@ -415,6 +417,7 @@ PRIVATE
     data/data_media_types.h
     data/data_messages.cpp
     data/data_messages.h
+    data/data_msg_id.h
     data/data_notify_settings.cpp
     data/data_notify_settings.h
     data/data_peer.cpp

@@ -360,21 +360,17 @@ void History::setForwardDraft(Data::ForwardDraft &&draft) {
 }
 
 HistoryItem *History::createItem(
+		MsgId id,
 		const MTPMessage &message,
 		MessageFlags localFlags,
 		bool detachExistingItem) {
-	const auto messageId = IdFromMessage(message);
-	if (!messageId) {
-		return nullptr;
-	}
-
-	if (const auto result = owner().message(channelId(), messageId)) {
+	if (const auto result = owner().message(channelId(), id)) {
 		if (detachExistingItem) {
 			result->removeMainView();
 		}
 		return result;
 	}
-	return HistoryItem::Create(this, message, localFlags);
+	return HistoryItem::Create(this, id, message, localFlags);
 }
 
 std::vector<not_null<HistoryItem*>> History::createItems(
@@ -382,9 +378,14 @@ std::vector<not_null<HistoryItem*>> History::createItems(
 	auto result = std::vector<not_null<HistoryItem*>>();
 	result.reserve(data.size());
 	const auto localFlags = MessageFlags();
+	const auto detachExistingItem = true;
 	for (auto i = data.cend(), e = data.cbegin(); i != e;) {
-		const auto detachExistingItem = true;
-		const auto item = createItem(*--i, localFlags, detachExistingItem);
+		const auto &data = *--i;
+		const auto item = createItem(
+			IdFromMessage(data),
+			data,
+			localFlags,
+			detachExistingItem);
 		if (item) {
 			result.emplace_back(item);
 		}
@@ -393,11 +394,12 @@ std::vector<not_null<HistoryItem*>> History::createItems(
 }
 
 HistoryItem *History::addNewMessage(
+		MsgId id,
 		const MTPMessage &msg,
 		MessageFlags localFlags,
 		NewMessageType type) {
 	const auto detachExistingItem = (type == NewMessageType::Unread);
-	const auto item = createItem(msg, localFlags, detachExistingItem);
+	const auto item = createItem(id, msg, localFlags, detachExistingItem);
 	if (!item) {
 		return nullptr;
 	}
@@ -744,11 +746,14 @@ void History::addUnreadMentionsSlice(const MTPmessages_Messages &result) {
 		const auto localFlags = MessageFlags();
 		const auto type = NewMessageType::Existing;
 		for (const auto &message : *messages) {
-			if (const auto item = addNewMessage(message, localFlags, type)) {
-				if (item->isUnreadMention()) {
-					_unreadMentions.insert(item->id);
-					added = true;
-				}
+			const auto item = addNewMessage(
+				IdFromMessage(message),
+				message,
+				localFlags,
+				type);
+			if (item && item->isUnreadMention()) {
+				_unreadMentions.insert(item->id);
+				added = true;
 			}
 		}
 	}
@@ -1173,7 +1178,7 @@ HistoryItem *History::latestSendingMessage() const {
 	});
 	const auto i = ranges::max_element(sending, ranges::less(), [](
 			not_null<HistoryItem*> item) {
-		return uint64(item->date()) << 32 | uint32(item->id);
+		return std::pair(item->date(), item->id.bare);
 	});
 	return (i == sending.end()) ? nullptr : i->get();
 }
@@ -1466,7 +1471,7 @@ bool History::readInboxTillNeedsRequest(MsgId tillId) {
 	}
 	DEBUG_LOG(("Reading: readInboxTillNeedsRequest is_server %1, before %2."
 		).arg(Logs::b(IsServerMsgId(tillId))
-		).arg(_inboxReadBefore.value_or(-666)));
+		).arg(_inboxReadBefore.value_or(-666).bare));
 	return IsServerMsgId(tillId) && (_inboxReadBefore.value_or(1) <= tillId);
 }
 
@@ -1492,9 +1497,9 @@ std::optional<int> History::countStillUnreadLocal(MsgId readTillId) const {
 	if (_inboxReadBefore) {
 		const auto before = *_inboxReadBefore;
 		DEBUG_LOG(("Reading: check before %1 with min %2 and max %3."
-			).arg(before
-			).arg(minMsgId()
-			).arg(maxMsgId()));
+			).arg(before.bare
+			).arg(minMsgId().bare
+			).arg(maxMsgId().bare));
 		if (minMsgId() <= before && maxMsgId() >= readTillId) {
 			auto result = 0;
 			for (const auto &block : blocks) {
@@ -1520,7 +1525,7 @@ std::optional<int> History::countStillUnreadLocal(MsgId readTillId) const {
 	}
 	const auto minimalServerId = minMsgId();
 	DEBUG_LOG(("Reading: check at end loaded from %1 loaded %2 - %3").arg(
-		QString::number(minimalServerId),
+		QString::number(minimalServerId.bare),
 		Logs::b(loadedAtBottom()),
 		Logs::b(loadedAtTop())));
 	if (!loadedAtBottom()
