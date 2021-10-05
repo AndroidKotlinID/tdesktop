@@ -470,8 +470,6 @@ PRIVATE
     dialogs/dialogs_inner_widget.h
     dialogs/dialogs_key.cpp
     dialogs/dialogs_key.h
-    dialogs/dialogs_layout.cpp
-    dialogs/dialogs_layout.h
     dialogs/dialogs_list.cpp
     dialogs/dialogs_list.h
     dialogs/dialogs_main_list.cpp
@@ -484,6 +482,10 @@ PRIVATE
     dialogs/dialogs_search_from_controllers.h
     dialogs/dialogs_widget.cpp
     dialogs/dialogs_widget.h
+    dialogs/ui/dialogs_layout.cpp
+    dialogs/ui/dialogs_layout.h
+    dialogs/ui/dialogs_message_view.cpp
+    dialogs/ui/dialogs_message_view.h
     editor/color_picker.cpp
     editor/color_picker.h
     editor/controllers/controllers.h
@@ -634,6 +636,8 @@ PRIVATE
     history/history_item.h
     history/history_item_components.cpp
     history/history_item_components.h
+    history/history_item_reply_markup.cpp
+    history/history_item_reply_markup.h
     history/history_item_text.cpp
     history/history_item_text.h
     history/history_inner_widget.cpp

@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_drafts.h"
 #include "dialogs/dialogs_entry.h"
+#include "dialogs/ui/dialogs_message_view.h"
 #include "history/view/history_view_send_action.h"
 #include "base/observer.h"
 #include "base/timer.h"
@@ -23,6 +24,7 @@ class HistoryBlock;
 class HistoryItem;
 class HistoryMessage;
 class HistoryService;
+struct HistoryMessageMarkupData;
 
 namespace Main {
 class Session;
@@ -148,7 +150,7 @@ public:
 		const QString &postAuthor,
 		const TextWithEntities &text,
 		const MTPMessageMedia &media,
-		const MTPReplyMarkup &markup,
+		HistoryMessageMarkupData &&markup,
 		uint64 groupedId = 0);
 	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
@@ -167,7 +169,7 @@ public:
 		const QString &postAuthor,
 		not_null<DocumentData*> document,
 		const TextWithEntities &caption,
-		const MTPReplyMarkup &markup);
+		HistoryMessageMarkupData &&markup);
 	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
 		MessageFlags flags,
@@ -178,7 +180,7 @@ public:
 		const QString &postAuthor,
 		not_null<PhotoData*> photo,
 		const TextWithEntities &caption,
-		const MTPReplyMarkup &markup);
+		HistoryMessageMarkupData &&markup);
 	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
 		MessageFlags flags,
@@ -188,7 +190,7 @@ public:
 		PeerId from,
 		const QString &postAuthor,
 		not_null<GameData*> game,
-		const MTPReplyMarkup &markup);
+		HistoryMessageMarkupData &&markup);
 
 	// Used only internally and for channel admin log.
 	HistoryItem *createItem(
@@ -407,6 +409,10 @@ public:
 	void setFakeChatListMessageFrom(const MTPmessages_Messages &data);
 	void checkChatListMessageRemoved(not_null<HistoryItem*> item);
 
+	void applyChatListGroup(
+		ChannelId channelId,
+		const MTPmessages_Messages &data);
+
 	void forgetScrollState() {
 		scrollTopItem = nullptr;
 	}
@@ -457,6 +463,7 @@ public:
 	mtpRequestId sendRequestId = 0;
 
 	Ui::Text::String cloudDraftTextCache;
+	Dialogs::Ui::MessageView lastItemDialogsView;
 
 private:
 	friend class HistoryBlock;
@@ -512,6 +519,9 @@ private:
 	bool isBuildingFrontBlock() const {
 		return _buildingFrontBlock != nullptr;
 	}
+
+	void addCreatedOlderSlice(
+		const std::vector<not_null<HistoryItem*>> &items);
 
 	void checkForLoadedAtTop(not_null<HistoryItem*> added);
 	void mainViewRemoved(
