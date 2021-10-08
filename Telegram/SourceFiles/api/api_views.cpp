@@ -25,7 +25,8 @@ constexpr auto kSendViewsTimeout = crl::time(1000);
 
 ViewsManager::ViewsManager(not_null<ApiWrap*> api)
 : _session(&api->session())
-, _api(&api->instance()) {
+, _api(&api->instance())
+, _incrementTimer([=] { viewsIncrement(); }) {
 }
 
 void ViewsManager::scheduleIncrement(not_null<HistoryItem*> item) {
@@ -105,7 +106,8 @@ void ViewsManager::done(
 							item->setForwardsCount(forwards->v);
 						}
 						if (const auto replies = data.vreplies()) {
-							item->setReplies(*replies);
+							item->setReplies(
+								HistoryMessageRepliesData(replies));
 						}
 					});
 				}

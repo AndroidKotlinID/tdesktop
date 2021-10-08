@@ -452,6 +452,10 @@ bool HistoryItem::isScheduled() const {
 		&& (_flags & MessageFlag::IsOrWasScheduled);
 }
 
+bool HistoryItem::isSponsored() const {
+	return (_flags & MessageFlag::IsSponsored);
+}
+
 bool HistoryItem::skipNotification() const {
 	if (isSilent() && (_flags & MessageFlag::IsContactSignUp)) {
 		return true;
@@ -513,7 +517,7 @@ void HistoryItem::applySentMessage(const MTPDmessage &data) {
 	updateForwardedInfo(data.vfwd_from());
 	setViewsCount(data.vviews().value_or(-1));
 	if (const auto replies = data.vreplies()) {
-		setReplies(*replies);
+		setReplies(HistoryMessageRepliesData(replies));
 	} else {
 		clearReplies();
 	}
@@ -749,7 +753,7 @@ MsgId HistoryItem::replyToTop() const {
 }
 
 not_null<PeerData*> HistoryItem::author() const {
-	return isPost() ? history()->peer : from();
+	return (isPost() && !isSponsored()) ? history()->peer : from();
 }
 
 TimeId HistoryItem::dateOriginal() const {

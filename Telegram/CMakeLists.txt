@@ -174,6 +174,8 @@ PRIVATE
     boxes/peers/edit_peer_permissions_box.h
     boxes/about_box.cpp
     boxes/about_box.h
+    boxes/about_sponsored_box.cpp
+    boxes/about_sponsored_box.h
     boxes/abstract_box.cpp
     boxes/abstract_box.h
     boxes/add_contact_box.cpp
@@ -453,6 +455,8 @@ PRIVATE
     data/data_shared_media.h
     data/data_sparse_ids.cpp
     data/data_sparse_ids.h
+    data/data_sponsored_messages.cpp
+    data/data_sponsored_messages.h
     data/data_streaming.cpp
     data/data_streaming.h
     data/data_types.cpp
@@ -629,6 +633,8 @@ PRIVATE
     history/view/history_view_service_message.h
     history/view/history_view_top_bar_widget.cpp
     history/view/history_view_top_bar_widget.h
+    history/view/history_view_view_button.cpp
+    history/view/history_view_view_button.h
     history/view/history_view_webpage_preview.cpp
     history/view/history_view_webpage_preview.h
     history/history.cpp
@@ -639,6 +645,8 @@ PRIVATE
     history/history_item.h
     history/history_item_components.cpp
     history/history_item_components.h
+    history/history_item_edition.cpp
+    history/history_item_edition.h
     history/history_item_reply_markup.cpp
     history/history_item_reply_markup.h
     history/history_item_text.cpp
