@@ -54,7 +54,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_instance.h" // Core::App().calls().inCall().
 #include "calls/group/calls_group_call.h"
 #include "ui/boxes/calendar_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "main/main_domain.h"
@@ -201,7 +201,7 @@ void SessionNavigation::resolveUsername(
 	}).fail([=](const MTP::Error &error) {
 		_resolveRequestId = 0;
 		if (error.code() == 400) {
-			show(Box<InformBox>(
+			show(Box<Ui::InformBox>(
 				tr::lng_username_not_found(tr::now, lt_user, username)));
 		}
 	}).send();
@@ -1104,7 +1104,7 @@ void SessionController::startOrJoinGroupCall(
 		GroupCallJoinConfirm confirm) {
 	auto &calls = Core::App().calls();
 	const auto askConfirmation = [&](QString text, QString button) {
-		show(Box<ConfirmBox>(text, button, crl::guard(this, [=] {
+		show(Box<Ui::ConfirmBox>(text, button, crl::guard(this, [=] {
 			Ui::hideLayer();
 			startOrJoinGroupCall(peer, joinHash, GroupCallJoinConfirm::None);
 		})));
@@ -1293,7 +1293,7 @@ void SessionController::cancelUploadLayer(not_null<HistoryItem*> item) {
 		session().uploader().unpause();
 	};
 
-	show(Box<ConfirmBox>(
+	show(Box<Ui::ConfirmBox>(
 		tr::lng_selected_cancel_sure_this(tr::now),
 		tr::lng_selected_upload_stop(tr::now),
 		tr::lng_continue(tr::now),

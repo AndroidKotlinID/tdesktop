@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document_media.h"
 #include "data/stickers/data_stickers.h"
 #include "lang/lang_keys.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "core/application.h"
 #include "mtproto/sender.h"
 #include "storage/storage_account.h"
@@ -257,7 +257,7 @@ void StickerSetBox::handleError(Error error) {
 	switch (error) {
 	case Error::NotFound:
 		_controller->show(
-			Box<InformBox>(tr::lng_stickers_not_found(tr::now)));
+			Box<Ui::InformBox>(tr::lng_stickers_not_found(tr::now)));
 		break;
 	default: Unexpected("Error in StickerSetBox::handleError.");
 	}

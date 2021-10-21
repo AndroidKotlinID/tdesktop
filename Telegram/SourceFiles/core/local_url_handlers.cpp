@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/local_url_handlers.h"
 
 #include "api/api_authorizations.h"
+#include "api/api_confirm_phone.h"
 #include "api/api_text_entities.h"
 #include "api/api_chat_invite.h"
 #include "base/qthelp_regex.h"
@@ -17,9 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
-#include "boxes/confirm_phone_box.h"
 #include "boxes/background_preview_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/share_box.h"
 #include "boxes/connection_box.h"
 #include "boxes/sticker_set_box.h"
@@ -136,15 +136,18 @@ bool ConfirmPhone(
 	if (!controller) {
 		return false;
 	}
-	auto params = url_parse_params(
+	const auto params = url_parse_params(
 		match->captured(1),
 		qthelp::UrlParamNameTransform::ToLower);
-	auto phone = params.value(qsl("phone"));
-	auto hash = params.value(qsl("hash"));
+	const auto phone = params.value(qsl("phone"));
+	const auto hash = params.value(qsl("hash"));
 	if (phone.isEmpty() || hash.isEmpty()) {
 		return false;
 	}
-	ConfirmPhoneBox::Start(&controller->session(), phone, hash);
+	controller->session().api().confirmPhone().resolve(
+		controller,
+		phone,
+		hash);
 	return true;
 }
 
@@ -408,12 +411,12 @@ bool HandleUnknown(
 				Core::UpdateApplication();
 				close();
 			};
-			controller->show(Box<ConfirmBox>(
+			controller->show(Box<Ui::ConfirmBox>(
 				text,
 				tr::lng_menu_update(tr::now),
 				callback));
 		} else {
-			controller->show(Box<InformBox>(text));
+			controller->show(Box<Ui::InformBox>(text));
 		}
 	});
 	controller->session().api().requestDeepLinkInfo(request, callback);

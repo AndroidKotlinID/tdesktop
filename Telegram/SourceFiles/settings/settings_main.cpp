@@ -11,7 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_codes.h"
 #include "settings/settings_chat.h"
 #include "boxes/language_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/about_box.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
@@ -237,7 +237,7 @@ void SetupInterfaceScale(
 					button,
 					[=] { repeatSetScale(cConfigScale(), repeatSetScale); });
 			});
-			window->show(Box<ConfirmBox>(
+			window->show(Box<Ui::ConfirmBox>(
 				tr::lng_settings_need_restart(tr::now),
 				tr::lng_settings_restart_now(tr::now),
 				confirmed,
@@ -328,7 +328,7 @@ void SetupHelp(
 				*requestId = 0;
 			}).send();
 		});
-		auto box = Box<ConfirmBox>(
+		auto box = Box<Ui::ConfirmBox>(
 			tr::lng_settings_ask_sure(tr::now),
 			tr::lng_settings_ask_ok(tr::now),
 			tr::lng_settings_faq_button(tr::now),

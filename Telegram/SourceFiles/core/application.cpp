@@ -79,8 +79,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
 #include "boxes/connection_box.h"
-#include "boxes/confirm_phone_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/share_box.h"
 #include "app.h"
 
@@ -346,7 +345,7 @@ void Application::showOpenGLCrashNotification() {
 		Core::App().settings().setDisableOpenGL(true);
 		Local::writeSettings();
 	};
-	_window->show(Box<ConfirmBox>(
+	_window->show(Box<Ui::ConfirmBox>(
 		"There may be a problem with your graphics drivers and OpenGL. "
 		"Try updating your drivers.\n\n"
 		"OpenGL has been disabled. You can try to enable it again "
@@ -538,7 +537,7 @@ void Application::badMtprotoConfigurationError() {
 				_settings.proxy().selected(),
 				MTP::ProxyData::Settings::System);
 		};
-		_badProxyDisableBox = Ui::show(Box<InformBox>(
+		_badProxyDisableBox = Ui::show(Box<Ui::InformBox>(
 			Lang::Hard::ProxyConfigError(),
 			disableCallback));
 	}
@@ -637,7 +636,7 @@ void Application::logout(Main::Account *account) {
 void Application::forceLogOut(
 		not_null<Main::Account*> account,
 		const TextWithEntities &explanation) {
-	const auto box = Ui::show(Box<InformBox>(
+	const auto box = Ui::show(Box<Ui::InformBox>(
 		explanation,
 		tr::lng_passcode_logout(tr::now)));
 	box->setCloseByEscape(false);

@@ -114,6 +114,8 @@ PRIVATE
     api/api_cloud_password.cpp
     api/api_cloud_password.h
     api/api_common.h
+    api/api_confirm_phone.cpp
+    api/api_confirm_phone.h
     api/api_editing.cpp
     api/api_editing.h
     api/api_global_privacy.cpp
@@ -124,6 +126,10 @@ PRIVATE
     api/api_invite_links.h
     api/api_media.cpp
     api/api_media.h
+    api/api_peer_photo.cpp
+    api/api_peer_photo.h
+    api/api_polls.cpp
+    api/api_polls.h
     api/api_self_destruct.cpp
     api/api_self_destruct.h
     api/api_send_progress.cpp
@@ -160,6 +166,7 @@ PRIVATE
     boxes/peers/edit_participant_box.h
     boxes/peers/edit_participants_box.cpp
     boxes/peers/edit_participants_box.h
+    boxes/peers/edit_peer_common.h
     boxes/peers/edit_peer_info_box.cpp
     boxes/peers/edit_peer_info_box.h
     boxes/peers/edit_peer_invite_link.cpp
@@ -190,14 +197,12 @@ PRIVATE
     boxes/background_preview_box.h
     boxes/change_phone_box.cpp
     boxes/change_phone_box.h
-    boxes/confirm_box.cpp
-    boxes/confirm_box.h
-    boxes/confirm_phone_box.cpp
-    boxes/confirm_phone_box.h
     boxes/connection_box.cpp
     boxes/connection_box.h
     boxes/create_poll_box.cpp
     boxes/create_poll_box.h
+    boxes/delete_messages_box.cpp
+    boxes/delete_messages_box.h
     boxes/dictionaries_manager.cpp
     boxes/dictionaries_manager.h
     boxes/download_path_box.cpp
@@ -212,6 +217,8 @@ PRIVATE
     boxes/language_box.h
     boxes/local_storage_box.cpp
     boxes/local_storage_box.h
+    boxes/max_invite_box.cpp
+    boxes/max_invite_box.h
     boxes/mute_settings_box.cpp
     boxes/mute_settings_box.h
     boxes/peer_list_box.cpp
@@ -222,6 +229,10 @@ PRIVATE
     boxes/peer_lists_box.h
     boxes/passcode_box.cpp
     boxes/passcode_box.h
+    boxes/phone_banned_box.cpp
+    boxes/phone_banned_box.h
+    boxes/pin_messages_box.cpp
+    boxes/pin_messages_box.h
     boxes/rate_call_box.cpp
     boxes/rate_call_box.h
     boxes/self_destruction_box.cpp
@@ -1075,10 +1086,6 @@ PRIVATE
     ui/image/image_location.h
     ui/image/image_location_factory.cpp
     ui/image/image_location_factory.h
-    ui/widgets/continuous_sliders.cpp
-    ui/widgets/continuous_sliders.h
-    ui/widgets/discrete_sliders.cpp
-    ui/widgets/discrete_sliders.h
     ui/widgets/level_meter.cpp
     ui/widgets/level_meter.h
     ui/widgets/multi_select.cpp

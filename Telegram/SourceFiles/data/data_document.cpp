@@ -38,7 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "storage/cache/storage_cache_database.h"
 #include "storage/storage_cloud_song_cover.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/image/image.h"
 #include "ui/text/text_utilities.h"
 #include "base/base_file_utilities.h"
@@ -905,7 +905,7 @@ void DocumentData::handleLoaderUpdates() {
 				Ui::hideLayer();
 				save(origin, failedFileName);
 			};
-			Ui::show(Box<ConfirmBox>(
+			Ui::show(Box<Ui::ConfirmBox>(
 				tr::lng_download_finish_failed(tr::now),
 				crl::guard(&session(), retry)));
 		} else {
@@ -917,7 +917,7 @@ void DocumentData::handleLoaderUpdates() {
 			//	Core::App().settings().setDownloadPath(QString());
 			//	Ui::show(Box<DownloadPathBox>());
 			//};
-			//Ui::show(Box<ConfirmBox>(
+			//Ui::show(Box<Ui::ConfirmBox>(
 			//	tr::lng_download_path_failed(tr::now),
 			//	tr::lng_download_path_settings(tr::now),
 			//	crl::guard(&session(), openSettings)));

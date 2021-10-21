@@ -108,6 +108,10 @@ PRIVATE
     ui/boxes/calendar_box.h
     ui/boxes/choose_date_time.cpp
     ui/boxes/choose_date_time.h
+    ui/boxes/confirm_box.cpp
+    ui/boxes/confirm_box.h
+    ui/boxes/confirm_phone_box.cpp
+    ui/boxes/confirm_phone_box.h
     ui/boxes/country_select_box.cpp
     ui/boxes/country_select_box.h
     ui/boxes/edit_invite_link.cpp
@@ -116,6 +120,7 @@ PRIVATE
     ui/boxes/report_box.h
     ui/boxes/single_choice_box.cpp
     ui/boxes/single_choice_box.h
+
     ui/chat/attach/attach_abstract_single_file_preview.cpp
     ui/chat/attach/attach_abstract_single_file_preview.h
     ui/chat/attach/attach_abstract_single_media_preview.cpp
@@ -177,8 +182,16 @@ PRIVATE
     ui/text/text_options.h
     ui/toasts/common_toasts.cpp
     ui/toasts/common_toasts.h
+
+    ui/widgets/continuous_sliders.cpp
+    ui/widgets/continuous_sliders.h
+    ui/widgets/discrete_sliders.cpp
+    ui/widgets/discrete_sliders.h
+    ui/widgets/sent_code_field.cpp
+    ui/widgets/sent_code_field.h
     ui/widgets/separate_panel.cpp
     ui/widgets/separate_panel.h
+
     ui/cached_round_corners.cpp
     ui/cached_round_corners.h
     ui/grouped_layout.cpp

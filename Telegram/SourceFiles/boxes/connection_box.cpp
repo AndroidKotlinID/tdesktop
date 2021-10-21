@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/connection_box.h"
 
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "base/qthelp_url.h"
@@ -1131,13 +1131,13 @@ void ProxiesBoxController::ShowApplyConfirmation(
 			close();
 		};
 		Ui::show(
-			Box<ConfirmBox>(
+			Box<Ui::ConfirmBox>(
 				text,
 				tr::lng_sure_enable(tr::now),
 				std::move(callback)),
 			Ui::LayerOption::KeepOther);
 	} else {
-		Ui::show(Box<InformBox>(
+		Ui::show(Box<Ui::InformBox>(
 			(proxy.status() == ProxyData::Status::Unsupported
 				? tr::lng_proxy_unsupported(tr::now)
 				: tr::lng_proxy_invalid(tr::now))));
