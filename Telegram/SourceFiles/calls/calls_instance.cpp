@@ -31,9 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "ui/toast/toast.h"
 #include "base/unixtime.h"
-#include "mainwidget.h"
 #include "mtproto/mtproto_config.h"
-#include "boxes/rate_call_box.h"
 #include "app.h" // App::quitting
 
 #include <tgcalls/VideoCaptureInterface.h>
@@ -484,6 +482,11 @@ void Instance::handleCallUpdate(
 			LOG(("API Error: User not loaded for phoneCallRequested."));
 		} else if (user->isSelf()) {
 			LOG(("API Error: Self found in phoneCallRequested."));
+		} else if (_currentCall
+			&& _currentCall->user() == user
+			&& _currentCall->id() == phoneCall.vid().v) {
+			// May be a repeated phoneCallRequested update from getDifference.
+			return;
 		}
 		const auto &config = session->serverConfig();
 		if (inCall() || inGroupCall() || !user || user->isSelf()) {
@@ -537,7 +540,7 @@ void Instance::handleGroupCallUpdate(
 		return data.vcall().match([&](const MTPDinputGroupCall &data) {
 			return data.vid().v;
 		});
-	}, [](const auto &) -> uint64 {
+	}, [](const auto &) -> CallId {
 		Unexpected("Type in Instance::handleGroupCallUpdate.");
 	});
 	if (const auto existing = session->data().groupCall(callId)) {

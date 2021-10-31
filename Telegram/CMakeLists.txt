@@ -5,7 +5,7 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_executable(Telegram WIN32 MACOSX_BUNDLE)
-init_target(Telegram)
+init_non_host_target(Telegram)
 
 add_subdirectory(lib_rpl)
 add_subdirectory(lib_crl)
@@ -50,7 +50,8 @@ if (WIN32)
     nuget_add_winrt(Telegram)
 endif()
 
-set_target_properties(Telegram PROPERTIES AUTOMOC ON AUTORCC ON)
+set_target_properties(Telegram PROPERTIES AUTOMOC ON)
+target_prepare_qrc(Telegram)
 
 target_link_libraries(Telegram
 PRIVATE
@@ -173,12 +174,18 @@ PRIVATE
     boxes/peers/edit_peer_invite_link.h
     boxes/peers/edit_peer_invite_links.cpp
     boxes/peers/edit_peer_invite_links.h
-    boxes/peers/edit_peer_type_box.cpp
-    boxes/peers/edit_peer_type_box.h
     boxes/peers/edit_peer_history_visibility_box.cpp
     boxes/peers/edit_peer_history_visibility_box.h
     boxes/peers/edit_peer_permissions_box.cpp
     boxes/peers/edit_peer_permissions_box.h
+    boxes/peers/edit_peer_requests_box.cpp
+    boxes/peers/edit_peer_requests_box.h
+    boxes/peers/edit_peer_type_box.cpp
+    boxes/peers/edit_peer_type_box.h
+    boxes/peers/peer_short_info_box.cpp
+    boxes/peers/peer_short_info_box.h
+    boxes/peers/prepare_short_info_box.cpp
+    boxes/peers/prepare_short_info_box.h
     boxes/about_box.cpp
     boxes/about_box.h
     boxes/about_sponsored_box.cpp
@@ -233,8 +240,6 @@ PRIVATE
     boxes/phone_banned_box.h
     boxes/pin_messages_box.cpp
     boxes/pin_messages_box.h
-    boxes/rate_call_box.cpp
-    boxes/rate_call_box.h
     boxes/self_destruction_box.cpp
     boxes/self_destruction_box.h
     boxes/send_files_box.cpp
@@ -253,6 +258,8 @@ PRIVATE
     boxes/username_box.h
     calls/group/calls_choose_join_as.cpp
     calls/group/calls_choose_join_as.h
+    calls/group/calls_cover_item.cpp
+    calls/group/calls_cover_item.h
     calls/group/calls_group_call.cpp
     calls/group/calls_group_call.h
     calls/group/calls_group_common.cpp
@@ -620,8 +627,8 @@ PRIVATE
     history/view/history_view_emoji_interactions.h
     history/view/history_view_empty_list_bubble.cpp
     history/view/history_view_empty_list_bubble.h
-    history/view/history_view_group_call_tracker.cpp
-    history/view/history_view_group_call_tracker.h
+    history/view/history_view_group_call_bar.cpp
+    history/view/history_view_group_call_bar.h
     history/view/history_view_list_widget.cpp
     history/view/history_view_list_widget.h
     history/view/history_view_message.cpp
@@ -635,6 +642,8 @@ PRIVATE
     history/view/history_view_pinned_tracker.h
     history/view/history_view_replies_section.cpp
     history/view/history_view_replies_section.h
+    history/view/history_view_requests_bar.cpp
+    history/view/history_view_requests_bar.h
     history/view/history_view_schedule_box.cpp
     history/view/history_view_schedule_box.h
     history/view/history_view_scheduled_section.cpp
@@ -1251,8 +1260,7 @@ elseif (APPLE)
     endif()
 
     set(icons_path ${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Images.xcassets)
-    set_target_properties(Telegram PROPERTIES RESOURCE ${icons_path})
-    target_sources(Telegram PRIVATE ${icons_path})
+    target_add_resource(Telegram ${icons_path})
 
     set(lang_packs
         en
@@ -1273,6 +1281,11 @@ elseif (APPLE)
         source_group(TREE ${res_loc} PREFIX Resources FILES ${strings_path})
     endforeach()
 
+    add_custom_command(TARGET Telegram
+    PRE_LINK
+        COMMAND mkdir -p $<TARGET_FILE_DIR:Telegram>/../Resources
+        COMMAND cp ${CMAKE_BINARY_DIR}/lib_ui.rcc $<TARGET_FILE_DIR:Telegram>/../Resources
+    )
     if (NOT build_macstore)
         add_custom_command(TARGET Telegram
         PRE_LINK
@@ -1280,10 +1293,15 @@ elseif (APPLE)
             COMMAND cp $<TARGET_FILE:Updater> $<TARGET_FILE_DIR:Telegram>/../Frameworks/
         )
         if (NOT DESKTOP_APP_DISABLE_CRASH_REPORTS)
+            if (DESKTOP_APP_MAC_ARCH STREQUAL "x86_64" OR DESKTOP_APP_MAC_ARCH STREQUAL "arm64")
+                set(crashpad_dir_part ".${DESKTOP_APP_MAC_ARCH}")
+            else()
+                set(crashpad_dir_part "")
+            endif()
             add_custom_command(TARGET Telegram
             PRE_LINK
                 COMMAND mkdir -p $<TARGET_FILE_DIR:Telegram>/../Helpers
-                COMMAND cp ${libs_loc}/crashpad/out/$<IF:$<CONFIG:Debug>,Debug,Release>/crashpad_handler $<TARGET_FILE_DIR:Telegram>/../Helpers/
+                COMMAND cp ${libs_loc}/crashpad/out/$<IF:$<CONFIG:Debug>,Debug,Release>${crashpad_dir_part}/crashpad_handler $<TARGET_FILE_DIR:Telegram>/../Helpers/
             )
         endif()
     endif()
@@ -1327,6 +1345,8 @@ if (build_macstore)
         COMMAND rm -rf $<TARGET_FILE_DIR:Telegram>/../Frameworks
         COMMAND mkdir -p $<TARGET_FILE_DIR:Telegram>/../Frameworks
         COMMAND cp -a ${libs_loc}/breakpad/src/client/mac/build/Release/Breakpad.framework $<TARGET_FILE_DIR:Telegram>/../Frameworks/Breakpad.framework
+        COMMAND rm -rf $<TARGET_FILE_DIR:Telegram>/../Frameworks/Breakpad.framework/Resources/crash_report_sender.app
+        COMMAND rm -rf $<TARGET_FILE_DIR:Telegram>/../Frameworks/Breakpad.framework/Resources/Inspector
     )
 else()
     set(bundle_identifier "com.tdesktop.Telegram$<$<CONFIG:Debug>:Debug>")
@@ -1411,7 +1431,7 @@ endif()
 
 if ((NOT DESKTOP_APP_DISABLE_AUTOUPDATE OR APPLE) AND NOT build_macstore AND NOT build_winstore)
     add_executable(Updater WIN32)
-    init_target(Updater)
+    init_non_host_target(Updater)
 
     add_dependencies(Telegram Updater)
 
@@ -1423,7 +1443,9 @@ if ((NOT DESKTOP_APP_DISABLE_AUTOUPDATE OR APPLE) AND NOT build_macstore AND NOT
         _other/updater.h
     )
 
-    set_target_properties(Updater PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${output_folder})
+    set_target_properties(Updater PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${output_folder}
+    )
 
     if (WIN32)
         get_filename_component(lib_base_loc lib_base REALPATH)

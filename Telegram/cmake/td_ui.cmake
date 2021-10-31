@@ -5,7 +5,7 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_library(td_ui OBJECT)
-init_target(td_ui)
+init_non_host_target(td_ui)
 add_library(tdesktop::td_ui ALIAS td_ui)
 
 include(lib_ui/cmake/generate_styles.cmake)
@@ -116,6 +116,8 @@ PRIVATE
     ui/boxes/country_select_box.h
     ui/boxes/edit_invite_link.cpp
     ui/boxes/edit_invite_link.h
+    ui/boxes/rate_call_box.cpp
+    ui/boxes/rate_call_box.h
     ui/boxes/report_box.cpp
     ui/boxes/report_box.h
     ui/boxes/single_choice_box.cpp
@@ -160,6 +162,10 @@ PRIVATE
     ui/chat/message_bubble.h
     ui/chat/pinned_bar.cpp
     ui/chat/pinned_bar.h
+    ui/chat/requests_bar.cpp
+    ui/chat/requests_bar.h
+    ui/chat/select_scroll_manager.cpp
+    ui/chat/select_scroll_manager.h
     ui/controls/call_mute_button.cpp
     ui/controls/call_mute_button.h
     ui/controls/delete_message_context_action.cpp
