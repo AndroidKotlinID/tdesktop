@@ -28,11 +28,11 @@ RUN yum -y install git meson ninja-build autoconf automake libtool \
 	fontconfig-devel freetype-devel libX11-devel at-spi2-core-devel alsa-lib-devel \
 	pulseaudio-libs-devel mesa-libGL-devel mesa-libEGL-devel libudev-devel \
 	webkitgtk4-devel pkgconfig bison yasm file which xorg-x11-util-macros \
-	devtoolset-9-make devtoolset-9-gcc devtoolset-9-gcc-c++ \
-	devtoolset-9-binutils llvm-toolset-7.0 llvm-toolset-7.0-clang-devel \
+	devtoolset-10-make devtoolset-10-gcc devtoolset-10-gcc-c++ \
+	devtoolset-10-binutils llvm-toolset-7.0 llvm-toolset-7.0-clang-devel \
 	llvm-toolset-7.0-llvm-devel perl-XML-Parser && yum clean all
 
-SHELL [ "bash", "-c", ". /opt/rh/devtoolset-9/enable; exec bash -c \"$@\"", "-s"]
+SHELL [ "bash", "-c", ". /opt/rh/devtoolset-10/enable; exec bash -c \"$@\"", "-s"]
 
 ENV LibrariesPath /usr/src/Libraries
 ENV HFLAGS "-fstack-protector-all -fstack-clash-protection -fPIC -D_FORTIFY_SOURCE=2"
@@ -801,40 +801,19 @@ FROM patches AS breakpad
 RUN git clone https://chromium.googlesource.com/breakpad/breakpad.git
 
 WORKDIR breakpad
-RUN git checkout bc8fb886
+RUN git checkout dfcb7b6799
+RUN git apply ../patches/breakpad.diff
 RUN git clone https://chromium.googlesource.com/linux-syscall-support.git src/third_party/lss
 
 WORKDIR src/third_party/lss
-RUN git checkout 8048ece
-WORKDIR ${LibrariesPath}
+RUN git checkout e1e7b0ad8e
 
-ENV BreakpadCache ${LibrariesPath}/breakpad-cache
-RUN git clone https://chromium.googlesource.com/external/gyp.git
-
-WORKDIR gyp
-RUN git checkout 9f2a7bb1
-RUN git apply ../patches/gyp.diff
-
-WORKDIR ../breakpad
+WORKDIR ../../..
 RUN ./configure
 RUN make -j$(nproc)
-RUN make DESTDIR="$BreakpadCache" install
-
-WORKDIR src
-RUN rm -rf testing
-RUN git clone --depth=1 $GIT/google/googletest.git testing
-
-WORKDIR tools
-RUN sed -i 's/minidump_upload.m/minidump_upload.cc/' linux/tools_linux.gypi
-RUN ../../../gyp/gyp  --depth=. --generator-output=.. -Goutput_dir=../out tools.gyp --format=cmake
-
-WORKDIR ../../out/Default
-RUN cmake .
-RUN cmake --build . --target dump_syms -j$(nproc)
-RUN mv dump_syms $BreakpadCache
+RUN make DESTDIR="${LibrariesPath}/breakpad-cache" install
 
 WORKDIR ..
-RUN rm -rf gyp
 
 FROM builder AS webrtc
 
