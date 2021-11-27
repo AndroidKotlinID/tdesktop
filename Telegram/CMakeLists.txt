@@ -112,6 +112,8 @@ PRIVATE
     api/api_chat_filters.h
     api/api_chat_invite.cpp
     api/api_chat_invite.h
+    api/api_chat_participants.cpp
+    api/api_chat_participants.h
     api/api_cloud_password.cpp
     api/api_cloud_password.h
     api/api_common.h
@@ -400,6 +402,8 @@ PRIVATE
     data/data_chat.h
     data/data_chat_filters.cpp
     data/data_chat_filters.h
+    data/data_chat_participant_status.cpp
+    data/data_chat_participant_status.h
     data/data_changes.cpp
     data/data_changes.h
     data/data_channel.cpp
@@ -785,6 +789,8 @@ PRIVATE
     main/main_session.h
     main/main_session_settings.cpp
     main/main_session_settings.h
+    main/session/send_as_peers.cpp
+    main/session/send_as_peers.h
     media/system_media_controls_manager.h
     media/system_media_controls_manager.cpp
     media/audio/media_audio.cpp
@@ -1083,6 +1089,8 @@ PRIVATE
     ui/chat/attach/attach_item_single_file_preview.h
     ui/chat/attach/attach_item_single_media_preview.cpp
     ui/chat/attach/attach_item_single_media_preview.h
+    ui/chat/choose_send_as.cpp
+    ui/chat/choose_send_as.h
     ui/chat/choose_theme_controller.cpp
     ui/chat/choose_theme_controller.h
     ui/effects/fireworks_animation.cpp
