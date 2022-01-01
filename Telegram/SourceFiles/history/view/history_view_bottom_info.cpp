@@ -167,9 +167,10 @@ void BottomInfo::paint(
 		const auto &icon = inverted
 			? st->historyViewsInvertedIcon()
 			: stm->historyViewsIcon;
+		right -= st::historyViewsWidth;
 		icon.paint(
 			p,
-			right - st::historyViewsWidth,
+			right,
 			firstLineBottom + st::historyViewsTop,
 			outerWidth);
 	}
@@ -181,9 +182,10 @@ void BottomInfo::paint(
 		const auto &icon = inverted
 			? st->historyRepliesInvertedIcon()
 			: stm->historyRepliesIcon;
+		right -= st::historyViewsWidth;
 		icon.paint(
 			p,
-			right - st::historyViewsWidth,
+			right,
 			firstLineBottom + st::historyViewsTop,
 			outerWidth);
 	}
@@ -279,7 +281,7 @@ void BottomInfo::layoutDateText() {
 		? (tr::lng_edited(tr::now) + ' ')
 		: QString();
 	const auto author = _data.author;
-	const auto prefix = author.isEmpty() ? qsl(", ") : QString();
+	const auto prefix = !author.isEmpty() ? qsl(", ") : QString();
 	const auto date = edited + _data.date.toString(cTimeFormat());
 	_dateWidth = st::msgDateFont->width(date);
 	const auto afterAuthor = prefix + date;

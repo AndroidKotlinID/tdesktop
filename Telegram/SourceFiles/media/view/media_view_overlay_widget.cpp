@@ -1515,6 +1515,9 @@ void OverlayWidget::notifyFileDialogShown(bool shown) {
 }
 
 void OverlayWidget::saveAs() {
+	if (showCopyRestriction()) {
+		return;
+	}
 	QString file;
 	if (_document) {
 		const auto &location = _document->location(true);
@@ -2127,7 +2130,7 @@ void OverlayWidget::refreshMediaViewer() {
 void OverlayWidget::refreshFromLabel() {
 	if (_message) {
 		_from = _message->senderOriginal();
-		if (const auto info = _message->hiddenForwardedInfo()) {
+		if (const auto info = _message->hiddenSenderInfo()) {
 			_fromName = info->name;
 		} else {
 			Assert(_from != nullptr);
