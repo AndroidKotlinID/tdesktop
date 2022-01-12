@@ -6706,7 +6706,7 @@ void HistoryWidget::updatePreview() {
 			auto linkText = QStringView(_previewLinks).split(' ').at(0).toString();
 			_previewDescription.setText(
 				st::messageTextStyle,
-				TextUtilities::Clean(linkText),
+				linkText,
 				Ui::DialogTextOptions());
 
 			const auto timeout = (_previewData->pendingTill - base::unixtime::now());
@@ -6727,7 +6727,7 @@ void HistoryWidget::updatePreview() {
 				Ui::NameTextOptions());
 			_previewDescription.setText(
 				st::messageTextStyle,
-				TextUtilities::Clean(preview.description),
+				preview.description,
 				Ui::DialogTextOptions());
 		}
 	} else if (!readyToForward() && !replyToId() && !_editMsgId) {
@@ -6952,7 +6952,7 @@ void HistoryWidget::messageDataReceived(
 }
 
 void HistoryWidget::updateReplyEditText(not_null<HistoryItem*> item) {
-	_replyEditMsgText.setText(
+	_replyEditMsgText.setMarkedText(
 		st::messageTextStyle,
 		item->inReplyText(),
 		Ui::DialogTextOptions());
@@ -7000,7 +7000,8 @@ void HistoryWidget::updateForwarding() {
 
 void HistoryWidget::updateForwardingTexts() {
 	int32 version = 0;
-	QString from, text;
+	QString from;
+	TextWithEntities text;
 	const auto keepNames = (_toForward.options
 		== Data::ForwardOptions::PreserveInfo);
 	const auto keepCaptions = (_toForward.options
@@ -7047,13 +7048,12 @@ void HistoryWidget::updateForwardingTexts() {
 				.generateImages = false,
 			}).text;
 		} else {
-			text = textcmdLink(
-				1,
+			text = Ui::Text::PlainLink(
 				tr::lng_forward_messages(tr::now, lt_count, count));
 		}
 	}
 	_toForwardFrom.setText(st::msgNameStyle, from, Ui::NameTextOptions());
-	_toForwardText.setText(
+	_toForwardText.setMarkedText(
 		st::messageTextStyle,
 		text,
 		Ui::DialogTextOptions());
