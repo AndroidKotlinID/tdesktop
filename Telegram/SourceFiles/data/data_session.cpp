@@ -1303,7 +1303,14 @@ void Session::photoLoadFail(
 void Session::markMediaRead(not_null<const DocumentData*> document) {
 	const auto i = _documentItems.find(document);
 	if (i != end(_documentItems)) {
-		_session->api().markMediaRead({ begin(i->second), end(i->second) });
+		auto items = base::flat_set<not_null<HistoryItem*>>();
+		items.reserve(i->second.size());
+		for (const auto &item : i->second) {
+			if (item->isUnreadMention() || item->isIncomingUnreadMedia()) {
+				items.emplace(item);
+			}
+		}
+		_session->api().markContentsRead(items);
 	}
 }
 
@@ -1477,6 +1484,12 @@ void Session::requestAnimationPlayInline(not_null<HistoryItem*> item) {
 			}
 		}
 	}
+}
+
+void Session::requestUnreadReactionsAnimation(not_null<HistoryItem*> item) {
+	enumerateItemViews(item, [&](not_null<ViewElement*> view) {
+		view->animateUnreadReactions();
+	});
 }
 
 rpl::producer<not_null<HistoryItem*>> Session::animationPlayInlineRequest() const {
@@ -1859,6 +1872,7 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 		return message(peerFromMTP(data.vpeer_id()), data.vid().v);
 	});
 	if (!existing) {
+		Reactions::CheckUnknownForUnread(this, data);
 		return;
 	}
 	if (existing->isLocalUpdateMedia() && data.type() == mtpc_message) {
