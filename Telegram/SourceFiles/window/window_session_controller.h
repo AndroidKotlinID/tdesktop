@@ -36,6 +36,10 @@ namespace Settings {
 enum class Type;
 } // namespace Settings
 
+namespace Calls {
+struct StartGroupCallArgs;
+} // namespace Calls
+
 namespace Passport {
 struct FormRequest;
 class FormController;
@@ -50,6 +54,7 @@ struct ChatThemeKey;
 struct ChatPaintContext;
 struct ChatThemeBackground;
 struct ChatThemeBackgroundData;
+class MessageSendingAnimationController;
 } // namespace Ui
 
 namespace Data {
@@ -168,6 +173,7 @@ public:
 	using RepliesByLinkInfo = std::variant<v::null_t, CommentId, ThreadId>;
 	struct PeerByLinkInfo {
 		std::variant<QString, ChannelId> usernameOrId;
+		QString phone;
 		MsgId messageId = ShowAtUnreadMsgId;
 		RepliesByLinkInfo repliesInfo;
 		QString startToken;
@@ -225,12 +231,19 @@ public:
 
 
 private:
+	void resolvePhone(
+		const QString &phone,
+		Fn<void(not_null<PeerData*>)> done);
 	void resolveUsername(
 		const QString &username,
 		Fn<void(not_null<PeerData*>)> done);
 	void resolveChannelById(
 		ChannelId channelId,
 		Fn<void(not_null<ChannelData*>)> done);
+
+	void resolveDone(
+		const MTPcontacts_ResolvedPeer &result,
+		Fn<void(not_null<PeerData*>)> done);
 
 	void showPeerByLinkResolved(
 		not_null<PeerData*> peer,
@@ -274,11 +287,16 @@ public:
 		return _selectingPeer;
 	}
 
+	void setConnectingBottomSkip(int skip);
+	rpl::producer<int> connectingBottomSkipValue() const;
+
 	QPointer<Ui::BoxContent> show(
 		object_ptr<Ui::BoxContent> content,
 		Ui::LayerOptions options = Ui::LayerOption::KeepOther,
 		anim::type animated = anim::type::normal);
 
+	[[nodiscard]] auto sendingAnimation() const
+	-> Ui::MessageSendingAnimationController &;
 	[[nodiscard]] auto tabbedSelector() const
 	-> not_null<ChatHelpers::TabbedSelector*>;
 	void takeTabbedSelectorOwnershipFrom(not_null<QWidget*> parent);
@@ -336,15 +354,9 @@ public:
 
 	void showPeer(not_null<PeerData*> peer, MsgId msgId = ShowAtUnreadMsgId);
 
-	enum class GroupCallJoinConfirm {
-		None,
-		IfNowInAnother,
-		Always,
-	};
 	void startOrJoinGroupCall(
 		not_null<PeerData*> peer,
-		QString joinHash = QString(),
-		GroupCallJoinConfirm confirm = GroupCallJoinConfirm::IfNowInAnother);
+		const Calls::StartGroupCallArgs &args);
 
 	void showSection(
 		std::shared_ptr<SectionMemento> memento,
@@ -509,6 +521,9 @@ private:
 	const not_null<Controller*> _window;
 	const std::unique_ptr<ChatHelpers::EmojiInteractions> _emojiInteractions;
 
+	using SendingAnimation = Ui::MessageSendingAnimationController;
+	const std::unique_ptr<SendingAnimation> _sendingAnimation;
+
 	std::unique_ptr<Passport::FormController> _passportForm;
 	std::unique_ptr<FiltersMenu> _filters;
 
@@ -528,6 +543,8 @@ private:
 	base::Timer _invitePeekTimer;
 
 	rpl::variable<FilterId> _activeChatsFilter;
+
+	rpl::variable<int> _connectingBottomSkip;
 
 	PeerData *_showEditPeer = nullptr;
 	rpl::variable<Data::Folder*> _openedFolder;
