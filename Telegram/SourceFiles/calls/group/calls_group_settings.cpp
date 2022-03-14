@@ -266,7 +266,9 @@ void SettingsBox(
 	const auto &settings = Core::App().settings();
 
 	const auto joinMuted = goodReal ? real->joinMuted() : false;
-	const auto canChangeJoinMuted = (goodReal && real->canChangeJoinMuted());
+	const auto canChangeJoinMuted = !rtmp
+		&& goodReal
+		&& real->canChangeJoinMuted();
 	const auto addCheck = (peer->canManageGroupCall() && canChangeJoinMuted);
 
 	const auto addDivider = [&] {
@@ -856,7 +858,11 @@ std::pair<Fn<void()>, rpl::lifetime> ShareInviteLinkAction(
 			});
 		}).send();
 
-		if (!state->linkSpeaker.has_value()) {
+		if (real->rtmp()) {
+			state->linkSpeaker = QString();
+			state->linkSpeakerRequestId = 0;
+			shareReady();
+		} else if (!state->linkSpeaker.has_value()) {
 			using Flag = MTPphone_ExportGroupCallInvite::Flag;
 			state->linkSpeakerRequestId = peer->session().api().request(
 				MTPphone_ExportGroupCallInvite(
