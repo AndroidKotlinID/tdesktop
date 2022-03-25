@@ -129,6 +129,8 @@ PRIVATE
     api/api_invite_links.h
     api/api_media.cpp
     api/api_media.h
+    api/api_messages_search.cpp
+    api/api_messages_search.h
     api/api_peer_photo.cpp
     api/api_peer_photo.h
     api/api_polls.cpp
@@ -566,6 +568,8 @@ PRIVATE
     history/view/controls/compose_controls_common.h
     history/view/controls/history_view_compose_controls.cpp
     history/view/controls/history_view_compose_controls.h
+    history/view/controls/history_view_compose_search.cpp
+    history/view/controls/history_view_compose_search.h
     history/view/controls/history_view_ttl_button.cpp
     history/view/controls/history_view_ttl_button.h
     history/view/controls/history_view_voice_record_bar.cpp
