@@ -104,7 +104,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/tabbed_section.h"
 #include "chat_helpers/bot_keyboard.h"
 #include "chat_helpers/message_field.h"
-#include "chat_helpers/send_context_menu.h"
+#include "menu/menu_send.h"
 #include "mtproto/mtproto_config.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
@@ -4386,29 +4386,34 @@ void HistoryWidget::searchInChat() {
 	if (controller()->isPrimary()) {
 		controller()->content()->searchInChat(_history);
 	} else {
-		const auto update = [=] {
-			updateControlsVisibility();
-			updateBotKeyboard();
-			updateFieldPlaceholder();
+		const auto search = [=] {
+			const auto update = [=] {
+				updateControlsVisibility();
+				updateBotKeyboard();
+				updateFieldPlaceholder();
 
-			updateControlsGeometry();
-		};
-		_composeSearch = std::make_unique<HistoryView::ComposeSearch>(
-			this,
-			controller(),
-			_history);
-
-		update();
-		setInnerFocus();
-		_composeSearch->destroyRequests(
-		) | rpl::take(
-			1
-		) | rpl::start_with_next([=] {
-			_composeSearch = nullptr;
+				updateControlsGeometry();
+			};
+			_composeSearch = std::make_unique<HistoryView::ComposeSearch>(
+				this,
+				controller(),
+				_history);
 
 			update();
 			setInnerFocus();
-		}, _composeSearch->lifetime());
+			_composeSearch->destroyRequests(
+			) | rpl::take(
+				1
+			) | rpl::start_with_next([=] {
+				_composeSearch = nullptr;
+
+				update();
+				setInnerFocus();
+			}, _composeSearch->lifetime());
+		};
+		if (!preventsClose(search)) {
+			search();
+		}
 	}
 }
 
@@ -7130,7 +7135,9 @@ void HistoryWidget::confirmDeleteSelected() {
 }
 
 void HistoryWidget::escape() {
-	if (_chooseForReport) {
+	if (_composeSearch) {
+		_composeSearch->hideAnimated();
+	} else if (_chooseForReport) {
 		controller()->clearChooseReportMessages();
 	} else if (_nonEmptySelection && _list) {
 		clearSelected();

@@ -249,12 +249,11 @@ public:
 
 	void setInnerFocus();
 
-	[[nodiscard]] PeerData *from() const;
-
 	[[nodiscard]] rpl::producer<SearchRequest> searchRequests() const;
 	[[nodiscard]] rpl::producer<PeerData*> fromValue() const;
 	[[nodiscard]] rpl::producer<> queryChanges() const;
 	[[nodiscard]] rpl::producer<> closeRequests() const;
+	[[nodiscard]] rpl::producer<> cancelRequests() const;
 
 	void setFrom(PeerData *peer);
 
@@ -274,6 +273,7 @@ private:
 
 	rpl::event_stream<SearchRequest> _searchRequests;
 	rpl::event_stream<> _queryChanges;
+	rpl::event_stream<> _cancelRequests;
 };
 
 TopBar::TopBar(not_null<Ui::RpWidget*> parent)
@@ -318,7 +318,7 @@ TopBar::TopBar(not_null<Ui::RpWidget*> parent)
 	});
 
 	_select->setCancelledCallback([=] {
-
+		_cancelRequests.fire({});
 	});
 }
 
@@ -371,12 +371,12 @@ rpl::producer<> TopBar::closeRequests() const {
 	return _cancel->clicks() | rpl::to_empty;
 }
 
-rpl::producer<PeerData*> TopBar::fromValue() const {
-	return _from.value();
+rpl::producer<> TopBar::cancelRequests() const {
+	return _cancelRequests.events();
 }
 
-PeerData *TopBar::from() const {
-	return _from.current();
+rpl::producer<PeerData*> TopBar::fromValue() const {
+	return _from.value();
 }
 
 void TopBar::setFrom(PeerData *peer) {
@@ -783,6 +783,15 @@ ComposeSearch::Inner::Inner(
 		hideAnimated();
 	}, _topBar->lifetime());
 
+	_topBar->cancelRequests(
+	) | rpl::start_with_next([=] {
+		if (!_list.container->isHidden()) {
+			Ui::Animations::HideWidgets({ _list.container.get() });
+		} else {
+			hideAnimated();
+		}
+	}, _topBar->lifetime());
+
 	_apiSearch.newFounds(
 	) | rpl::start_with_next([=] {
 		const auto &apiData = _apiSearch.messages();
@@ -859,7 +868,7 @@ ComposeSearch::Inner::Inner(
 				Window::Show(_window).hideLayer();
 				_topBar->setFrom(from);
 			}),
-			crl::guard(_bottomBar.get(), [=] { /*_filter->setFocus();*/ }));
+			crl::guard(_bottomBar.get(), [=] { setInnerFocus(); }));
 
 		Window::Show(_window).showBox(std::move(box));
 	}, _bottomBar->lifetime());
