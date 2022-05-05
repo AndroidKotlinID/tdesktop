@@ -604,16 +604,19 @@ QPointer<Ui::RpWidget> Folders::createPinnedToTop(not_null<QWidget*> parent) {
 	const auto divider = Ui::CreateChild<Ui::BoxContentDivider>(parent.get());
 	const auto verticalLayout = Ui::CreateChild<Ui::VerticalLayout>(divider);
 
-	auto icon = CreateLottieIcon(this, {
-		.name = u"filters"_q,
-		.sizeOverride = {
-			st::settingsFilterIconSize,
-			st::settingsFilterIconSize,
+	auto icon = CreateLottieIcon(
+		this,
+		{
+			.name = u"filters"_q,
+			.sizeOverride = {
+				st::settingsFilterIconSize,
+				st::settingsFilterIconSize,
+			},
 		},
-	}, st::settingsFilterIconPadding);
+		st::settingsFilterIconPadding);
 	_showFinished.events(
 	) | rpl::start_with_next([animate = std::move(icon.animate)] {
-		animate();
+		animate(anim::repeat::once);
 	}, verticalLayout->lifetime());
 	verticalLayout->add(std::move(icon.widget));
 

@@ -162,18 +162,21 @@ void Blocked::setupContent() {
 
 	{
 		const auto content = emptyWrap->entity();
-		auto icon = CreateLottieIcon(content, {
-			.name = u"blocked_peers_empty"_q,
-			.sizeOverride = {
-				st::changePhoneIconSize,
-				st::changePhoneIconSize,
+		auto icon = CreateLottieIcon(
+			content,
+			{
+				.name = u"blocked_peers_empty"_q,
+				.sizeOverride = {
+					st::changePhoneIconSize,
+					st::changePhoneIconSize,
+				},
 			},
-		}, st::blockedUsersListIconPadding);
+			st::blockedUsersListIconPadding);
 		content->add(std::move(icon.widget));
 
 		_showFinished.events(
 		) | rpl::start_with_next([animate = std::move(icon.animate)] {
-			animate();
+			animate(anim::repeat::once);
 		}, content->lifetime());
 
 		content->add(

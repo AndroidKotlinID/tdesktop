@@ -13,6 +13,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/object_ptr.h"
 #include "settings/settings_type.h"
 
+namespace anim {
+enum class repeat : uchar;
+} // namespace anim
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -180,7 +184,7 @@ not_null<Ui::FlatLabel*> AddSubsectionTitle(
 
 struct LottieIcon {
 	object_ptr<Ui::RpWidget> widget;
-	Fn<void()> animate;
+	Fn<void(anim::repeat repeat)> animate;
 };
 [[nodiscard]] LottieIcon CreateLottieIcon(
 	not_null<QWidget*> parent,
