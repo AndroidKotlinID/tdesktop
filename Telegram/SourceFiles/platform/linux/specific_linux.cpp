@@ -25,7 +25,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/linux/base_linux_xdp_utilities.h"
-#include "platform/linux/linux_xdp_file_dialog.h"
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
@@ -436,6 +435,7 @@ bool SkipTaskbarSupported() {
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 	if (IsX11()) {
 		return base::Platform::XCB::IsSupportedByWM(
+			base::Platform::XCB::GetConnectionFromQt(),
 			"_NET_WM_STATE_SKIP_TASKBAR");
 	}
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
@@ -629,10 +629,6 @@ namespace ThirdParty {
 void start() {
 	LOG(("Icon theme: %1").arg(QIcon::themeName()));
 	LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
-
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	FileDialog::XDP::Start();
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 void finish() {
