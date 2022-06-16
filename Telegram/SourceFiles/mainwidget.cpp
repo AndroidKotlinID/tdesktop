@@ -232,7 +232,9 @@ MainWidget::MainWidget(
 , _history(std::in_place, this, _controller)
 , _playerPlaylist(this, _controller)
 , _changelogs(Core::Changelogs::Create(&controller->session())) {
-	setupConnectingWidget();
+	if (isPrimary()) {
+		setupConnectingWidget();
+	}
 
 	_history->cancelRequests(
 	) | rpl::start_with_next([=] {
@@ -1253,6 +1255,7 @@ void MainWidget::showChooseReportMessages(
 		SectionShow::Way::Forward,
 		ShowForChooseMessagesMsgId);
 	Ui::ShowMultilineToast({
+		.parentOverride = Window::Show(controller()).toastParent(),
 		.text = { tr::lng_report_please_select_messages(tr::now) },
 	});
 }
@@ -1897,7 +1900,9 @@ void MainWidget::orderWidgets() {
 	if (_thirdColumnResizeArea) {
 		_thirdColumnResizeArea->raise();
 	}
-	_connecting->raise();
+	if (_connecting) {
+		_connecting->raise();
+	}
 	floatPlayerRaiseAll();
 	_playerPlaylist->raise();
 	if (_player) {

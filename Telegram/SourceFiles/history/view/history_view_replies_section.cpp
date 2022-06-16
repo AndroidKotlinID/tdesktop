@@ -652,6 +652,7 @@ void RepliesWidget::chooseAttach() {
 			_history->peer,
 			ChatRestriction::SendMedia)) {
 		Ui::ShowMultilineToast({
+			.parentOverride = Window::Show(controller()).toastParent(),
 			.text = { *error },
 		});
 		return;
@@ -843,6 +844,7 @@ bool RepliesWidget::showSlowmodeError() {
 		return false;
 	}
 	Ui::ShowMultilineToast({
+		.parentOverride = Window::Show(controller()).toastParent(),
 		.text = { text },
 	});
 	return true;
@@ -937,23 +939,20 @@ bool RepliesWidget::showSendingFilesError(
 			tr::now,
 			lt_name,
 			list.errorData);
-		case Error::TooLargeFile: return tr::lng_send_image_too_large(
-			tr::now,
-			lt_name,
-			list.errorData);
-		case Error::PremiumRequired: return u"(premium)"_q;
+		case Error::TooLargeFile: return u"(toolarge)"_q;
 		}
 		return tr::lng_forward_send_files_cant(tr::now);
 	}();
 	if (text.isEmpty()) {
 		return false;
-	} else if (text == u"(premium)"_q) {
+	} else if (text == u"(toolarge)"_q) {
 		const auto fileSize = list.files.back().size;
 		controller()->show(Box(FileSizeLimitBox, &session(), fileSize));
 		return true;
 	}
 
 	Ui::ShowMultilineToast({
+		.parentOverride = Window::Show(controller()).toastParent(),
 		.text = { text },
 	});
 	return true;
@@ -1009,6 +1008,7 @@ void RepliesWidget::send(Api::SendOptions options) {
 	//	message.textWithTags);
 	//if (!error.isEmpty()) {
 	//	Ui::ShowMultilineToast({
+	//		.parentOverride = Window::Show(controller()).toastParent(),
 	//		.text = { error },
 	//	});
 	//	return;
