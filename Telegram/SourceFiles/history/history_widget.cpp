@@ -396,7 +396,11 @@ HistoryWidget::HistoryWidget(
 
 	InitMessageField(controller, _field, [=](
 			not_null<DocumentData*> document) {
+		if (_peer && Data::AllowEmojiWithoutPremium(_peer)) {
+			return true;
+		}
 		showPremiumToast(document);
+		return false;
 	});
 
 	_keyboard->sendCommandRequests(
@@ -476,10 +480,14 @@ HistoryWidget::HistoryWidget(
 		Unexpected("action in MimeData hook.");
 	});
 
+	const auto allow = [=](const auto&) {
+		return _peer && _peer->isSelf();
+	};
 	const auto suggestions = Ui::Emoji::SuggestionsController::Init(
 		this,
 		_field,
-		&controller->session());
+		&controller->session(),
+		{ .suggestCustomEmoji = true, .allowCustomWithoutPremium = allow });
 	_raiseEmojiSuggestions = [=] { suggestions->raise(); };
 	updateFieldSubmitSettings();
 
@@ -1068,6 +1076,13 @@ void HistoryWidget::initTabbedSelector() {
 		return !isHidden() && !_field->isHidden();
 	}) | rpl::start_with_next([=](Selector::FileChosen data) {
 		Data::InsertCustomEmoji(_field.data(), data.document);
+	}, lifetime());
+
+	selector->premiumEmojiChosen(
+	) | rpl::filter([=] {
+		return !isHidden() && !_field->isHidden();
+	}) | rpl::start_with_next([=](not_null<DocumentData*> document) {
+		showPremiumToast(document);
 	}, lifetime());
 
 	selector->fileChosen(
@@ -4996,12 +5011,11 @@ bool HistoryWidget::confirmSendingFiles(
 	const auto position = cursor.position();
 	const auto anchor = cursor.anchor();
 	const auto text = _field->getTextWithTags();
-	using SendLimit = SendFilesBox::SendLimit;
 	auto box = Box<SendFilesBox>(
 		controller(),
 		std::move(list),
 		text,
-		_peer->slowmodeApplied() ? SendLimit::One : SendLimit::Many,
+		_peer,
 		Api::SendType::Normal,
 		sendMenuType());
 	_field->setTextWithTags({});
@@ -6755,7 +6769,7 @@ void HistoryWidget::showPremiumToast(not_null<DocumentData*> document) {
 	if (!_stickerToast) {
 		_stickerToast = std::make_unique<HistoryView::StickerToast>(
 			controller(),
-			_scroll.data(),
+			this,
 			[=] { _stickerToast = nullptr; });
 	}
 	_stickerToast->showFor(document);

@@ -180,6 +180,7 @@ StickersListWidget::StickersListWidget(
 , _addWidth(st::stickersTrendingAdd.font->width(_addText))
 , _settings(this, tr::lng_stickers_you_have(tr::now))
 , _previewTimer([=] { showPreview(); })
+, _premiumMark(std::make_unique<StickerPremiumMark>(&controller->session()))
 , _searchRequestTimer([=] { sendSearchRequest(); }) {
 	setMouseTracking(true);
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -217,11 +218,6 @@ StickersListWidget::StickersListWidget(
 	) | rpl::skip(1) | rpl::map_to(
 		TabbedSelector::Action::Update
 	) | rpl::start_to_stream(_choosingUpdated, lifetime());
-
-	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
-		_premiumLockGray = QImage();
-	}, lifetime());
 
 	Data::AmPremiumValue(
 		&session()
@@ -1282,7 +1278,7 @@ void StickersListWidget::paintSticker(
 		return;
 	}
 
-	const auto locked = document->isPremiumSticker() && !session().premium();
+	const auto premium = document->isPremiumSticker();
 	const auto isLottie = document->sticker()->isLottie();
 	const auto isWebm = document->sticker()->isWebm();
 	if (isLottie
@@ -1350,7 +1346,7 @@ void StickersListWidget::paintSticker(
 				sticker.savedFrame = pixmap;
 				sticker.savedFrameFor = _singleSize;
 			}
-			if (locked) {
+			if (premium) {
 				lottieFrame = pixmap.toImage().convertToFormat(
 					QImage::Format_ARGB32_Premultiplied);
 			}
@@ -1373,30 +1369,15 @@ void StickersListWidget::paintSticker(
 		p.setOpacity(1.);
 	}
 
-	if (locked) {
-		validatePremiumLock(set, index, lottieFrame);
-		const auto &bg = lottieFrame.isNull()
-			? _premiumLockGray
-			: sticker.premiumLock;
-		const auto factor = style::DevicePixelRatio();
-		const auto radius = st::roundRadiusSmall;
-		const auto point = pos + QPoint(
-			(_singleSize.width() - (bg.width() / factor)) / 2,
-			_singleSize.height() - (bg.height() / factor) - radius);
-		p.drawImage(point, bg);
-
-		st::stickersPremiumLock.paint(p, point, width());
+	if (premium) {
+		_premiumMark->paint(
+			p,
+			lottieFrame,
+			sticker.premiumLock,
+			pos,
+			_singleSize,
+			width());
 	}
-}
-
-const QImage &StickersListWidget::validatePremiumLock(
-		Set &set,
-		int index,
-		const QImage &frame) {
-	auto &sticker = set.stickers[index];
-	auto &image = frame.isNull() ? _premiumLockGray : sticker.premiumLock;
-	ValidatePremiumLockBg(image, frame);
-	return image;
 }
 
 int StickersListWidget::stickersRight() const {

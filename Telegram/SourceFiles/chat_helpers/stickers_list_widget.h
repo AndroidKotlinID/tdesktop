@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/variant.h"
 #include "base/timer.h"
 
+class StickerPremiumMark;
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -317,10 +319,8 @@ private:
 	void addSearchRow(not_null<Data::StickersSet*> set);
 
 	void showPreview();
-	const QImage &validatePremiumLock(
-		Set &set,
-		int index,
-		const QImage &frame);
+	void validatePremiumLock(Set &set, int index, const QImage &frame);
+	void validatePremiumStar();
 
 	Ui::MessageSendingAnimationFrom messageSentAnimationInfo(
 		int section,
@@ -378,7 +378,7 @@ private:
 	base::Timer _previewTimer;
 	bool _previewShown = false;
 
-	QImage _premiumLockGray;
+	std::unique_ptr<StickerPremiumMark> _premiumMark;
 
 	std::map<QString, std::vector<uint64>> _searchCache;
 	std::vector<std::pair<uint64, QStringList>> _searchIndex;
