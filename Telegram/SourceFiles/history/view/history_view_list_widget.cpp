@@ -14,13 +14,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_text.h"
 #include "history/view/media/history_view_media.h"
 #include "history/view/media/history_view_sticker.h"
+#include "history/view/reactions/history_view_reactions_button.h"
 #include "history/view/history_view_context_menu.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_emoji_interactions.h"
 #include "history/view/history_view_message.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_cursor_state.h"
-#include "history/view/history_view_react_button.h"
 #include "history/view/history_view_quick_action.h"
 #include "chat_helpers/message_field.h"
 #include "mainwindow.h"
@@ -277,7 +277,6 @@ ListWidget::ListWidget(
 , _reactionsManager(
 	std::make_unique<Reactions::Manager>(
 		this,
-		Data::UniqueReactionsLimitValue(&controller->session()),
 		[=](QRect updated) { update(updated); },
 		controller->cachedReactionIconFactory().createMethod()))
 , _scrollDateCheck([this] { scrollDateCheck(); })
@@ -353,24 +352,31 @@ ListWidget::ListWidget(
 		}
 	}, lifetime());
 
-	using ChosenReaction = Reactions::Manager::Chosen;
 	_reactionsManager->chosen(
 	) | rpl::start_with_next([=](ChosenReaction reaction) {
+		_reactionsManager->updateButton({});
+
 		const auto item = session().data().message(reaction.context);
-		if (!item
-			|| Window::ShowReactPremiumError(
-				_controller,
-				item,
-				reaction.emoji)) {
+		if (!item) {
+			return;
+		} else if (Window::ShowReactPremiumError(
+			_controller,
+			item,
+			reaction.id)) {
+			if (_menu) {
+				_menu->hideMenu();
+			}
 			return;
 		}
-		item->toggleReaction(reaction.emoji);
-		if (item->chosenReaction() != reaction.emoji) {
+		item->toggleReaction(
+			reaction.id,
+			HistoryItem::ReactionSource::Selector);
+		if (!ranges::contains(item->chosenReactions(), reaction.id)) {
 			return;
 		} else if (const auto view = viewForItem(item)) {
 			if (const auto top = itemTop(view); top >= 0) {
 				view->animateReaction({
-					.emoji = reaction.emoji,
+					.id = reaction.id,
 					.flyIcon = reaction.icon,
 					.flyFrom = reaction.geometry.translated(0, -top),
 				});
@@ -378,10 +384,17 @@ ListWidget::ListWidget(
 		}
 	}, lifetime());
 
+	_reactionsManager->premiumPromoChosen(
+	) | rpl::start_with_next([=] {
+		_reactionsManager->updateButton({});
+		if (const auto item = _reactionsItem.current()) {
+			ShowPremiumPromoBox(_controller, item);
+		}
+	}, lifetime());
+
 	Reactions::SetupManagerList(
 		_reactionsManager.get(),
-		&session(),
-		_delegate->listAllowedReactionsValue());
+		_reactionsItem.value());
 
 	controller->adaptive().chatWideValue(
 	) | rpl::start_with_next([=](bool wide) {
@@ -2114,20 +2127,20 @@ void ListWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 }
 
 void ListWidget::toggleFavoriteReaction(not_null<Element*> view) const {
-	const auto favorite = session().data().reactions().favorite();
-	const auto allowed = _reactionsManager->allowedSublist();
-	if (allowed && !allowed->contains(favorite)) {
-		return;
-	}
 	const auto item = view->data();
-	if (Window::ShowReactPremiumError(_controller, item, favorite)) {
+	const auto favorite = session().data().reactions().favoriteId();
+	if (!ranges::contains(
+			Data::LookupPossibleReactions(item).recent,
+			favorite,
+			&Data::Reaction::id)
+		|| Window::ShowReactPremiumError(_controller, item, favorite)) {
 		return;
-	} else if (item->chosenReaction() != favorite) {
+	} else if (!ranges::contains(item->chosenReactions(), favorite)) {
 		if (const auto top = itemTop(view); top >= 0) {
-			view->animateReaction({ .emoji = favorite });
+			view->animateReaction({ .id = favorite });
 		}
 	}
-	item->toggleReaction(favorite);
+	item->toggleReaction(favorite, HistoryItem::ReactionSource::Quick);
 }
 
 void ListWidget::trySwitchToWordSelection() {
@@ -2187,11 +2200,12 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 
 	const auto link = ClickHandler::getActive();
 	if (link
-		&& !link->property(kSendReactionEmojiProperty).toString().isEmpty()
+		&& !link->property(
+			kSendReactionEmojiProperty).value<Data::ReactionId>().empty()
 		&& _reactionsManager->showContextMenu(
 			this,
 			e,
-			session().data().reactions().favorite())) {
+			session().data().reactions().favoriteId())) {
 		return;
 	}
 	const auto overItem = _overItemExact
@@ -2199,19 +2213,20 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		: _overElement
 		? _overElement->data().get()
 		: nullptr;
-	const auto hasWhoReactedItem = overItem
-		&& Api::WhoReactedExists(overItem);
-	const auto clickedEmoji = link
-		? link->property(kReactionsCountEmojiProperty).toString()
-		: QString();
+	const auto clickedReaction = link
+		? link->property(
+			kReactionsCountEmojiProperty).value<Data::ReactionId>()
+		: Data::ReactionId();
 	_whoReactedMenuLifetime.destroy();
-	if (hasWhoReactedItem && !clickedEmoji.isEmpty()) {
+	if (!clickedReaction.empty()
+		&& overItem
+		&& Api::WhoReactedExists(overItem, Api::WhoReactedList::One)) {
 		HistoryView::ShowWhoReactedMenu(
 			&_menu,
 			e->globalPos(),
 			this,
 			overItem,
-			clickedEmoji,
+			clickedReaction,
 			_controller,
 			_whoReactedMenuLifetime);
 		e->accept();
@@ -2721,7 +2736,7 @@ void ListWidget::mouseActionUpdate() {
 			reactionState)
 		: Reactions::ButtonParameters());
 	if (viewChanged && view) {
-		_reactionsManager->updateUniqueLimit(item);
+		_reactionsItem = item;
 	}
 
 	TextState dragState;
@@ -3155,6 +3170,9 @@ void ListWidget::viewReplaced(not_null<const Element*> was, Element *now) {
 }
 
 void ListWidget::itemRemoved(not_null<const HistoryItem*> item) {
+	if (_reactionsItem.current() == item) {
+		_reactionsItem = nullptr;
+	}
 	if (_selectedTextItem == item) {
 		clearTextSelection();
 	}
