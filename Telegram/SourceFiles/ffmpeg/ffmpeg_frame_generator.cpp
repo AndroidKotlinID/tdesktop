@@ -113,7 +113,7 @@ int FrameGenerator::Impl::Read(void *opaque, uint8_t *buf, int buf_size) {
 int FrameGenerator::Impl::read(uint8_t *buf, int buf_size) {
 	const auto available = _bytes.size() - _deviceOffset;
 	if (available <= 0) {
-		return -1;
+		return AVERROR_EOF;
 	}
 	const auto fill = std::min(int(available), buf_size);
 	memcpy(buf, _bytes.data() + _deviceOffset, fill);
