@@ -208,7 +208,8 @@ using Order = std::vector<QString>;
 		u"faster_download"_q,
 		u"voice_to_text"_q,
 		u"no_ads"_q,
-		u"unique_reactions"_q,
+		u"emoji_status"_q,
+		u"infinite_reactions"_q,
 		u"premium_stickers"_q,
 		u"animated_emoji"_q,
 		u"advanced_chat_management"_q,
@@ -264,12 +265,21 @@ using Order = std::vector<QString>;
 			},
 		},
 		{
-			u"unique_reactions"_q,
+			u"emoji_status"_q,
+			Entry{
+				&st::settingsPremiumIconStatus,
+				tr::lng_premium_summary_subtitle_emoji_status(),
+				tr::lng_premium_summary_about_emoji_status(),
+				PremiumPreview::EmojiStatus,
+			},
+		},
+		{
+			u"infinite_reactions"_q,
 			Entry{
 				&st::settingsPremiumIconLike,
-				tr::lng_premium_summary_subtitle_unique_reactions(),
-				tr::lng_premium_summary_about_unique_reactions(),
-				PremiumPreview::Reactions,
+				tr::lng_premium_summary_subtitle_infinite_reactions(),
+				tr::lng_premium_summary_about_infinite_reactions(),
+				PremiumPreview::InfiniteReactions,
 			},
 		},
 		{
@@ -821,12 +831,15 @@ void TopBarUser::updateTitle(
 	if (!stickerInfo) {
 		return;
 	}
-	const auto &sets = document->owner().stickers().sets();
-	const auto it = sets.find(stickerInfo->set.id);
+	const auto owner = &document->owner();
+	const auto &sets = owner->stickers().sets();
+	const auto setId = stickerInfo->set.id;
+	const auto it = sets.find(setId);
 	if (it == sets.cend()) {
 		return;
 	}
 	const auto set = it->second.get();
+	const auto coloredId = owner->customEmojiManager().coloredSetId();
 
 	const auto text = (set->thumbnailDocumentId ? QChar('0') : QChar())
 		+ set->title;
@@ -837,13 +850,19 @@ void TopBarUser::updateTitle(
 		{ EntityType::CustomEmoji, 0, 1, entityEmojiData },
 		Ui::Text::Link(text, linkIndex).entities.front(),
 	};
-	auto title = tr::lng_premium_emoji_status_title(
-		tr::now,
-		lt_user,
-		std::move(name),
-		lt_link,
-		{ .text = text, .entities = entities, },
-		Ui::Text::WithEntities);
+	auto title = (setId == coloredId)
+		? tr::lng_premium_emoji_status_title_colored(
+			tr::now,
+			lt_user,
+			std::move(name),
+			Ui::Text::WithEntities)
+		: tr::lng_premium_emoji_status_title(
+			tr::now,
+			lt_user,
+			std::move(name),
+			lt_link,
+			{ .text = text, .entities = entities, },
+			Ui::Text::WithEntities);
 	const auto context = Core::MarkedTextContext{
 		.session = &controller->session(),
 		.customEmojiRepaint = [=] { _title->update(); },

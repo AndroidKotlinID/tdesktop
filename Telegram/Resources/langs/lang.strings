@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_menu_night_mode" = "Night Mode";
 "lng_menu_add_account" = "Add Account";
 "lng_menu_activate" = "Activate";
+"lng_menu_set_status" = "Set Emoji Status";
 
 "lng_disable_notifications_from_tray" = "Disable notifications";
 "lng_enable_notifications_from_tray" = "Enable notifications";
@@ -1708,6 +1709,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_unlock_reactions" = "Unlock Premium Reactions";
 "lng_premium_unlock_stickers" = "Unlock Premium Stickers";
 "lng_premium_unlock_emoji" = "Unlock Animated Emoji";
+"lng_premium_unlock_status" = "Unlock Emoji Status";
 
 "lng_premium_subscribe_months_12" = "Annual";
 "lng_premium_subscribe_months_6" = "Semiannual";
@@ -1716,6 +1718,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_subscribe_button" = "Subscribe for {cost} per month";
 
 "lng_premium_emoji_status_title" = "{user} set this emoji from {link} as their current status.";
+"lng_premium_emoji_status_title_colored" = "{user} set this emoji as their current status.";
 "lng_premium_emoji_status_about" = "Emoji status is a premium feature. Other features included in **Telegram Premium**:";
 "lng_premium_emoji_status_button" = "Unlock Emoji Status";
 
@@ -1740,8 +1743,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_summary_about_voice_to_text" = "Ability to read the transcript of any incoming voice message.";
 "lng_premium_summary_subtitle_no_ads" = "No Ads";
 "lng_premium_summary_about_no_ads" = "No more ads in public channels where Telegram sometimes shows ads.";
-"lng_premium_summary_subtitle_unique_reactions" = "Unique Reactions";
-"lng_premium_summary_about_unique_reactions" = "Additional animated reactions on messages available only to the Premium subscribers.";
+"lng_premium_summary_subtitle_emoji_status" = "Emoji Status";
+"lng_premium_summary_about_emoji_status" = "Add any of thousands emoji next to your name to display current activity.";
+"lng_premium_summary_subtitle_infinite_reactions" = "Infinite Reactions";
+"lng_premium_summary_about_infinite_reactions" = "React with thousands of emoji — with multiple reactions per message.";
 "lng_premium_summary_subtitle_premium_stickers" = "Premium Stickers";
 "lng_premium_summary_about_premium_stickers" = "Exclusive enlarged stickers featuring additional effects, updated monthly.";
 "lng_premium_summary_subtitle_animated_emoji" = "Animated Emoji";
@@ -1910,6 +1915,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_new_contact_unarchive" = "Unarchive";
 "lng_new_contact_from_request_channel" = "{user} is an admin of {name}, a channel you requested to join.";
 "lng_new_contact_from_request_group" = "{user} is an admin of {name}, a group you requested to join.";
+"lng_new_contact_about_status" = "This account uses {emoji} as a custom status next to its\nname. Such emoji statuses are available to all\nsubscribers of {link}.";
+"lng_new_contact_about_status_link" = "Telegram Premium";
 "lng_from_request_title_channel" = "Chat with channel's admin";
 "lng_from_request_title_group" = "Chat with group's admin";
 "lng_from_request_body" = "You received this message because you requested to join {name} on {date}.";

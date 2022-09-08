@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media.h"
 #include "history/view/media/history_view_sticker.h"
 #include "history/view/media/history_view_web_page.h"
+#include "history/view/reactions/history_view_reactions_animation.h"
 #include "history/view/reactions/history_view_reactions_button.h"
 #include "history/view/reactions/history_view_reactions_selector.h"
 #include "history/view/history_view_message.h"
@@ -49,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/delete_messages_box.h"
 #include "boxes/report_messages_box.h"
 #include "boxes/sticker_set_box.h"
+#include "boxes/premium_preview_box.h"
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/emoji_interactions.h"
 #include "history/history_widget.h"
@@ -401,7 +403,9 @@ HistoryInner::HistoryInner(
 	_reactionsManager->premiumPromoChosen(
 	) | rpl::start_with_next([=](FullMsgId context) {
 		_reactionsManager->updateButton({});
-		premiumPromoChosen(context);
+		ShowPremiumPreviewBox(
+			_controller,
+			PremiumPreview::InfiniteReactions);
 	}, lifetime());
 
 	session().data().itemRemoved(
@@ -480,18 +484,15 @@ void HistoryInner::reactionChosen(const ChosenReaction &reaction) {
 		return;
 	} else if (const auto view = item->mainView()) {
 		if (const auto top = itemTop(view); top >= 0) {
+			const auto geometry = reaction.localGeometry.isEmpty()
+				? mapFromGlobal(reaction.globalGeometry)
+				: reaction.localGeometry;
 			view->animateReaction({
 				.id = reaction.id,
 				.flyIcon = reaction.icon,
-				.flyFrom = reaction.geometry.translated(0, -top),
+				.flyFrom = geometry.translated(0, -top),
 			});
 		}
-	}
-}
-
-void HistoryInner::premiumPromoChosen(FullMsgId context) {
-	if (const auto item = session().data().message(context)) {
-		ShowPremiumPromoBox(_controller, item);
 	}
 }
 
@@ -2453,7 +2454,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			desiredPosition,
 			reactItem,
 			[=](ChosenReaction reaction) { reactionChosen(reaction); },
-			[=](FullMsgId context) { premiumPromoChosen(context); },
+			[=](FullMsgId context) { ShowPremiumPreviewBox(
+				controller,
+				PremiumPreview::InfiniteReactions); },
 			_controller->cachedReactionIconFactory().createMethod())
 		: AttachSelectorResult::Skipped;
 	if (attached == AttachSelectorResult::Failed) {

@@ -46,6 +46,8 @@ constexpr auto kAppearDuration = 0.3;
 
 using Core::RecentEmojiId;
 using Core::RecentEmojiDocument;
+using EmojiChosen = TabbedSelector::EmojiChosen;
+using FileChosen = TabbedSelector::FileChosen;
 
 } // namespace
 
@@ -64,8 +66,8 @@ public:
 	void hideAnimated();
 	void hideFast();
 
-	rpl::producer<EmojiPtr> chosen() const;
-	rpl::producer<> hidden() const;
+	[[nodiscard]] rpl::producer<EmojiChosen> chosen() const;
+	[[nodiscard]] rpl::producer<> hidden() const;
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -98,7 +100,7 @@ private:
 	QPixmap _cache;
 	Ui::Animations::Simple _a_opacity;
 
-	rpl::event_stream<EmojiPtr> _chosen;
+	rpl::event_stream<EmojiChosen> _chosen;
 	rpl::event_stream<> _hidden;
 
 };
@@ -204,7 +206,7 @@ void EmojiColorPicker::handleMouseRelease(QPoint globalPos) {
 
 	updateSelected();
 	if (_selected >= 0 && (pressed < 0 || _selected == pressed)) {
-		_chosen.fire_copy(_variants[_selected]);
+		_chosen.fire_copy({ .emoji = _variants[_selected] });
 	}
 	_ignoreShow = true;
 	hideAnimated();
@@ -254,7 +256,7 @@ void EmojiColorPicker::hideFast() {
 	_hidden.fire({});
 }
 
-rpl::producer<EmojiPtr> EmojiColorPicker::chosen() const {
+rpl::producer<EmojiChosen> EmojiColorPicker::chosen() const {
 	return _chosen.events();
 }
 
@@ -413,8 +415,8 @@ EmojiListWidget::EmojiListWidget(
 	}
 
 	_picker->chosen(
-	) | rpl::start_with_next([=](EmojiPtr emoji) {
-		colorChosen(emoji);
+	) | rpl::start_with_next([=](EmojiChosen data) {
+		colorChosen(data);
 	}, lifetime());
 
 	_picker->hidden(
@@ -494,17 +496,15 @@ void EmojiListWidget::repaintCustom(uint64 setId) {
 	});
 }
 
-rpl::producer<EmojiPtr> EmojiListWidget::chosen() const {
+rpl::producer<EmojiChosen> EmojiListWidget::chosen() const {
 	return _chosen.events();
 }
 
-auto EmojiListWidget::customChosen() const
--> rpl::producer<TabbedSelector::FileChosen> {
+rpl::producer<FileChosen> EmojiListWidget::customChosen() const {
 	return _customChosen.events();
 }
 
-auto EmojiListWidget::premiumChosen() const
--> rpl::producer<not_null<DocumentData*>> {
+rpl::producer<FileChosen> EmojiListWidget::premiumChosen() const {
 	return _premiumChosen.events();
 }
 
@@ -687,8 +687,7 @@ void EmojiListWidget::setSingleSize(QSize size) {
 	_innerPosition = QPoint(
 		(area.width() - esize) / 2,
 		(area.height() - esize) / 2);
-	const auto customSize = Ui::Text::AdjustCustomEmojiSize(esize);
-	const auto customSkip = (esize - customSize) / 2;
+	const auto customSkip = (esize - _customSingleSize) / 2;
 	_customPosition = QPoint(customSkip, customSkip);
 	_picker->setSingleSize(_singleSize);
 }
@@ -811,33 +810,37 @@ base::unique_qptr<Ui::PopupMenu> EmojiListWidget::fillContextMenu(
 	auto menu = base::make_unique_q<Ui::PopupMenu>(
 		this,
 		st::defaultPopupMenu);
+	const auto selectWith = [=](TimeId scheduled) {
+		selectCustom(
+			lookupChosen(chosen, nullptr, { .scheduled = scheduled }));
+	};
 	for (const auto &value : { 3600, 3600 * 8, 3600 * 24, 3600 * 24 * 7 }) {
 		const auto text = tr::lng_emoji_status_menu_duration_any(
 			tr::now,
 			lt_duration,
 			Ui::FormatMuteFor(value));
 		menu->addAction(text, crl::guard(this, [=] {
-			selectCustom(
-				chosen,
-				{ .scheduled = base::unixtime::now() + value } );
+			selectWith(base::unixtime::now() + value);
 		}));
 	}
-	const auto options = Api::SendOptions{
-		.scheduled = TabbedSelector::kPickCustomTimeId,
-	};
 	menu->addAction(
 		tr::lng_manage_messages_ttl_after_custom(tr::now),
-		crl::guard(this, [=] { selectCustom(chosen, options); }));
+		crl::guard(this, [=] { selectWith(
+			TabbedSelector::kPickCustomTimeId); }));
 	return menu;
 }
 
 void EmojiListWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	_repaintsScheduled.clear();
-
 	const auto clip = e ? e->rect() : rect();
-	if (st().bg->c.alpha() > 0) {
+
+	_repaintsScheduled.clear();
+	if (_grabbingChosen) {
+		p.setCompositionMode(QPainter::CompositionMode_Source);
+		p.fillRect(clip, Qt::transparent);
+		p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+	} else if (st().bg->c.alpha() > 0) {
 		p.fillRect(clip, st().bg);
 	}
 
@@ -960,7 +963,9 @@ void EmojiListWidget::paint(
 						drawCollapsedBadge(p, w - _areaPosition, info.count);
 						continue;
 					}
-					if (selected && st().overBg->c.alpha() > 0) {
+					if (!_grabbingChosen
+						&& selected
+						&& st().overBg->c.alpha() > 0) {
 						auto tl = w;
 						if (rtl()) {
 							tl.setX(width() - tl.x() - st::emojiPanArea.width());
@@ -1121,6 +1126,47 @@ EmojiPtr EmojiListWidget::lookupOverEmoji(const OverEmoji *over) const {
 		: nullptr;
 }
 
+EmojiChosen EmojiListWidget::lookupChosen(
+		EmojiPtr emoji,
+		not_null<const OverEmoji*> over) {
+	const auto rect = emojiRect(over->section, over->index);
+	const auto icon = QRect(
+		rect.x() + (_singleSize.width() - st::stickersPremium.width()) / 2,
+		rect.y() + (_singleSize.height() - st::stickersPremium.height()) / 2,
+		rect.width(),
+		rect.height());
+	return {
+		.emoji = emoji,
+		.messageSendingFrom = {
+			.type = Ui::MessageSendingAnimationFrom::Type::Emoji,
+			.globalStartGeometry = mapToGlobal(icon),
+		},
+	};
+}
+
+FileChosen EmojiListWidget::lookupChosen(
+		not_null<DocumentData*> custom,
+		const OverEmoji *over,
+		Api::SendOptions options) {
+	_grabbingChosen = true;
+	const auto guard = gsl::finally([&] { _grabbingChosen = false; });
+	const auto rect = over ? emojiRect(over->section, over->index) : QRect();
+	const auto emoji = over ? QRect(
+		rect.topLeft() + _areaPosition + _innerPosition + _customPosition,
+		QSize(_customSingleSize, _customSingleSize)
+	) : QRect();
+
+	return {
+		.document = custom,
+		.options = options,
+		.messageSendingFrom = {
+			.type = Ui::MessageSendingAnimationFrom::Type::Emoji,
+			.globalStartGeometry = over ? mapToGlobal(emoji) : QRect(),
+			.frame = over ? Ui::GrabWidgetToImage(this, emoji) : QImage(),
+		},
+	};
+}
+
 void EmojiListWidget::mousePressEvent(QMouseEvent *e) {
 	_lastMousePos = e->globalPos();
 	updateSelected();
@@ -1187,9 +1233,9 @@ void EmojiListWidget::mouseReleaseEvent(QMouseEvent *e) {
 			if (emoji->hasVariants() && !_picker->isHidden()) {
 				return;
 			}
-			selectEmoji(emoji);
+			selectEmoji(lookupChosen(emoji, over));
 		} else if (const auto custom = lookupCustomEmoji(index, section)) {
-			selectCustom(custom);
+			selectCustom(lookupChosen(custom, over));
 		}
 	} else if (const auto set = std::get_if<OverSet>(&pressed)) {
 		Assert(set->section >= _staticCount
@@ -1211,7 +1257,7 @@ void EmojiListWidget::mouseReleaseEvent(QMouseEvent *e) {
 				break;
 			case Mode::FullReactions:
 			case Mode::RecentReactions:
-				Settings::ShowPremium(_controller, u"unique_reactions"_q);
+				Settings::ShowPremium(_controller, u"infinite_reactions"_q);
 				break;
 			case Mode::EmojiStatus:
 				Settings::ShowPremium(_controller, u"emoji_status"_q);
@@ -1241,18 +1287,17 @@ void EmojiListWidget::removeSet(uint64 setId) {
 	}
 }
 
-void EmojiListWidget::selectEmoji(EmojiPtr emoji) {
-	Core::App().settings().incrementRecentEmoji({ emoji });
-	_chosen.fire_copy(emoji);
+void EmojiListWidget::selectEmoji(EmojiChosen data) {
+	Core::App().settings().incrementRecentEmoji({ data.emoji });
+	_chosen.fire(std::move(data));
 }
 
-void EmojiListWidget::selectCustom(
-		not_null<DocumentData*> document,
-		Api::SendOptions options) {
+void EmojiListWidget::selectCustom(FileChosen data) {
+	const auto document = data.document;
 	if (document->isPremiumEmoji()
 		&& !document->session().premium()
 		&& !_allowWithoutPremium) {
-		_premiumChosen.fire_copy(document);
+		_premiumChosen.fire(std::move(data));
 		return;
 	}
 	auto &settings = Core::App().settings();
@@ -1262,7 +1307,7 @@ void EmojiListWidget::selectCustom(
 			document->session().isTestMode(),
 		} });
 	}
-	_customChosen.fire({ .document = document, .options = options });
+	_customChosen.fire(std::move(data));
 }
 
 void EmojiListWidget::showPicker() {
@@ -1408,7 +1453,8 @@ QRect EmojiListWidget::emojiRect(int section, int index) const {
 	return QRect(x, y, _singleSize.width(), _singleSize.height());
 }
 
-void EmojiListWidget::colorChosen(EmojiPtr emoji) {
+void EmojiListWidget::colorChosen(EmojiChosen data) {
+	const auto emoji = data.emoji;
 	if (emoji->hasVariants()) {
 		Core::App().settings().saveEmojiVariant(emoji);
 	}
@@ -1420,7 +1466,7 @@ void EmojiListWidget::colorChosen(EmojiPtr emoji) {
 		_emoji[over->section][over->index] = emoji;
 		rtlupdate(emojiRect(over->section, over->index));
 	}
-	selectEmoji(emoji);
+	selectEmoji(data);
 	_picker->hideAnimated();
 }
 
