@@ -219,8 +219,8 @@ public:
 			_widget->elementShowTooltip(text, hiddenCallback);
 		}
 	}
-	bool elementIsGifPaused() override {
-		return _widget ? _widget->elementIsGifPaused() : false;
+	bool elementAnimationsPaused() override {
+		return _widget ? _widget->elementAnimationsPaused() : false;
 	}
 	bool elementHideReply(not_null<const Element*> view) override {
 		return false;
@@ -370,7 +370,7 @@ HistoryInner::HistoryInner(
 	setMouseTracking(true);
 	_controller->gifPauseLevelChanged(
 	) | rpl::start_with_next([=] {
-		if (!elementIsGifPaused()) {
+		if (!elementAnimationsPaused()) {
 			update();
 		}
 	}, lifetime());
@@ -452,6 +452,14 @@ HistoryInner::HistoryInner(
 	HistoryView::Reactions::SetupManagerList(
 		_reactionsManager.get(),
 		_reactionsItem.value());
+
+	Core::App().settings().cornerReactionValue(
+	) | rpl::start_with_next([=](bool value) {
+		_useCornerReaction = value;
+		if (!value) {
+			_reactionsManager->updateButton({});
+		}
+	}, lifetime());
 
 	controller->adaptive().chatWideValue(
 	) | rpl::start_with_next([=](bool wide) {
@@ -997,6 +1005,9 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 			}
 		}
 		session().data().reactions().poll(item, now);
+		if (item->hasExtendedMediaPreview()) {
+			session().api().views().pollExtendedMedia(item);
+		}
 		_reactionsManager->recordCurrentReactionEffect(
 			item->fullId(),
 			QPoint(0, top));
@@ -1098,7 +1109,6 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 		p.translate(0, -top);
 	}
 
-	const auto paused = elementIsGifPaused();
 	enumerateUserpics([&](not_null<Element*> view, int userpicTop) {
 		// stop the enumeration if the userpic is below the painted rect
 		if (userpicTop >= clip.top() + clip.height()) {
@@ -1117,7 +1127,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 					userpicTop,
 					width(),
 					st::msgPhotoSize,
-					paused);
+					context.paused);
 			} else if (const auto info = view->data()->hiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paint(
@@ -3250,7 +3260,7 @@ void HistoryInner::elementShowTooltip(
 	_widget->showInfoTooltip(text, std::move(hiddenCallback));
 }
 
-bool HistoryInner::elementIsGifPaused() {
+bool HistoryInner::elementAnimationsPaused() {
 	return _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 }
 
@@ -3367,6 +3377,9 @@ auto HistoryInner::reactionButtonParameters(
 	QPoint position,
 	const HistoryView::TextState &reactionState) const
 -> HistoryView::Reactions::ButtonParameters {
+	if (!_useCornerReaction) {
+		return {};
+	}
 	const auto top = itemTop(view);
 	if (top < 0
 		|| !view->data()->canReact()

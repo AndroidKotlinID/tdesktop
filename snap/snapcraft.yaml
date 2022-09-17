@@ -200,7 +200,7 @@ parts:
   extra-cmake-modules:
     source: https://github.com/KDE/extra-cmake-modules.git
     source-depth: 1
-    source-tag: v5.97.0
+    source-tag: v5.98.0
     plugin: cmake
     cmake-parameters:
       - -DCMAKE_BUILD_TYPE=Release
@@ -230,7 +230,7 @@ parts:
   kcoreaddons:
     source: https://github.com/KDE/kcoreaddons.git
     source-depth: 1
-    source-tag: v5.97.0
+    source-tag: v5.98.0
     plugin: cmake
     cmake-parameters:
       - -DCMAKE_BUILD_TYPE=Release
@@ -238,6 +238,9 @@ parts:
       - -DBUILD_TESTING=OFF
       - -DBUILD_WITH_QT6=ON
       - -DEXCLUDE_DEPRECATED_BEFORE_AND_AT=5.78.0
+    override-pull: |
+      snapcraftctl pull
+      curl -sSL https://invent.kde.org/frameworks/kcoreaddons/-/merge_requests/258.patch | git apply
     prime:
       - -./usr/bin
       - -./usr/include
@@ -398,7 +401,7 @@ parts:
     override-pull: |
       QT=6_4_0
 
-      git clone -b v6.4.0-beta4 --depth=1 git://code.qt.io/qt/qt5.git .
+      git clone -b v6.4.0-rc1 --depth=1 git://code.qt.io/qt/qt5.git .
       perl init-repository --module-subset=qtbase,qtwayland,qtimageformats,qtsvg,qt5compat
 
       cd qtbase
@@ -446,7 +449,7 @@ parts:
   qttools:
     source: git://code.qt.io/qt/qttools.git
     source-depth: 1
-    source-tag: v6.4.0-beta4
+    source-tag: v6.4.0-rc1
     plugin: cmake
     build-packages:
       - clang
