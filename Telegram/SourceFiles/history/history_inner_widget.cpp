@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/layers/generic_box.h"
 #include "ui/controls/delete_message_context_action.h"
 #include "ui/controls/who_reacted_context_action.h"
+#include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "ui/cached_round_corners.h"
 #include "ui/inactive_press.h"
@@ -269,12 +270,6 @@ public:
 	void elementCancelPremium(not_null<const Element*> view) override {
 		if (_widget) {
 			_widget->elementCancelPremium(view);
-		}
-	}
-
-	void elementShowSpoilerAnimation() override {
-		if (_widget) {
-			_widget->elementShowSpoilerAnimation();
 		}
 	}
 
@@ -3304,11 +3299,6 @@ void HistoryInner::elementStartPremium(
 
 void HistoryInner::elementCancelPremium(not_null<const Element*> view) {
 	_emojiInteractions->cancelPremiumEffect(view);
-}
-
-void HistoryInner::elementShowSpoilerAnimation() {
-	_spoilerOpacity.stop();
-	_spoilerOpacity.start([=] { update(); }, 0., 1., st::fadeWrapDuration);
 }
 
 auto HistoryInner::getSelectionState() const
