@@ -289,8 +289,9 @@ void GroupCallBar::paint(Painter &p) {
 		}
 		const auto parsed = base::unixtime::parse(_content.scheduleDate);
 		const auto date = parsed.date();
-		const auto time = parsed.time().toString(
-			QLocale::system().timeFormat(QLocale::ShortFormat));
+		const auto time = QLocale().toString(
+			parsed.time(),
+			Ui::Integration::Instance().timeFormat());
 		const auto today = QDate::currentDate();
 		if (date == today) {
 			return tr::lng_group_call_starts_today(tr::now, lt_time, time);
