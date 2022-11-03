@@ -139,11 +139,19 @@ QImage ForumTopicIconFrame(
 	return background;
 }
 
+TextWithEntities ForumTopicIconWithTitle(
+		DocumentId iconId,
+		const QString &title) {
+	return iconId
+		? Data::SingleCustomEmoji(iconId).append(title)
+		: TextWithEntities{ title };
+}
+
 ForumTopic::ForumTopic(not_null<Forum*> forum, MsgId rootId)
 : Thread(&forum->history()->owner(), Type::ForumTopic)
 , _forum(forum)
 , _list(_forum->topicsList())
-, _replies(std::make_shared<RepliesList>(history(), rootId))
+, _replies(std::make_shared<RepliesList>(history(), rootId, this))
 , _sendActionPainter(owner().sendActionManager().repliesPainter(
 	history(),
 	rootId))
@@ -568,6 +576,10 @@ MsgId ForumTopic::lastKnownServerMessageId() const {
 
 QString ForumTopic::title() const {
 	return _title;
+}
+
+TextWithEntities ForumTopic::titleWithIcon() const {
+	return ForumTopicIconWithTitle(_iconId, _title);
 }
 
 void ForumTopic::applyTitle(const QString &title) {
