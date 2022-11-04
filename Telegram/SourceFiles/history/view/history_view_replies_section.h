@@ -214,6 +214,7 @@ private:
 	void setupRootView();
 	void setupTopicViewer();
 	void subscribeToTopic();
+	void subscribeToPinnedMessages();
 	void setTopic(Data::ForumTopic *topic);
 	void setupDragArea();
 	void setupShortcuts();
@@ -396,6 +397,8 @@ public:
 	[[nodiscard]] std::shared_ptr<Data::RepliesList> getReplies() const {
 		return _replies;
 	}
+
+	void setFromTopic(not_null<Data::ForumTopic*> topic);
 
 	void setReplyReturns(const QVector<FullMsgId> &list) {
 		_replyReturns = list;

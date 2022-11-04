@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_unread_things.h"
 #include "main/main_session.h"
 #include "base/random.h"
+#include "base/unixtime.h"
 #include "apiwrap.h"
 #include "lang/lang_keys.h"
 #include "core/application.h"
@@ -319,7 +320,10 @@ ForumTopic *Forum::applyTopicAdded(
 		MsgId rootId,
 		const QString &title,
 		int32 colorId,
-		DocumentId iconId) {
+		DocumentId iconId,
+		PeerId creatorId,
+		TimeId date,
+		bool my) {
 	Expects(rootId != 0);
 
 	const auto i = _topics.find(rootId);
@@ -332,6 +336,9 @@ ForumTopic *Forum::applyTopicAdded(
 	raw->applyTitle(title);
 	raw->applyColorId(colorId);
 	raw->applyIconId(iconId);
+	raw->applyCreator(creatorId);
+	raw->applyCreationDate(date);
+	raw->applyIsMy(my);
 	if (!creating(rootId)) {
 		raw->addToChatList(FilterId(), topicsList());
 		_chatsListChanges.fire({});
@@ -345,7 +352,14 @@ MsgId Forum::reserveCreatingId(
 		DocumentId iconId) {
 	const auto result = owner().nextLocalMessageId();
 	_creatingRootIds.emplace(result);
-	applyTopicAdded(result, title, colorId, iconId);
+	const auto topic = applyTopicAdded(
+		result,
+		title,
+		colorId,
+		iconId,
+		session().userPeerId(),
+		base::unixtime::now(),
+		true);
 	return result;
 }
 
@@ -416,9 +430,8 @@ ForumTopic *Forum::enforceTopicFor(MsgId rootId) {
 	if (i != end(_topics)) {
 		return i->second.get();
 	}
-	const auto result = applyTopicAdded(rootId, {}, {}, {});
 	requestTopic(rootId);
-	return result;
+	return applyTopicAdded(rootId, {}, {}, {}, {}, {}, {});
 }
 
 bool Forum::topicDeleted(MsgId rootId) const {

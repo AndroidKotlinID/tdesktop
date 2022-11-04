@@ -1693,11 +1693,9 @@ QString ListWidget::elementAuthorRank(not_null<const Element*> view) {
 
 void ListWidget::saveState(not_null<ListMemento*> memento) {
 	memento->setAroundPosition(_aroundPosition);
-	auto state = countScrollState();
-	if (state.item) {
-		memento->setIdsLimit(_idsLimit);
-		memento->setScrollTopState(state);
-	}
+	const auto state = countScrollState();
+	memento->setIdsLimit(state.item ? _idsLimit : 0);
+	memento->setScrollTopState(state);
 }
 
 void ListWidget::restoreState(not_null<ListMemento*> memento) {
@@ -2346,7 +2344,7 @@ auto ListWidget::countScrollState() const -> ScrollTopState {
 	if (_items.empty() || _visibleBottom == height()) {
 		return { Data::MessagePosition(), 0 };
 	}
-	auto topItem = findItemByY(_visibleTop);
+	const auto topItem = findItemByY(_visibleTop);
 	return {
 		topItem->data()->position(),
 		_visibleTop - itemTop(topItem)
@@ -2527,6 +2525,10 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				_overState));
 
 	_menu = FillContextMenu(this, request);
+	if (_menu->empty()) {
+		_menu = nullptr;
+		return;
+	}
 
 	using namespace HistoryView::Reactions;
 	const auto desiredPosition = e->globalPos();
@@ -3259,6 +3261,7 @@ void ListWidget::mouseActionUpdate() {
 		view ? view->height() : 0,
 		itemPoint,
 		view ? view->pointState(itemPoint) : PointState::Outside);
+	_overItemExact = nullptr;
 	const auto viewChanged = (_overElement != view);
 	if (viewChanged) {
 		repaintItem(_overElement);
