@@ -1816,9 +1816,17 @@ void MainWidget::showNewSection(
 		updateControlsGeometry();
 	} else {
 		_mainSection = std::move(newMainSection);
-		updateControlsGeometry();
 		_history->finishAnimating();
 		_history->showHistory(0, 0);
+
+		if (const auto entry = _mainSection->activeChat(); entry.key) {
+			_controller->setActiveChatEntry(entry);
+		}
+
+		// Depends on SessionController::activeChatEntry
+		// for tabbed selector showing in the third column.
+		updateControlsGeometry();
+
 		_history->hide();
 		if (isOneColumn() && _dialogs) {
 			_dialogs->hide();
@@ -1836,12 +1844,6 @@ void MainWidget::showNewSection(
 		settingSection->showAnimated(direction, animationParams);
 	} else {
 		settingSection->showFast();
-	}
-
-	if (settingSection.data() == _mainSection.data()) {
-		if (const auto entry = _mainSection->activeChat(); entry.key) {
-			_controller->setActiveChatEntry(entry);
-		}
 	}
 
 	floatPlayerCheckVisibility();
@@ -2653,12 +2655,16 @@ void MainWidget::handleHistoryBack() {
 	if (!_dialogs) {
 		return;
 	}
-	const auto historyFromFolder = _history->history()
-		? _history->history()->folder()
-		: nullptr;
 	const auto openedFolder = _controller->openedFolder().current();
+	const auto rootPeer = _stack.empty()
+		? _history->peer()
+		: _stack.front()->peer();
+	const auto rootHistory = rootPeer
+		? rootPeer->owner().historyLoaded(rootPeer)
+		: nullptr;
+	const auto rootFolder = rootHistory ? rootHistory->folder() : nullptr;
 	if (!openedFolder
-		|| historyFromFolder == openedFolder
+		|| rootFolder == openedFolder
 		|| _dialogs->isHidden()) {
 		_controller->showBackFromStack();
 		_dialogs->setInnerFocus();
