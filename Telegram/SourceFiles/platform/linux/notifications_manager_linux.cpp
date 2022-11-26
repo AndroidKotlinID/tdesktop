@@ -691,7 +691,25 @@ void NotificationData::setImage(const QString &imagePath) {
 	}
 
 	if (_notification) {
-		_notification->set_icon(Gio::Icon::create(imagePath.toStdString()));
+		const auto imageData = [&] {
+			QFile f(imagePath);
+			if (f.open(QIODevice::ReadOnly)) {
+				return f.readAll();
+			}
+			return QByteArray();
+		}();
+
+		if (imageData.isEmpty()) {
+			return;
+		}
+
+		const auto imageBytes = Glib::Bytes::create(
+			imageData.constData(),
+			imageData.size());
+
+		_notification->set_icon(
+			Glib::wrap(g_bytes_icon_new(imageBytes->gobj())));
+
 		return;
 	}
 
@@ -821,6 +839,8 @@ bool ByDefault() {
 }
 
 void Create(Window::Notifications::System *system) {
+	static auto ServiceWatcher = CreateServiceWatcher();
+
 	const auto managerSetter = [=] {
 		using ManagerType = Window::Notifications::ManagerType;
 		if ((Core::App().settings().nativeNotifications() || Enforced())
@@ -839,21 +859,34 @@ void Create(Window::Notifications::System *system) {
 	};
 
 	if (Gio::Application::get_default()) {
+		ServiceWatcher = nullptr;
+		ServiceRegistered = false;
+		CurrentServerInformation = std::nullopt;
+		CurrentCapabilities = QStringList{};
 		managerSetter();
 		return;
 	}
 
-	static const auto ServiceWatcher = CreateServiceWatcher();
-
 	const auto counter = std::make_shared<int>(2);
 	const auto oneReady = [=] {
 		if (!--*counter) {
+			// GApplication may be created while the reply is received
+			if (Gio::Application::get_default()) {
+				Core::App().notifications().createManager();
+				return;
+			}
 			managerSetter();
 		}
 	};
 
 	// snap doesn't allow access when the daemon is not running :(
 	StartServiceAsync([=] {
+		// GApplication may be created while the reply is received
+		if (Gio::Application::get_default()) {
+			Core::App().notifications().createManager();
+			return;
+		}
+
 		ServiceRegistered = GetServiceRegistered();
 
 		if (!ServiceRegistered) {
