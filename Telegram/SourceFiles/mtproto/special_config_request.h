@@ -1,51 +1,82 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-namespace MTP {
+#include "mtproto/details/mtproto_domain_resolver.h"
+#include "base/bytes.h"
+#include "base/weak_ptr.h"
+
+#include <QtCore/QPointer>
+#include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QNetworkAccessManager>
+
+namespace MTP::details {
 
 class SpecialConfigRequest : public QObject {
 public:
-	SpecialConfigRequest(base::lambda<void(DcId dcId, const std::string &ip, int port)> callback);
-
-	~SpecialConfigRequest();
+	SpecialConfigRequest(
+		Fn<void(
+			DcId dcId,
+			const std::string &ip,
+			int port,
+			bytes::const_span secret)> callback,
+		const QString &domainString,
+		const QString &phone);
+	SpecialConfigRequest(
+		Fn<void()> timeDoneCallback,
+		const QString &domainString);
 
 private:
-	void performAppRequest();
-	void performDnsRequest();
-	void appFinished();
-	void dnsFinished();
+	enum class Type {
+		Mozilla,
+		Google,
+		RemoteConfig,
+		Realtime,
+		FireStore,
+	};
+	struct Attempt {
+		Type type;
+		QString data;
+		QString host;
+	};
+
+	SpecialConfigRequest(
+		Fn<void(
+			DcId dcId,
+			const std::string &ip,
+			int port,
+			bytes::const_span secret)> callback,
+		Fn<void()> timeDoneCallback,
+		const QString &domainString,
+		const QString &phone);
+
+	void sendNextRequest();
+	void performRequest(const Attempt &attempt);
+	void requestFinished(Type type, not_null<QNetworkReply*> reply);
+	void handleHeaderUnixtime(not_null<QNetworkReply*> reply);
+	QByteArray finalizeRequest(not_null<QNetworkReply*> reply);
 	void handleResponse(const QByteArray &bytes);
 	bool decryptSimpleConfig(const QByteArray &bytes);
 
-	base::lambda<void(DcId dcId, const std::string &ip, int port)> _callback;
+	Fn<void(
+		DcId dcId,
+		const std::string &ip,
+		int port,
+		bytes::const_span secret)> _callback;
+	Fn<void()> _timeDoneCallback;
+	QString _domainString;
+	QString _phone;
 	MTPhelp_ConfigSimple _simpleConfig;
 
 	QNetworkAccessManager _manager;
-	std::unique_ptr<QNetworkReply> _appReply;
-	std::unique_ptr<QNetworkReply> _dnsReply;
-
-	std::unique_ptr<DcOptions> _localOptions;
-	std::unique_ptr<Instance> _localInstance;
+	std::vector<Attempt> _attempts;
+	std::vector<ServiceWebRequest> _requests;
 
 };
 
-} // namespace MTP
+} // namespace MTP::details

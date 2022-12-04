@@ -1,42 +1,36 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "mtproto/core_types.h"
 #include "mtproto/connection_abstract.h"
 
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkReply>
+
 namespace MTP {
-namespace internal {
+namespace details {
 
-class HTTPConnection : public AbstractConnection {
-	Q_OBJECT
-
+class HttpConnection : public AbstractConnection {
 public:
-	HTTPConnection(QThread *thread);
+	HttpConnection(QThread *thread, const ProxyData &proxy);
 
-	void sendData(mtpBuffer &buffer) override;
+	ConnectionPointer clone(const ProxyData &proxy) override;
+
+	crl::time pingTime() const override;
+	crl::time fullConnectTimeout() const override;
+	void sendData(mtpBuffer &&buffer) override;
 	void disconnectFromServer() override;
-	void connectTcp(const DcOptions::Endpoint &endpoint) override { // not supported
-	}
-	void connectHttp(const DcOptions::Endpoint &endpoint) override;
+	void connectToServer(
+		const QString &address,
+		int port,
+		const bytes::vector &protocolSecret,
+		int16 protocolDcId,
+		bool protocolForFiles) override;
 	bool isConnected() const override;
 	bool usingHttpWait() override;
 	bool needHttpWait() override;
@@ -44,30 +38,32 @@ public:
 	int32 debugState() const override;
 
 	QString transport() const override;
+	QString tag() const override;
 
-	static mtpBuffer handleResponse(QNetworkReply *reply);
-	static qint32 handleError(QNetworkReply *reply); // returnes error code
-
-public slots:
-	void requestFinished(QNetworkReply *reply);
+	mtpBuffer handleResponse(QNetworkReply *reply);
+	qint32 handleError(QNetworkReply *reply); // Returns error code.
 
 private:
-	enum Status {
-		WaitingHttp = 0,
-		UsingHttp,
-		FinishedWork
+	QUrl url() const;
+
+	void requestFinished(QNetworkReply *reply);
+
+	enum class Status {
+		Waiting = 0,
+		Ready,
+		Finished,
 	};
-	Status status;
-	MTPint128 httpNonce;
-	MTPDdcOption::Flags _flags;
+	Status _status = Status::Waiting;
+	MTPint128 _checkNonce;
 
-	QNetworkAccessManager manager;
-	QUrl address;
+	QNetworkAccessManager _manager;
+	QString _address;
 
-	typedef QSet<QNetworkReply*> Requests;
-	Requests requests;
+	QSet<QNetworkReply*> _requests;
+
+	crl::time _pingTime = 0;
 
 };
 
-} // namespace internal
+} // namespace details
 } // namespace MTP

@@ -1,24 +1,15 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
+
+#include "data/data_audio_msg_id.h"
+#include "ui/rp_widget.h"
+#include "base/object_ptr.h"
 
 class AudioMsgId;
 
@@ -28,58 +19,84 @@ class LabelSimple;
 class IconButton;
 class PlainShadow;
 class FilledSlider;
+template <typename Widget>
+class FadeWrap;
 } // namespace Ui
 
 namespace Media {
-namespace Clip {
-class Playback;
+namespace View {
+class PlaybackProgress;
 } // namespace Clip
+} // namespace Media
 
+namespace Window {
+class SessionController;
+} // namespace Window
+
+namespace Media {
 namespace Player {
 
 class PlayButton;
-class VolumeWidget;
+class SpeedButton;
+class Dropdown;
 struct TrackState;
 
-class Widget : public TWidget, private base::Subscriber {
+class Widget final : public Ui::RpWidget {
 public:
-	Widget(QWidget *parent);
+	Widget(
+		QWidget *parent,
+		not_null<Ui::RpWidget*> dropdownsParent,
+		not_null<Window::SessionController*> controller);
 
-	void setCloseCallback(base::lambda<void()> callback);
+	void setCloseCallback(Fn<void()> callback);
+	void setShowItemCallback(Fn<void(not_null<const HistoryItem*>)> callback);
 	void stopAndClose();
 	void setShadowGeometryToLeft(int x, int y, int w, int h);
-	void showShadow();
-	void hideShadow();
+	void hideShadowAndDropdowns();
+	void showShadowAndDropdowns();
+	void updateDropdownsGeometry();
+	void raiseDropdowns();
 
-	QPoint getPositionForVolumeWidget() const;
-	void volumeWidgetCreated(VolumeWidget *widget);
+	[[nodiscard]] rpl::producer<bool> togglePlaylistRequests() const {
+		return _togglePlaylistRequests.events();
+	}
 
 	~Widget();
 
-protected:
+private:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 
-private:
+	[[nodiscard]] not_null<Ui::RpWidget*> rightControls();
+	void setupRightControls();
+
 	void handleSeekProgress(float64 progress);
 	void handleSeekFinished(float64 progress);
 
-	int getLabelsLeft() const;
-	int getLabelsRight() const;
+	[[nodiscard]] int getNameLeft() const;
+	[[nodiscard]] int getNameRight() const;
+	[[nodiscard]] int getTimeRight() const;
 	void updateOverLabelsState(QPoint pos);
 	void updateOverLabelsState(bool over);
+	void hidePlaylistOn(not_null<Ui::RpWidget*> widget);
 
 	void updatePlayPrevNextPositions();
 	void updateLabelsGeometry();
-	void updateRepeatTrackIcon();
+	void updateRepeatToggleIcon();
+	void updateControlsVisibility();
+	void updateControlsGeometry();
+	void updateControlsWrapGeometry();
+	void updateControlsWrapVisibility();
 	void createPrevNextButtons();
 	void destroyPrevNextButtons();
 
+	bool hasPlaybackSpeedControl() const;
 	void updateVolumeToggleIcon();
 
 	void checkForTypeChange();
@@ -90,9 +107,13 @@ private:
 
 	void updateTimeText(const TrackState &state);
 	void updateTimeLabel();
+	void markOver(bool over);
 
-	TimeMs _seekPositionMs = -1;
-	TimeMs _lastDurationMs = 0;
+	const not_null<Window::SessionController*> _controller;
+	const not_null<Ui::RpWidget*> _orderMenuParent;
+
+	crl::time _seekPositionMs = -1;
+	crl::time _lastDurationMs = 0;
 	QString _time;
 
 	// We display all the controls according to _type.
@@ -100,26 +121,43 @@ private:
 	// We switch to Type::Song only if _voiceIsActive == false.
 	// We change _voiceIsActive to false only manually or from tracksFinished().
 	AudioMsgId::Type _type = AudioMsgId::Type::Unknown;
+	AudioMsgId _lastSongId;
 	bool _voiceIsActive = false;
-	base::lambda<void()> _closeCallback;
+	Fn<void()> _closeCallback;
+	Fn<void(not_null<const HistoryItem*>)> _showItemCallback;
 
 	bool _labelsOver = false;
 	bool _labelsDown = false;
+	rpl::event_stream<bool> _togglePlaylistRequests;
+	bool _narrow = false;
+	bool _over = false;
+	bool _wontBeOver = false;
+	bool _volumeHidden = false;
 
 	class PlayButton;
+	class OrderController;
+	class SpeedController;
 	object_ptr<Ui::FlatLabel> _nameLabel;
+	object_ptr<Ui::FadeWrap<Ui::RpWidget>> _rightControls;
 	object_ptr<Ui::LabelSimple> _timeLabel;
 	object_ptr<Ui::IconButton> _previousTrack = { nullptr };
-	object_ptr<PlayButton> _playPause;
+	object_ptr<Ui::IconButton> _playPause;
 	object_ptr<Ui::IconButton> _nextTrack = { nullptr };
 	object_ptr<Ui::IconButton> _volumeToggle;
-	object_ptr<Ui::IconButton> _repeatTrack;
+	object_ptr<Ui::IconButton> _repeatToggle;
+	object_ptr<Ui::IconButton> _orderToggle;
+	object_ptr<Ui::IconButton> _speedToggle;
 	object_ptr<Ui::IconButton> _close;
 	object_ptr<Ui::PlainShadow> _shadow = { nullptr };
 	object_ptr<Ui::FilledSlider> _playbackSlider;
-	std::unique_ptr<Clip::Playback> _playback;
+	base::unique_qptr<Dropdown> _volume;
+	std::unique_ptr<View::PlaybackProgress> _playbackProgress;
+	std::unique_ptr<OrderController> _orderController;
+	std::unique_ptr<SpeedController> _speedController;
+
+	rpl::lifetime _playlistChangesLifetime;
 
 };
 
-} // namespace Clip
+} // namespace Player
 } // namespace Media

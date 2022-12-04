@@ -1,29 +1,18 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "boxes/abstract_box.h"
+#include "ui/layers/box_content.h"
 #include "mtproto/sender.h"
+#include "api/api_user_privacy.h"
 
 namespace Ui {
+class VerticalLayout;
 class FlatLabel;
 class LinkButton;
 template <typename Enum>
@@ -31,96 +20,127 @@ class RadioenumGroup;
 template <typename Enum>
 class Radioenum;
 template <typename Widget>
-class WidgetSlideWrap;
+class SlideWrap;
 } // namespace Ui
 
-class EditPrivacyBox : public BoxContent, private MTP::Sender {
+namespace Window {
+class SessionController;
+} // namespace Window
+
+class EditPrivacyBox;
+
+class EditPrivacyController {
 public:
-	enum class Option {
-		Everyone,
-		Contacts,
-		Nobody,
-	};
+	using Key = Api::UserPrivacy::Key;
+	using Option = Api::UserPrivacy::Option;
 	enum class Exception {
 		Always,
 		Never,
 	};
 
-	class Controller {
-	public:
-		virtual MTPInputPrivacyKey key() = 0;
+	[[nodiscard]] virtual Key key() const = 0;
 
-		virtual QString title() = 0;
-		virtual bool hasOption(Option option) {
-			return true;
-		}
-		virtual QString description() = 0;
-		virtual QString warning() {
-			return QString();
-		}
-		virtual QString exceptionLinkText(Exception exception, int count) = 0;
-		virtual QString exceptionBoxTitle(Exception exception) = 0;
-		virtual QString exceptionsDescription() = 0;
+	[[nodiscard]] virtual rpl::producer<QString> title() const = 0;
+	[[nodiscard]] virtual bool hasOption(Option option) const {
+		return true;
+	}
+	[[nodiscard]] virtual rpl::producer<QString> optionsTitleKey() const = 0;
+	[[nodiscard]] virtual QString optionLabel(Option option) const;
+	[[nodiscard]] virtual rpl::producer<TextWithEntities> warning() const {
+		return nullptr;
+	}
+	virtual void prepareWarningLabel(not_null<Ui::FlatLabel*> warning) const {
+	}
+	[[nodiscard]] virtual rpl::producer<QString> exceptionButtonTextKey(
+		Exception exception) const = 0;
+	[[nodiscard]] virtual rpl::producer<QString> exceptionBoxTitle(
+		Exception exception) const = 0;
+	[[nodiscard]] virtual auto exceptionsDescription()
+		const -> rpl::producer<QString> = 0;
 
-		virtual void confirmSave(bool someAreDisallowed, base::lambda_once<void()> saveCallback) {
-			saveCallback();
-		}
+	[[nodiscard]] virtual object_ptr<Ui::RpWidget> setupAboveWidget(
+			not_null<QWidget*> parent,
+			rpl::producer<Option> option,
+			not_null<QWidget*> outerContainer) {
+		return { nullptr };
+	}
+	[[nodiscard]] virtual object_ptr<Ui::RpWidget> setupMiddleWidget(
+			not_null<Window::SessionController*> controller,
+			not_null<QWidget*> parent,
+			rpl::producer<Option> option) {
+		return { nullptr };
+	}
+	[[nodiscard]] virtual object_ptr<Ui::RpWidget> setupBelowWidget(
+			not_null<Window::SessionController*> controller,
+			not_null<QWidget*> parent) const {
+		return { nullptr };
+	}
 
-		virtual ~Controller() = default;
+	virtual void confirmSave(
+			bool someAreDisallowed,
+			Fn<void()> saveCallback) {
+		saveCallback();
+	}
+	virtual void saveAdditional() {
+	}
 
-	protected:
-		EditPrivacyBox *view() const {
-			return _view;
-		}
+	virtual ~EditPrivacyController() = default;
 
-	private:
-		void setView(EditPrivacyBox *box) {
-			_view = box;
-		}
+protected:
+	[[nodiscard]] EditPrivacyBox *view() const {
+		return _view;
+	}
 
-		EditPrivacyBox *_view = nullptr;
+private:
+	void setView(EditPrivacyBox *box) {
+		_view = box;
+	}
 
-		friend class EditPrivacyBox;
+	EditPrivacyBox *_view = nullptr;
 
-	};
+	friend class EditPrivacyBox;
 
-	EditPrivacyBox(QWidget*, std::unique_ptr<Controller> controller);
+};
+
+class EditPrivacyBox final : public Ui::BoxContent {
+public:
+	using Value = Api::UserPrivacy::Rule;
+	using Option = Api::UserPrivacy::Option;
+	using Exception = EditPrivacyController::Exception;
+
+	EditPrivacyBox(
+		QWidget*,
+		not_null<Window::SessionController*> window,
+		std::unique_ptr<EditPrivacyController> controller,
+		const Value &value);
+
+	static Ui::Radioenum<Option> *AddOption(
+		not_null<Ui::VerticalLayout*> container,
+		not_null<EditPrivacyController*> controller,
+		const std::shared_ptr<Ui::RadioenumGroup<Option>> &group,
+		Option option);
 
 protected:
 	void prepare() override;
-	int resizeGetHeight(int newWidth) override;
-
-	void resizeEvent(QResizeEvent *e) override;
 
 private:
-	style::margins exceptionLinkMargins() const;
 	bool showExceptionLink(Exception exception) const;
-	void createWidgets();
-	QVector<MTPInputPrivacyRule> collectResult();
-	void loadData();
-	int countDefaultHeight(int newWidth);
+	void setupContent();
 
-	void editExceptionUsers(Exception exception);
-	QString exceptionLinkText(Exception exception);
-	std::vector<gsl::not_null<UserData*>> &exceptionUsers(Exception exception);
-	object_ptr<Ui::WidgetSlideWrap<Ui::LinkButton>> &exceptionLink(Exception exception);
+	Ui::FlatLabel *addLabel(
+		not_null<Ui::VerticalLayout*> container,
+		rpl::producer<TextWithEntities> text,
+		int topSkip);
+	Ui::FlatLabel *addLabelOrDivider(
+		not_null<Ui::VerticalLayout*> container,
+		rpl::producer<TextWithEntities> text,
+		int topSkip);
 
-	std::unique_ptr<Controller> _controller;
-	Option _option = Option::Everyone;
+	void editExceptions(Exception exception, Fn<void()> done);
+	std::vector<not_null<PeerData*>> &exceptions(Exception exception);
 
-	std::shared_ptr<Ui::RadioenumGroup<Option>> _optionGroup;
-	object_ptr<Ui::FlatLabel> _loading;
-	object_ptr<Ui::FlatLabel> _description = { nullptr };
-	object_ptr<Ui::Radioenum<Option>> _everyone = { nullptr };
-	object_ptr<Ui::Radioenum<Option>> _contacts = { nullptr };
-	object_ptr<Ui::Radioenum<Option>> _nobody = { nullptr };
-	object_ptr<Ui::FlatLabel> _warning = { nullptr };
-	object_ptr<Ui::FlatLabel> _exceptionsTitle = { nullptr };
-	object_ptr<Ui::WidgetSlideWrap<Ui::LinkButton>> _alwaysLink = { nullptr };
-	object_ptr<Ui::WidgetSlideWrap<Ui::LinkButton>> _neverLink = { nullptr };
-	object_ptr<Ui::FlatLabel> _exceptionsDescription = { nullptr };
-
-	std::vector<gsl::not_null<UserData*>> _alwaysUsers;
-	std::vector<gsl::not_null<UserData*>> _neverUsers;
+	const not_null<Window::SessionController*> _window;
+	std::unique_ptr<EditPrivacyController> _controller;
+	Value _value;
 
 };

@@ -1,59 +1,116 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "history/history_item.h"
+
+namespace HistoryView {
+class Service;
+} // namespace HistoryView
+
 struct HistoryServiceDependentData {
-	MsgId msgId = 0;
+	PeerId peerId = 0;
 	HistoryItem *msg = nullptr;
 	ClickHandlerPtr lnk;
+	MsgId msgId = 0;
+	MsgId topId = 0;
+	bool topicPost = false;
 };
 
-struct HistoryServicePinned : public RuntimeComponent<HistoryServicePinned>, public HistoryServiceDependentData {
+struct HistoryServicePinned
+: public RuntimeComponent<HistoryServicePinned, HistoryItem>
+, public HistoryServiceDependentData {
 };
 
-struct HistoryServiceGameScore : public RuntimeComponent<HistoryServiceGameScore>, public HistoryServiceDependentData {
+struct HistoryServiceTopicInfo
+: public RuntimeComponent<HistoryServiceTopicInfo, HistoryItem>
+, public HistoryServiceDependentData {
+	QString title;
+	DocumentId iconId = 0;
+	bool closed = false;
+	bool reopened = false;
+	bool reiconed = false;
+	bool renamed = false;
+};
+
+struct HistoryServiceGameScore
+: public RuntimeComponent<HistoryServiceGameScore, HistoryItem>
+, public HistoryServiceDependentData {
 	int score = 0;
 };
 
-struct HistoryServicePayment : public RuntimeComponent<HistoryServicePayment>, public HistoryServiceDependentData {
+struct HistoryServicePayment
+: public RuntimeComponent<HistoryServicePayment, HistoryItem>
+, public HistoryServiceDependentData {
+	QString slug;
 	QString amount;
+	ClickHandlerPtr invoiceLink;
+	bool recurringInit = false;
+	bool recurringUsed = false;
 };
 
-namespace HistoryLayout {
-class ServiceMessagePainter;
-} // namespace HistoryLayout
+struct HistoryServiceSelfDestruct
+: public RuntimeComponent<HistoryServiceSelfDestruct, HistoryItem> {
+	enum class Type {
+		Photo,
+		Video,
+	};
+	Type type = Type::Photo;
+	crl::time timeToLive = 0;
+	crl::time destructAt = 0;
+};
 
-class HistoryService : public HistoryItem, private HistoryItemInstantiated<HistoryService> {
+struct HistoryServiceOngoingCall
+: public RuntimeComponent<HistoryServiceOngoingCall, HistoryItem> {
+	CallId id = 0;
+	ClickHandlerPtr link;
+	rpl::lifetime lifetime;
+};
+
+struct HistoryServiceChatThemeChange
+: public RuntimeComponent<HistoryServiceChatThemeChange, HistoryItem> {
+	ClickHandlerPtr link;
+};
+
+struct HistoryServiceTTLChange
+: public RuntimeComponent<HistoryServiceTTLChange, HistoryItem> {
+	ClickHandlerPtr link;
+};
+
+namespace HistoryView {
+class ServiceMessagePainter;
+} // namespace HistoryView
+
+class HistoryService : public HistoryItem {
 public:
 	struct PreparedText {
-		QString text;
-		QList<ClickHandlerPtr> links;
+		TextWithEntities text;
+		std::vector<ClickHandlerPtr> links;
 	};
 
-	static gsl::not_null<HistoryService*> create(gsl::not_null<History*> history, const MTPDmessageService &message) {
-		return _create(history, message);
-	}
-	static gsl::not_null<HistoryService*> create(gsl::not_null<History*> history, MsgId msgId, QDateTime date, const PreparedText &message, MTPDmessage::Flags flags = 0, UserId from = 0, PhotoData *photo = nullptr) {
-		return _create(history, msgId, date, message, flags, from, photo);
-	}
+	HistoryService(
+		not_null<History*> history,
+		MsgId id,
+		const MTPDmessage &data,
+		MessageFlags localFlags);
+	HistoryService(
+		not_null<History*> history,
+		MsgId id,
+		const MTPDmessageService &data,
+		MessageFlags localFlags);
+	HistoryService(
+		not_null<History*> history,
+		MsgId id,
+		MessageFlags flags,
+		TimeId date,
+		PreparedText &&message,
+		PeerId from = 0,
+		PhotoData *photo = nullptr);
 
 	bool updateDependencyItem() override;
 	MsgId dependencyMsgId() const override {
@@ -69,65 +126,58 @@ public:
 		return true;
 	}
 
-	QRect countGeometry() const;
-
-	void draw(Painter &p, QRect clip, TextSelection selection, TimeMs ms) const override;
-	bool hasPoint(QPoint point) const override;
-	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
-
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
-		return _text.adjustSelection(selection, type);
-	}
-
-	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
-	void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
+	const std::vector<ClickHandlerPtr> &customTextLinks() const override;
 
 	void applyEdition(const MTPDmessageService &message) override;
+	crl::time getSelfDestructIn(crl::time now) override;
 
-	int32 addToOverview(AddToOverviewMethod method) override;
-	void eraseFromOverview() override;
+	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
-	bool needCheck() const override {
-		return false;
-	}
-	bool serviceMsg() const override {
+	void dependencyItemRemoved(HistoryItem *dependency) override;
+
+	bool needCheck() const override;
+	bool isService() const override {
 		return true;
 	}
-	TextWithEntities selectedText(TextSelection selection) const override;
-	QString inDialogsText() const override;
-	QString inReplyText() const override;
+	ItemPreview toPreview(ToPreviewOptions options) const override;
+	TextWithEntities inReplyText() const override;
+
+	MsgId replyToId() const override;
+	MsgId replyToTop() const override;
+	MsgId topicRootId() const override;
+	void setReplyFields(
+		MsgId replyTo,
+		MsgId replyToTop,
+		bool isForumPost) override;
+
+	std::unique_ptr<HistoryView::Element> createView(
+		not_null<HistoryView::ElementDelegate*> delegate,
+		HistoryView::Element *replacing = nullptr) override;
+
+	void setServiceText(PreparedText &&prepared);
 
 	~HistoryService();
 
 protected:
-	friend class HistoryLayout::ServiceMessagePainter;
+	friend class HistoryView::ServiceMessagePainter;
 
-	HistoryService(gsl::not_null<History*> history, const MTPDmessageService &message);
-	HistoryService(gsl::not_null<History*> history, MsgId msgId, QDateTime date, const PreparedText &message, MTPDmessage::Flags flags = 0, UserId from = 0, PhotoData *photo = 0);
-	friend class HistoryItemInstantiated<HistoryService>;
+	void markMediaAsReadHook() override;
 
-	void initDimensions() override;
-	int resizeContentGetHeight() override;
-
-	void setServiceText(const PreparedText &prepared);
-
-	QString fromLinkText() const {
-		return textcmdLink(1, _from->name);
-	};
-	ClickHandlerPtr fromLink() const {
-		return peerOpenClickHandler(_from);
-	};
+	TextWithEntities fromLinkText() const;
+	ClickHandlerPtr fromLink() const;
 
 	void removeMedia();
 
 private:
 	HistoryServiceDependentData *GetDependentData() {
-		if (auto pinned = Get<HistoryServicePinned>()) {
+		if (const auto pinned = Get<HistoryServicePinned>()) {
 			return pinned;
-		} else if (auto gamescore = Get<HistoryServiceGameScore>()) {
+		} else if (const auto gamescore = Get<HistoryServiceGameScore>()) {
 			return gamescore;
-		} else if (auto payment = Get<HistoryServicePayment>()) {
+		} else if (const auto payment = Get<HistoryServicePayment>()) {
 			return payment;
+		} else if (const auto info = Get<HistoryServiceTopicInfo>()) {
+			return info;
 		}
 		return nullptr;
 	}
@@ -136,31 +186,39 @@ private:
 	}
 	bool updateDependent(bool force = false);
 	void updateDependentText();
+	void updateText(PreparedText &&text);
 	void clearDependency();
+	void setupChatThemeChange();
+	void setupTTLChange();
 
+	void createFromMtp(const MTPDmessage &message);
 	void createFromMtp(const MTPDmessageService &message);
 	void setMessageByAction(const MTPmessageAction &action);
+	void setSelfDestruct(
+		HistoryServiceSelfDestruct::Type type,
+		int ttlSeconds);
+	void applyAction(const MTPMessageAction &action);
 
 	PreparedText preparePinnedText();
 	PreparedText prepareGameScoreText();
 	PreparedText preparePaymentSentText();
+	PreparedText prepareInvitedToCallText(
+		const QVector<MTPlong> &users,
+		CallId linkCallId);
+	PreparedText prepareCallScheduledText(
+		TimeId scheduleDate);
+
+	friend class HistoryView::Service;
+
+	std::vector<ClickHandlerPtr> _textLinks;
 
 };
 
-class HistoryJoined : public HistoryService, private HistoryItemInstantiated<HistoryJoined> {
-public:
-	static gsl::not_null<HistoryJoined*> create(gsl::not_null<History*> history, const QDateTime &inviteDate, gsl::not_null<UserData*> inviter, MTPDmessage::Flags flags) {
-		return _create(history, inviteDate, inviter, flags);
-	}
-
-protected:
-	HistoryJoined(gsl::not_null<History*> history, const QDateTime &inviteDate, gsl::not_null<UserData*> inviter, MTPDmessage::Flags flags);
-	using HistoryItemInstantiated<HistoryJoined>::_create;
-	friend class HistoryItemInstantiated<HistoryJoined>;
-
-private:
-	static PreparedText GenerateText(gsl::not_null<History*> history, gsl::not_null<UserData*> inviter);
-
-};
-
-extern TextParseOptions _historySrvOptions;
+[[nodiscard]] not_null<HistoryService*> GenerateJoinedMessage(
+	not_null<History*> history,
+	TimeId inviteDate,
+	not_null<UserData*> inviter,
+	bool viaRequest);
+[[nodiscard]] std::optional<bool> PeerHasThisCall(
+	not_null<PeerData*> peer,
+	CallId id);

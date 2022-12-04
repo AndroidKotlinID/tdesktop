@@ -1,49 +1,40 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/tabbed_section.h"
 
-#include "styles/style_chat_helpers.h"
 #include "chat_helpers/tabbed_selector.h"
+#include "window/window_session_controller.h"
+#include "styles/style_chat_helpers.h"
 
 namespace ChatHelpers {
 
-TabbedSection::TabbedSection(QWidget *parent, gsl::not_null<Window::Controller*> controller) : TabbedSection(parent, controller, object_ptr<TabbedSelector>(this, controller)) {
+object_ptr<Window::SectionWidget> TabbedMemento::createWidget(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		Window::Column column,
+		const QRect &geometry) {
+	auto result = object_ptr<TabbedSection>(parent, controller);
+	result->setGeometry(geometry);
+	return result;
 }
 
-TabbedSection::TabbedSection(QWidget *parent, gsl::not_null<Window::Controller*> controller, object_ptr<TabbedSelector> selector) : Window::AbstractSectionWidget(parent, controller)
-, _selector(std::move(selector)) {
-	resize(st::emojiPanWidth, st::emojiPanMaxHeight);
-
+TabbedSection::TabbedSection(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Window::SectionWidget(parent, controller)
+, _selector(controller->tabbedSelector()) {
 	_selector->setParent(this);
 	_selector->setRoundRadius(0);
 	_selector->setGeometry(rect());
 	_selector->showStarted();
 	_selector->show();
-	connect(_selector, &TabbedSelector::cancelled, this, [this] {
-		if (_cancelledCallback) {
-			_cancelledCallback();
-		}
-	});
-	_selector->setAfterShownCallback(base::lambda<void(SelectorTab)>());
-	_selector->setBeforeHidingCallback(base::lambda<void(SelectorTab)>());
+	_selector->setAfterShownCallback(nullptr);
+	_selector->setBeforeHidingCallback(nullptr);
 
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
 }
@@ -60,25 +51,27 @@ void TabbedSection::resizeEvent(QResizeEvent *e) {
 	_selector->setGeometry(rect());
 }
 
-object_ptr<TabbedSelector> TabbedSection::takeSelector() {
-	_selector->beforeHiding();
-	return std::move(_selector);
+void TabbedSection::showFinishedHook() {
+	afterShown();
 }
 
-QPointer<TabbedSelector> TabbedSection::getSelector() const {
-	return _selector.data();
+bool TabbedSection::showInternal(
+		not_null<Window::SectionMemento*> memento,
+		const Window::SectionShow &params) {
+	return false;
 }
 
-void TabbedSection::stickersInstalled(uint64 setId) {
-	_selector->stickersInstalled(setId);
+bool TabbedSection::floatPlayerHandleWheelEvent(QEvent *e) {
+	return _selector->floatPlayerHandleWheelEvent(e);
 }
 
-bool TabbedSection::wheelEventFromFloatPlayer(QEvent *e, Window::Column myColumn, Window::Column playerColumn) {
-	return _selector->wheelEventFromFloatPlayer(e);
+QRect TabbedSection::floatPlayerAvailableRect() {
+	return _selector->floatPlayerAvailableRect();
 }
 
-QRect TabbedSection::rectForFloatPlayer(Window::Column myColumn, Window::Column playerColumn) {
-	return _selector->rectForFloatPlayer();
+TabbedSection::~TabbedSection() {
+	beforeHiding();
+	controller()->takeTabbedSelectorOwnershipFrom(this);
 }
 
 } // namespace ChatHelpers

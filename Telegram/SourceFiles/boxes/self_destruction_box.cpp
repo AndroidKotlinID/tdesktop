@@ -1,81 +1,153 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/self_destruction_box.h"
 
 #include "lang/lang_keys.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
+#include "apiwrap.h"
+#include "api/api_self_destruct.h"
+#include "api/api_authorizations.h"
+#include "main/main_session.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 
+namespace {
+
+using Type = SelfDestructionBox::Type;
+
+[[nodiscard]] std::vector<int> Values(Type type) {
+	switch (type) {
+	case Type::Account: return { 30, 90, 180, 365 };
+	case Type::Sessions: return { 7, 30, 90, 180, 365 };
+	}
+	Unexpected("SelfDestructionBox::Type in Values.");
+}
+
+} // namespace
+
+SelfDestructionBox::SelfDestructionBox(
+	QWidget*,
+	not_null<Main::Session*> session,
+	Type type,
+	rpl::producer<int> preloaded)
+: _type(type)
+, _session(session)
+, _ttlValues(Values(type))
+, _loading(
+		this,
+		tr::lng_contacts_loading(tr::now),
+		st::membersAbout) {
+	std::move(
+		preloaded
+	) | rpl::take(
+		1
+	) | rpl::start_with_next([=](int days) {
+		gotCurrent(days);
+	}, lifetime());
+}
+
+void SelfDestructionBox::gotCurrent(int days) {
+	Expects(!_ttlValues.empty());
+
+	_loading.destroy();
+
+	auto daysAdjusted = _ttlValues[0];
+	for (const auto value : _ttlValues) {
+		if (qAbs(days - value) < qAbs(days - daysAdjusted)) {
+			daysAdjusted = value;
+		}
+	}
+	_ttlGroup = std::make_shared<Ui::RadiobuttonGroup>(daysAdjusted);
+
+	if (_prepared) {
+		showContent();
+	}
+}
+
+void SelfDestructionBox::showContent() {
+	auto y = st::boxOptionListPadding.top();
+	_description.create(
+		this,
+		(_type == Type::Account
+			? tr::lng_self_destruct_description(tr::now)
+			: tr::lng_self_destruct_sessions_description(tr::now)),
+		st::boxLabel);
+	_description->moveToLeft(st::boxPadding.left(), y);
+	y += _description->height() + st::boxMediumSkip;
+
+	for (const auto value : _ttlValues) {
+		const auto button = Ui::CreateChild<Ui::Radiobutton>(
+			this,
+			_ttlGroup,
+			value,
+			DaysLabel(value),
+			st::autolockButton);
+		button->moveToLeft(st::boxPadding.left(), y);
+		y += button->heightNoMargins() + st::boxOptionListSkip;
+	}
+	showChildren();
+
+	clearButtons();
+	addButton(tr::lng_settings_save(), [=] {
+		switch (_type) {
+		case Type::Account:
+			_session->api().selfDestruct().update(_ttlGroup->value());
+			break;
+		case Type::Sessions:
+			_session->api().authorizations().updateTTL(_ttlGroup->value());
+			break;
+		}
+
+		closeBox();
+	});
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+}
+
+QString SelfDestructionBox::DaysLabel(int days) {
+	return !days
+		? QString()
+		: (days > 364)
+		? tr::lng_years(tr::now, lt_count, days / 365)
+		: (days > 25)
+		? tr::lng_months(tr::now, lt_count, std::max(days / 30, 1))
+		: tr::lng_weeks(tr::now, lt_count, std::max(days / 7, 1));
+}
+
 void SelfDestructionBox::prepare() {
-	setTitle(langFactory(lng_self_destruct_title));
+	setTitle((_type == Type::Account
+		? tr::lng_self_destruct_title()
+		: tr::lng_self_destruct_sessions_title()));
 
-	_ttlValues = { 30, 90, 180, 365 };
-
-	auto fake = object_ptr<Ui::FlatLabel>(this, lang(lng_self_destruct_description), Ui::FlatLabel::InitType::Simple, st::boxLabel);
-	auto boxHeight = st::boxOptionListPadding.top()
+	auto fake = object_ptr<Ui::FlatLabel>(
+		this,
+		(_type == Type::Account
+			? tr::lng_self_destruct_description(tr::now)
+			: tr::lng_self_destruct_sessions_description(tr::now)),
+		st::boxLabel);
+	const auto boxHeight = st::boxOptionListPadding.top()
 		+ fake->height() + st::boxMediumSkip
-		+ _ttlValues.size() * (st::langsButton.height + st::boxOptionListSkip) - st::boxOptionListSkip
+		+ (_ttlValues.size()
+			* (st::defaultRadio.diameter + st::boxOptionListSkip))
+		- st::boxOptionListSkip
 		+ st::boxOptionListPadding.bottom() + st::boxPadding.bottom();
 	fake.destroy();
 
 	setDimensions(st::boxWidth, boxHeight);
 
-	auto loading = object_ptr<Ui::FlatLabel>(this, lang(lng_contacts_loading), Ui::FlatLabel::InitType::Simple, st::membersAbout);
-	loading->moveToLeft((st::boxWidth - loading->width()) / 2, boxHeight / 3);
+	addButton(tr::lng_cancel(), [this] { closeBox(); });
 
-	addButton(langFactory(lng_cancel), [this] { closeBox(); });
-
-	request(MTPaccount_GetAccountTTL()).done([this, loading = std::move(loading)](const MTPAccountDaysTTL &result) mutable {
-		Expects(result.type() == mtpc_accountDaysTTL);
-		Expects(!_ttlValues.empty());
-
-		loading.destroy();
-		auto y = st::boxOptionListPadding.top();
-		_description.create(this, lang(lng_self_destruct_description), Ui::FlatLabel::InitType::Simple, st::boxLabel);
-		_description->moveToLeft(st::boxPadding.left(), y);
-		y += _description->height() + st::boxMediumSkip;
-
-		auto current = result.c_accountDaysTTL().vdays.v;
-		auto currentAdjusted = _ttlValues[0];
-		for (auto days : _ttlValues) {
-			if (qAbs(current - days) < qAbs(current - currentAdjusted)) {
-				currentAdjusted = days;
-			}
-		}
-		auto group = std::make_shared<Ui::RadiobuttonGroup>(currentAdjusted);
-		auto count = int(_ttlValues.size());
-		_options.reserve(count);
-		for (auto days : _ttlValues) {
-			_options.emplace_back(this, group, days, (days > 364) ? lng_self_destruct_years(lt_count, days / 365) : lng_self_destruct_months(lt_count, qMax(days / 30, 1)), st::langsButton);
-			_options.back()->moveToLeft(st::boxPadding.left(), y);
-			y += _options.back()->heightNoMargins() + st::boxOptionListSkip;
-		}
-		showChildren();
-
-		clearButtons();
-		addButton(langFactory(lng_settings_save), [this, group] {
-			MTP::send(MTPaccount_SetAccountTTL(MTP_accountDaysTTL(MTP_int(group->value()))));
-			closeBox();
-		});
-		addButton(langFactory(lng_cancel), [this] { closeBox(); });
-	}).send();
+	if (_loading) {
+		_loading->moveToLeft(
+			(st::boxWidth - _loading->width()) / 2,
+			boxHeight / 3);
+		_prepared = true;
+	} else {
+		showContent();
+	}
 }

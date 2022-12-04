@@ -1,99 +1,29 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#include "platform/mac/window_title_mac.h"
+#include "platform/platform_window_title.h"
 
-#include "mainwindow.h"
-#include "ui/widgets/shadow.h"
+#include "ui/image/image_prepare.h"
+#include "ui/painter.h"
+#include "core/application.h"
 #include "styles/style_window.h"
-#include "styles/style_mediaview.h"
-#include "platform/platform_main_window.h"
+#include "styles/style_media_view.h"
+#include "window/window_controller.h"
 
 #include <Cocoa/Cocoa.h>
-#include <CoreFoundation/CFURL.h>
 
 namespace Platform {
 
-TitleWidget::TitleWidget(MainWindow *parent, int height) : Window::TitleWidget(parent)
-, _shadow(this, st::titleShadow) {
-	setAttribute(Qt::WA_OpaquePaintEvent);
-	resize(width(), height);
-
-#ifndef OS_MAC_OLD
-	QStringList families = { qsl(".SF NS Text"), qsl("Helvetica Neue") };
-	for (auto family : families) {
-		_font.setFamily(family);
-		if (QFontInfo(_font).family() == _font.family()) {
-			break;
-		}
-	}
-#endif // OS_MAC_OLD
-
-	if (QFontInfo(_font).family() == _font.family()) {
-		_font.setPixelSize((height * 15) / 24);
-	} else {
-		_font = st::normalFont;
-	}
-
-	subscribe(Global::RefUnreadCounterUpdate(), [this] { update(); });
-}
-
-void TitleWidget::paintEvent(QPaintEvent *e) {
-	Painter p(this);
-
-	auto active = isActiveWindow();
-	p.fillRect(rect(), active ? st::titleBgActive : st::titleBg);
-
-	p.setFont(_font);
-	p.setPen(active ? st::titleFgActive : st::titleFg);
-	p.drawText(rect(), static_cast<MainWindow*>(parentWidget())->titleText(), style::al_center);
-}
-
-void TitleWidget::resizeEvent(QResizeEvent *e) {
-	_shadow->setGeometry(0, height() - st::lineWidth, width(), st::lineWidth);
-}
-
-void TitleWidget::mouseDoubleClickEvent(QMouseEvent *e) {
-	auto window = parentWidget();
-	if (window->windowState() == Qt::WindowMaximized) {
-		window->setWindowState(Qt::WindowNoState);
-	} else {
-		window->setWindowState(Qt::WindowMaximized);
-	}
-}
-
-object_ptr<Window::TitleWidget> CreateTitleWidget(QWidget *parent) {
-	if (auto window = qobject_cast<Platform::MainWindow*>(parent)) {
-		if (auto height = window->getCustomTitleHeight()) {
-			return object_ptr<TitleWidget>(window, height);
-		}
-	}
-	return { nullptr };
-}
-
 // All the window decorations preview is done without taking cScale() into
-// account, with dbisOne scale and without "px" dimensions, because thats
+// account, with 100% scale and without "px" dimensions, because thats
 // how it will look in real launched macOS app.
 int PreviewTitleHeight() {
-	if (auto window = qobject_cast<Platform::MainWindow*>(App::wnd())) {
-		if (auto height = window->getCustomTitleHeight()) {
+	if (auto window = Core::App().primaryWindow()) {
+		if (auto height = window->widget()->getCustomTitleHeight()) {
 			return height;
 		}
 	}
@@ -123,23 +53,27 @@ void PreviewWindowTitle(Painter &p, const style::palette &palette, QRect body, i
 	p.fillRect(titleRect, st::titleBgActive[palette]);
 	p.fillRect(titleRect.x(), titleRect.y() + titleRect.height() - st::lineWidth, titleRect.width(), st::lineWidth, st::titleShadow[palette]);
 
-	auto useSystemFont = false;
 	QFont font;
-#ifndef OS_MAC_OLD
-	QStringList families = { qsl(".SF NS Text"), qsl("Helvetica Neue") };
+	const auto families = QStringList{
+		u".AppleSystemUIFont"_q,
+		u".SF NS Text"_q,
+		u"Helvetica Neue"_q,
+	};
 	for (auto family : families) {
 		font.setFamily(family);
 		if (QFontInfo(font).family() == font.family()) {
-			useSystemFont = true;
 			break;
 		}
 	}
-#endif // OS_MAC_OLD
 
-	if (useSystemFont) {
-		font.setPixelSize((titleHeight * 15) / 24);
+	if (QFontInfo(font).family() != font.family()) {
+		font = st::semiboldFont;
+		font.setPixelSize(13);
+	} else if (font.family() == u".AppleSystemUIFont"_q) {
+		font.setBold(true);
+		font.setPixelSize(13);
 	} else {
-		font = st::normalFont;
+		font.setPixelSize((titleHeight * 15) / 24);
 	}
 
 	p.setPen(st::titleFgActive[palette]);
@@ -194,12 +128,17 @@ void PreviewWindowFramePaint(QImage &preview, const style::palette &palette, QRe
 	corners[1] = roundMask.copy(retinaRadius, 0, retinaRadius, retinaRadius);
 	corners[2] = roundMask.copy(0, retinaRadius, retinaRadius, retinaRadius);
 	corners[3] = roundMask.copy(retinaRadius, retinaRadius, retinaRadius, retinaRadius);
-	QImage *cornersPointers[] = { &corners[0], &corners[1], &corners[2], &corners[3] };
-	auto rounded = preview.copy(inner.x() * retina, inner.y() * retina, inner.width() * retina, inner.height() * retina);
-	Images::prepareRound(rounded, cornersPointers);
+	auto rounded = Images::Round(
+		preview.copy(
+			inner.x() * retina,
+			inner.y() * retina,
+			inner.width() * retina,
+			inner.height() * retina),
+			corners);
+	rounded.setDevicePixelRatio(cRetinaFactor());
 	preview.fill(st::themePreviewBg->c);
 
-	auto topLeft = st::macWindowShadowTopLeft.instance(QColor(0, 0, 0), dbisOne);
+	auto topLeft = st::macWindowShadowTopLeft.instance(QColor(0, 0, 0), 100);
 	auto topRight = topLeft.mirrored(true, false);
 	auto bottomLeft = topLeft.mirrored(false, true);
 	auto bottomRight = bottomLeft.mirrored(true, false);

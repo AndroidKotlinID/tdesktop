@@ -1,42 +1,53 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "profile/profile_back_button.h"
 
-#include "window/top_bar_widget.h"
+//#include "history/view/history_view_top_bar_widget.h"
+#include "main/main_session.h"
+#include "data/data_session.h"
+#include "ui/painter.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
 #include "styles/style_profile.h"
+#include "styles/style_info.h"
 
 namespace Profile {
 
-BackButton::BackButton(QWidget *parent, const QString &text) : Ui::AbstractButton(parent)
-, _text(text.toUpper()) {
+BackButton::BackButton(
+	QWidget *parent,
+	not_null<Main::Session*> session,
+	const QString &text,
+	rpl::producer<bool> oneColumnValue)
+: Ui::AbstractButton(parent)
+, _session(session)
+, _text(text) {
 	setCursor(style::cur_pointer);
 
-	subscribe(Adaptive::Changed(), [this] { updateAdaptiveLayout(); });
-	updateAdaptiveLayout();
+	std::move(
+		oneColumnValue
+	) | rpl::start_with_next([=](bool oneColumn) {
+		if (!oneColumn) {
+			_unreadBadgeLifetime.destroy();
+		} else if (!_unreadBadgeLifetime) {
+			_session->data().unreadBadgeChanges(
+			) | rpl::start_with_next([=] {
+				rtlupdate(
+					0,
+					0,
+					st::titleUnreadCounterRight,
+					st::titleUnreadCounterTop);
+			}, _unreadBadgeLifetime);
+		}
+	}, lifetime());
 }
 
 void BackButton::setText(const QString &text) {
-	_text = text.toUpper();
+	_text = text;
 	update();
 }
 
@@ -53,23 +64,11 @@ void BackButton::paintEvent(QPaintEvent *e) {
 	p.setFont(st::topBarButton.font);
 	p.setPen(st::topBarButton.textFg);
 	p.drawTextLeft(st::topBarArrowPadding.left(), st::topBarButton.padding.top() + st::topBarButton.textTop, width(), _text);
-
-	Window::TopBarWidget::paintUnreadCounter(p, width());
 }
 
 void BackButton::onStateChanged(State was, StateChangeSource source) {
 	if (isDown() && !(was & StateFlag::Down)) {
-		emit clicked();
-	}
-}
-
-void BackButton::updateAdaptiveLayout() {
-	if (!Adaptive::OneColumn()) {
-		unsubscribe(base::take(_unreadCounterSubscription));
-	} else if (!_unreadCounterSubscription) {
-		_unreadCounterSubscription = subscribe(Global::RefUnreadCounterUpdate(), [this] {
-			rtlupdate(0, 0, st::titleUnreadCounterRight, st::titleUnreadCounterTop);
-		});
+		clicked(Qt::KeyboardModifiers(), Qt::LeftButton);
 	}
 }
 

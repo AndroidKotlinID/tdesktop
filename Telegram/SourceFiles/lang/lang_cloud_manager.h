@@ -1,27 +1,14 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "mtproto/sender.h"
-#include "base/weak_unique_ptr.h"
+#include "base/weak_ptr.h"
 
 namespace MTP {
 class Instance;
@@ -30,57 +17,65 @@ class Instance;
 namespace Lang {
 
 class Instance;
+enum class Pack;
+struct Language;
 
-class CloudManager : public base::enable_weak_from_this, private MTP::Sender, private base::Subscriber {
+Language ParseLanguage(const MTPLangPackLanguage &data);
+
+class CloudManager : public base::has_weak_ptr {
 public:
-	CloudManager(Instance &langpack, gsl::not_null<MTP::Instance*> mtproto);
+	explicit CloudManager(Instance &langpack);
 
-	struct Language {
-		QString id;
-		QString name;
-		QString nativeName;
-	};
-	using Languages = QVector<Language>;
+	using Languages = std::vector<Language>;
 
 	void requestLanguageList();
-	Languages languageList() const {
+	const Languages &languageList() const {
 		return _languages;
 	}
-	base::Observable<void> &languageListChanged() {
-		return _languagesChanged;
-	}
-	void requestLangPackDifference();
+	[[nodiscard]] rpl::producer<> languageListChanged() const;
+	[[nodiscard]] rpl::producer<> firstLanguageSuggestion() const;
+	void requestLangPackDifference(const QString &langId);
 	void applyLangPackDifference(const MTPLangPackDifference &difference);
+	void setCurrentVersions(int version, int baseVersion);
 
 	void resetToDefault();
-	void switchToLanguage(QString id);
+	void switchWithWarning(const QString &id);
+	void switchToLanguage(const QString &id);
+	void switchToLanguage(const Language &data);
 	void switchToTestLanguage();
 	void setSuggestedLanguage(const QString &langCode);
 	QString suggestedLanguage() const {
 		return _suggestedLanguage;
 	}
-	base::Observable<void> &firstLanguageSuggestion() {
-		return _firstLanguageSuggestion;
-	}
 
 private:
+	mtpRequestId &packRequestId(Pack pack);
+	mtpRequestId packRequestId(Pack pack) const;
+	Pack packTypeFromId(const QString &id) const;
+	void requestLangPackDifference(Pack pack);
 	bool canApplyWithoutRestart(const QString &id) const;
 	void performSwitchToCustom();
-	void performSwitch(const QString &id);
-	void performSwitchAndRestart(const QString &id);
+	void performSwitch(const Language &data);
+	void performSwitchAndAddToRecent(const Language &data);
+	void performSwitchAndRestart(const Language &data);
+	void restartAfterSwitch();
 	void offerSwitchLangPack();
 	bool showOfferSwitchBox();
-	QString findOfferedLanguageName();
+	Language findOfferedLanguage() const;
 
-	bool needToApplyLangPack(const QString &id);
-	void applyLangPackData(const MTPDlangPackDifference &data);
-	void switchLangPackId(const QString &id);
-	void changeIdAndReInitConnection(const QString &id);
+	void requestLanguageAndSwitch(const QString &id, bool warning);
+	void applyLangPackData(Pack pack, const MTPDlangPackDifference &data);
+	void switchLangPackId(const Language &data);
+	void changeIdAndReInitConnection(const Language &data);
 
+	void sendSwitchingToLanguageRequest();
+	void resendRequests();
+
+	std::optional<MTP::Sender> _api;
 	Instance &_langpack;
 	Languages _languages;
-	base::Observable<void> _languagesChanged;
 	mtpRequestId _langPackRequestId = 0;
+	mtpRequestId _langPackBaseRequestId = 0;
 	mtpRequestId _languagesRequestId = 0;
 
 	QString _offerSwitchToId;
@@ -88,19 +83,19 @@ private:
 
 	QString _suggestedLanguage;
 	bool _languageWasSuggested = false;
-	base::Observable<void> _firstLanguageSuggestion;
 
 	mtpRequestId _switchingToLanguageRequest = 0;
+	QString _switchingToLanguageId;
+	bool _switchingToLanguageWarning = false;
+
+	mtpRequestId _getKeysForSwitchRequestId = 0;
+
+	rpl::event_stream<> _languageListChanged;
+	rpl::event_stream<> _firstLanguageSuggestion;
+
+	rpl::lifetime _lifetime;
 
 };
-
-inline bool operator==(const CloudManager::Language &a, const CloudManager::Language &b) {
-	return (a.id == b.id) && (a.name == b.name);
-}
-
-inline bool operator!=(const CloudManager::Language &a, const CloudManager::Language &b) {
-	return !(a == b);
-}
 
 CloudManager &CurrentCloudManager();
 

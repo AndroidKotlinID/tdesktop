@@ -1,97 +1,172 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "mtproto/sender.h"
-#include "calls/calls_call.h"
 
-namespace Media {
-namespace Audio {
+namespace crl {
+class semaphore;
+} // namespace crl
+
+namespace Platform {
+enum class PermissionType;
+} // namespace Platform
+
+namespace Media::Audio {
 class Track;
-} // namespace Audio
-} // namespace Media
+} // namespace Media::Audio
+
+namespace Main {
+class Session;
+} // namespace Main
+
+namespace Ui {
+class Show;
+} // namespace Ui
+
+namespace Calls::Group {
+struct JoinInfo;
+class Panel;
+class ChooseJoinAsProcess;
+class StartRtmpProcess;
+} // namespace Calls::Group
+
+namespace tgcalls {
+class VideoCaptureInterface;
+} // namespace tgcalls
 
 namespace Calls {
 
+class Call;
+enum class CallType;
+class GroupCall;
 class Panel;
+struct DhConfig;
 
-class Instance : private MTP::Sender, private Call::Delegate, private base::Subscriber {
-public:
-	Instance();
-
-	void startOutgoingCall(gsl::not_null<UserData*> user);
-	void handleUpdate(const MTPDupdatePhoneCall &update);
-	void showInfoPanel(gsl::not_null<Call*> call);
-
-	base::Observable<Call*> &currentCallChanged() {
-		return _currentCallChanged;
-	}
-
-	base::Observable<FullMsgId> &newServiceMessage() {
-		return _newServiceMessage;
-	}
-
-	bool isQuitPrevent();
-
-	~Instance();
-
-private:
-	gsl::not_null<Call::Delegate*> getCallDelegate() {
-		return static_cast<Call::Delegate*>(this);
-	}
-	DhConfig getDhConfig() const override {
-		return _dhConfig;
-	}
-	void callFinished(gsl::not_null<Call*> call) override;
-	void callFailed(gsl::not_null<Call*> call) override;
-	void callRedial(gsl::not_null<Call*> call) override;
-	using Sound = Call::Delegate::Sound;
-	void playSound(Sound sound) override;
-	void createCall(gsl::not_null<UserData*> user, Call::Type type);
-	void destroyCall(gsl::not_null<Call*> call);
-	void destroyCurrentPanel();
-
-	void refreshDhConfig();
-	void refreshServerConfig();
-
-	bool alreadyInCall();
-	void handleCallUpdate(const MTPPhoneCall &call);
-
-	DhConfig _dhConfig;
-
-	TimeMs _lastServerConfigUpdateTime = 0;
-	mtpRequestId _serverConfigRequestId = 0;
-
-	std::unique_ptr<Call> _currentCall;
-	std::unique_ptr<Panel> _currentCallPanel;
-	base::Observable<Call*> _currentCallChanged;
-	base::Observable<FullMsgId> _newServiceMessage;
-	std::vector<QPointer<Panel>> _pendingPanels;
-
-	std::unique_ptr<Media::Audio::Track> _callConnectingTrack;
-	std::unique_ptr<Media::Audio::Track> _callEndedTrack;
-	std::unique_ptr<Media::Audio::Track> _callBusyTrack;
-
+struct StartGroupCallArgs {
+	enum class JoinConfirm {
+		None,
+		IfNowInAnother,
+		Always,
+	};
+	QString joinHash;
+	JoinConfirm confirm = JoinConfirm::IfNowInAnother;
+	bool scheduleNeeded = false;
 };
 
-Instance &Current();
+class Instance final : public base::has_weak_ptr {
+public:
+	Instance();
+	~Instance();
+
+	void startOutgoingCall(not_null<UserData*> user, bool video);
+	void startOrJoinGroupCall(
+		std::shared_ptr<Ui::Show> show,
+		not_null<PeerData*> peer,
+		StartGroupCallArgs args);
+	void showStartWithRtmp(
+		std::shared_ptr<Ui::Show> show,
+		not_null<PeerData*> peer);
+	void handleUpdate(
+		not_null<Main::Session*> session,
+		const MTPUpdate &update);
+
+	// Called by Data::GroupCall when it is appropriate by the 'version'.
+	void applyGroupCallUpdateChecked(
+		not_null<Main::Session*> session,
+		const MTPUpdate &update);
+
+	void showInfoPanel(not_null<Call*> call);
+	void showInfoPanel(not_null<GroupCall*> call);
+	[[nodiscard]] Call *currentCall() const;
+	[[nodiscard]] rpl::producer<Call*> currentCallValue() const;
+	[[nodiscard]] GroupCall *currentGroupCall() const;
+	[[nodiscard]] rpl::producer<GroupCall*> currentGroupCallValue() const;
+	[[nodiscard]] bool inCall() const;
+	[[nodiscard]] bool inGroupCall() const;
+	[[nodiscard]] bool hasActivePanel(
+		not_null<Main::Session*> session) const;
+	bool activateCurrentCall(const QString &joinHash = QString());
+	bool minimizeCurrentActiveCall();
+	bool closeCurrentActiveCall();
+	[[nodiscard]] auto getVideoCapture(
+		std::optional<QString> deviceId = std::nullopt,
+		bool isScreenCapture = false)
+		-> std::shared_ptr<tgcalls::VideoCaptureInterface>;
+	void requestPermissionsOrFail(Fn<void()> onSuccess, bool video = true);
+
+	void setCurrentAudioDevice(bool input, const QString &deviceId);
+
+	[[nodiscard]] FnMut<void()> addAsyncWaiter();
+
+	[[nodiscard]] bool isQuitPrevent();
+
+private:
+	class Delegate;
+	friend class Delegate;
+
+	not_null<Media::Audio::Track*> ensureSoundLoaded(const QString &key);
+	void playSoundOnce(const QString &key);
+
+	void createCall(not_null<UserData*> user, CallType type, bool video);
+	void destroyCall(not_null<Call*> call);
+
+	void createGroupCall(
+		Group::JoinInfo info,
+		const MTPInputGroupCall &inputCall);
+	void destroyGroupCall(not_null<GroupCall*> call);
+	void confirmLeaveCurrent(
+		std::shared_ptr<Ui::Show> show,
+		not_null<PeerData*> peer,
+		StartGroupCallArgs args,
+		Fn<void(StartGroupCallArgs)> confirmed);
+
+	void requestPermissionOrFail(
+		Platform::PermissionType type,
+		Fn<void()> onSuccess);
+
+	void refreshDhConfig();
+	void refreshServerConfig(not_null<Main::Session*> session);
+	bytes::const_span updateDhConfig(const MTPmessages_DhConfig &data);
+
+	void destroyCurrentCall();
+	void handleCallUpdate(
+		not_null<Main::Session*> session,
+		const MTPPhoneCall &call);
+	void handleSignalingData(
+		not_null<Main::Session*> session,
+		const MTPDupdatePhoneCallSignalingData &data);
+	void handleGroupCallUpdate(
+		not_null<Main::Session*> session,
+		const MTPUpdate &update);
+
+	const std::unique_ptr<Delegate> _delegate;
+	const std::unique_ptr<DhConfig> _cachedDhConfig;
+
+	crl::time _lastServerConfigUpdateTime = 0;
+	base::weak_ptr<Main::Session> _serverConfigRequestSession;
+	std::weak_ptr<tgcalls::VideoCaptureInterface> _videoCapture;
+
+	std::unique_ptr<Call> _currentCall;
+	rpl::event_stream<Call*> _currentCallChanges;
+	std::unique_ptr<Panel> _currentCallPanel;
+
+	std::unique_ptr<GroupCall> _currentGroupCall;
+	rpl::event_stream<GroupCall*> _currentGroupCallChanges;
+	std::unique_ptr<Group::Panel> _currentGroupCallPanel;
+
+	base::flat_map<QString, std::unique_ptr<Media::Audio::Track>> _tracks;
+
+	const std::unique_ptr<Group::ChooseJoinAsProcess> _chooseJoinAs;
+	const std::unique_ptr<Group::StartRtmpProcess> _startWithRtmp;
+
+	base::flat_set<std::unique_ptr<crl::semaphore>> _asyncWaiters;
+
+};
 
 } // namespace Calls

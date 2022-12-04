@@ -1,29 +1,128 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/bot_keyboard.h"
 
+#include "core/click_handler_types.h"
+#include "history/history.h"
+#include "history/history_item_components.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
+#include "window/window_session_controller.h"
+#include "ui/cached_round_corners.h"
+#include "ui/painter.h"
+#include "api/api_bot.h"
 #include "styles/style_widgets.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
-BotKeyboard::BotKeyboard(QWidget *parent) : TWidget(parent)
+namespace {
+
+class Style : public ReplyKeyboard::Style {
+public:
+	Style(
+		not_null<BotKeyboard*> parent,
+		const style::BotKeyboardButton &st);
+
+	Images::CornersMaskRef buttonRounding(
+		Ui::BubbleRounding outer,
+		RectParts sides) const override;
+
+	void startPaint(QPainter &p, const Ui::ChatStyle *st) const override;
+	const style::TextStyle &textStyle() const override;
+	void repaint(not_null<const HistoryItem*> item) const override;
+
+protected:
+	void paintButtonBg(
+		QPainter &p,
+		const Ui::ChatStyle *st,
+		const QRect &rect,
+		Ui::BubbleRounding rounding,
+		float64 howMuchOver) const override;
+	void paintButtonIcon(
+		QPainter &p,
+		const Ui::ChatStyle *st,
+		const QRect &rect,
+		int outerWidth,
+		HistoryMessageMarkupButton::Type type) const override;
+	void paintButtonLoading(
+		QPainter &p,
+		const Ui::ChatStyle *st,
+		const QRect &rect) const override;
+	int minButtonWidth(HistoryMessageMarkupButton::Type type) const override;
+
+private:
+	not_null<BotKeyboard*> _parent;
+
+};
+
+Style::Style(
+	not_null<BotKeyboard*> parent,
+	const style::BotKeyboardButton &st)
+: ReplyKeyboard::Style(st), _parent(parent) {
+}
+
+void Style::startPaint(QPainter &p, const Ui::ChatStyle *st) const {
+	p.setPen(st::botKbColor);
+	p.setFont(st::botKbStyle.font);
+}
+
+const style::TextStyle &Style::textStyle() const {
+	return st::botKbStyle;
+}
+
+void Style::repaint(not_null<const HistoryItem*> item) const {
+	_parent->update();
+}
+
+Images::CornersMaskRef Style::buttonRounding(
+		Ui::BubbleRounding outer,
+		RectParts sides) const {
+	using namespace Images;
+	return CornersMaskRef(CornersMask(ImageRoundRadius::Small));
+}
+
+void Style::paintButtonBg(
+		QPainter &p,
+		const Ui::ChatStyle *st,
+		const QRect &rect,
+		Ui::BubbleRounding rounding,
+		float64 howMuchOver) const {
+	Ui::FillRoundRect(p, rect, st::botKbBg, Ui::BotKeyboardCorners);
+}
+
+void Style::paintButtonIcon(
+		QPainter &p,
+		const Ui::ChatStyle *st,
+		const QRect &rect,
+		int outerWidth,
+		HistoryMessageMarkupButton::Type type) const {
+	// Buttons with icons should not appear here.
+}
+
+void Style::paintButtonLoading(
+		QPainter &p,
+		const Ui::ChatStyle *st,
+		const QRect &rect) const {
+	// Buttons with loading progress should not appear here.
+}
+
+int Style::minButtonWidth(HistoryMessageMarkupButton::Type type) const {
+	int result = 2 * buttonPadding();
+	return result;
+}
+
+} // namespace
+
+BotKeyboard::BotKeyboard(
+	not_null<Window::SessionController*> controller,
+	QWidget *parent)
+: TWidget(parent)
+, _controller(controller)
 , _st(&st::botKbButton) {
 	setGeometry(0, 0, _st->margin, st::botKbScroll.deltat);
 	_height = st::botKbScroll.deltat;
@@ -39,42 +138,13 @@ void BotKeyboard::paintEvent(QPaintEvent *e) {
 	if (_impl) {
 		int x = rtl() ? st::botKbScroll.width : _st->margin;
 		p.translate(x, st::botKbScroll.deltat);
-		_impl->paint(p, width(), clip.translated(-x, -st::botKbScroll.deltat), getms());
+		_impl->paint(
+			p,
+			nullptr,
+			Ui::BubbleRounding(),
+			width(),
+			clip.translated(-x, -st::botKbScroll.deltat));
 	}
-}
-
-void BotKeyboard::Style::startPaint(Painter &p) const {
-	p.setPen(st::botKbColor);
-	p.setFont(st::botKbStyle.font);
-}
-
-const style::TextStyle &BotKeyboard::Style::textStyle() const {
-	return st::botKbStyle;
-}
-
-void BotKeyboard::Style::repaint(gsl::not_null<const HistoryItem*> item) const {
-	_parent->update();
-}
-
-int BotKeyboard::Style::buttonRadius() const {
-	return st::buttonRadius;
-}
-
-void BotKeyboard::Style::paintButtonBg(Painter &p, const QRect &rect, float64 howMuchOver) const {
-	App::roundRect(p, rect, st::botKbBg, BotKeyboardCorners);
-}
-
-void BotKeyboard::Style::paintButtonIcon(Painter &p, const QRect &rect, int outerWidth, HistoryMessageReplyMarkup::Button::Type type) const {
-	// Buttons with icons should not appear here.
-}
-
-void BotKeyboard::Style::paintButtonLoading(Painter &p, const QRect &rect) const {
-	// Buttons with loading progress should not appear here.
-}
-
-int BotKeyboard::Style::minButtonWidth(HistoryMessageReplyMarkup::Button::Type type) const {
-	int result = 2 * buttonPadding();
-	return result;
 }
 
 void BotKeyboard::mousePressEvent(QMouseEvent *e) {
@@ -94,11 +164,16 @@ void BotKeyboard::mouseReleaseEvent(QMouseEvent *e) {
 	updateSelected();
 
 	if (ClickHandlerPtr activated = ClickHandler::unpressed()) {
-		App::activateClickHandler(activated, e->button());
+		ActivateClickHandler(window(), activated, {
+			e->button(),
+			QVariant::fromValue(ClickHandlerContext{
+				.sessionWindow = base::make_weak(_controller),
+			})
+		});
 	}
 }
 
-void BotKeyboard::enterEventHook(QEvent *e) {
+void BotKeyboard::enterEventHook(QEnterEvent *e) {
 	_lastMousePos = QCursor::pos();
 	updateSelected();
 }
@@ -107,21 +182,59 @@ void BotKeyboard::leaveEventHook(QEvent *e) {
 	clearSelection();
 }
 
-bool BotKeyboard::moderateKeyActivate(int key) {
-	if (auto item = App::histItemById(_wasForMsgId)) {
-		if (auto markup = item->Get<HistoryMessageReplyMarkup>()) {
-			if (key >= Qt::Key_1 && key <= Qt::Key_9) {
-				int index = (key - Qt::Key_1);
-				if (!markup->rows.isEmpty() && index >= 0 && index < markup->rows.front().size()) {
-					App::activateBotCommand(item, 0, index);
+bool BotKeyboard::moderateKeyActivate(
+		int key,
+		Fn<ClickContext(FullMsgId)> context) {
+	const auto &data = _controller->session().data();
+
+	const auto botCommand = [](int key) {
+		if (key == Qt::Key_Q || key == Qt::Key_6) {
+			return u"/translate"_q;
+		} else if (key == Qt::Key_W || key == Qt::Key_5) {
+			return u"/eng"_q;
+		} else if (key == Qt::Key_3) {
+			return u"/pattern"_q;
+		} else if (key == Qt::Key_4) {
+			return u"/abuse"_q;
+		} else if (key == Qt::Key_0 || key == Qt::Key_E || key == Qt::Key_9) {
+			return u"/undo"_q;
+		} else if (key == Qt::Key_Plus
+				|| key == Qt::Key_QuoteLeft
+				|| key == Qt::Key_7) {
+			return u"/next"_q;
+		} else if (key == Qt::Key_Period
+				|| key == Qt::Key_S
+				|| key == Qt::Key_8) {
+			return u"/stats"_q;
+		}
+		return QString();
+	};
+
+	if (const auto item = data.message(_wasForMsgId)) {
+		if (const auto markup = item->Get<HistoryMessageReplyMarkup>()) {
+			if (key >= Qt::Key_1 && key <= Qt::Key_2) {
+				const auto index = int(key - Qt::Key_1);
+				if (!markup->data.rows.empty()
+					&& index >= 0
+					&& index < int(markup->data.rows.front().size())) {
+					Api::ActivateBotCommand(
+						context(
+							_wasForMsgId).other.value<ClickHandlerContext>(),
+						0,
+						index);
 					return true;
 				}
-			} else if (key == Qt::Key_Q) {
-				if (auto user = item->history()->peer->asUser()) {
-					if (user->botInfo && item->from() == user) {
-						App::sendBotCommand(user, user, qsl("/translate"));
-						return true;
+			} else if (const auto user = item->history()->peer->asUser()) {
+				if (user->isBot() && item->from() == user) {
+					const auto command = botCommand(key);
+					if (!command.isEmpty()) {
+						_sendCommandRequests.fire({
+							.peer = user,
+							.command = command,
+							.context = item->fullId(),
+						});
 					}
+					return true;
 				}
 			}
 		}
@@ -136,7 +249,7 @@ void BotKeyboard::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool activ
 
 void BotKeyboard::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) {
 	if (!_impl) return;
-	_impl->clickHandlerPressedChanged(p, pressed);
+	_impl->clickHandlerPressedChanged(p, pressed, Ui::BubbleRounding());
 }
 
 bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
@@ -144,27 +257,37 @@ bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
 		if (_wasForMsgId.msg) {
 			_maximizeSize = _singleUse = _forceReply = false;
 			_wasForMsgId = FullMsgId();
+			_placeholder = QString();
 			_impl = nullptr;
 			return true;
 		}
 		return false;
 	}
 
-	if (_wasForMsgId == FullMsgId(to->channelId(), to->id) && !force) {
+	const auto peerId = to->history()->peer->id;
+	if (_wasForMsgId == FullMsgId(peerId, to->id) && !force) {
 		return false;
 	}
 
-	_wasForMsgId = FullMsgId(to->channelId(), to->id);
+	_wasForMsgId = FullMsgId(peerId, to->id);
 
 	auto markupFlags = to->replyKeyboardFlags();
-	_forceReply = markupFlags & MTPDreplyKeyboardMarkup_ClientFlag::f_force_reply;
-	_maximizeSize = !(markupFlags & MTPDreplyKeyboardMarkup::Flag::f_resize);
-	_singleUse = _forceReply || (markupFlags & MTPDreplyKeyboardMarkup::Flag::f_single_use);
+	_forceReply = markupFlags & ReplyMarkupFlag::ForceReply;
+	_maximizeSize = !(markupFlags & ReplyMarkupFlag::Resize);
+	_singleUse = _forceReply || (markupFlags & ReplyMarkupFlag::SingleUse);
+
+	if (const auto markup = to->Get<HistoryMessageReplyMarkup>()) {
+		_placeholder = markup->data.placeholder;
+	} else {
+		_placeholder = QString();
+	}
 
 	_impl = nullptr;
 	if (auto markup = to->Get<HistoryMessageReplyMarkup>()) {
-		if (!markup->rows.isEmpty()) {
-			_impl.reset(new ReplyKeyboard(to, std::make_unique<Style>(this, *_st)));
+		if (!markup->data.rows.empty()) {
+			_impl = std::make_unique<ReplyKeyboard>(
+				to,
+				std::make_unique<Style>(this, *_st));
 		}
 	}
 
@@ -225,6 +348,10 @@ QPoint BotKeyboard::tooltipPos() const {
 	return _lastMousePos;
 }
 
+bool BotKeyboard::tooltipWindowActive() const {
+	return Ui::AppInFocus() && Ui::InFocusChain(window());
+}
+
 QString BotKeyboard::tooltipText() const {
 	if (ClickHandlerPtr lnk = ClickHandler::getActive()) {
 		return lnk->tooltip();
@@ -240,9 +367,16 @@ void BotKeyboard::updateSelected() {
 	auto p = mapFromGlobal(_lastMousePos);
 	auto x = rtl() ? st::botKbScroll.width : _st->margin;
 
-	auto link = _impl->getState(p - QPoint(x, _st->margin));
+	auto link = _impl->getLink(p - QPoint(x, _st->margin));
 	if (ClickHandler::setActive(link, this)) {
 		Ui::Tooltip::Hide();
 		setCursor(link ? style::cur_pointer : style::cur_default);
 	}
 }
+
+auto BotKeyboard::sendCommandRequests() const
+-> rpl::producer<Bot::SendCommandRequest> {
+	return _sendCommandRequests.events();
+}
+
+BotKeyboard::~BotKeyboard() = default;

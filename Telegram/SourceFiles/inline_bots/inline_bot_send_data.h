@@ -1,29 +1,21 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "core/basic_types.h"
-#include "structs.h"
-#include "mtproto/core_types.h"
 #include "history/history_location_manager.h"
+
+struct HistoryMessageMarkupData;
+
+namespace Main {
+class Session;
+} // namespace Main
+
+class History;
 
 namespace InlineBots {
 
@@ -36,26 +28,44 @@ namespace internal {
 // For each type of message that can be sent there will be a subclass.
 class SendData {
 public:
-	SendData() = default;
+	explicit SendData(not_null<Main::Session*> session) : _session(session) {
+	}
 	SendData(const SendData &other) = delete;
 	SendData &operator=(const SendData &other) = delete;
 	virtual ~SendData() = default;
 
+	[[nodiscard]] Main::Session &session() const {
+		return *_session;
+	}
+
 	virtual bool isValid() const = 0;
 
-	virtual void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const MTPReplyMarkup &markup) const = 0;
-	virtual QString getErrorOnSend(const Result *owner, History *history) const = 0;
+	virtual void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MessageFlags flags,
+		MsgId msgId,
+		PeerId fromId,
+		TimeId date,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		HistoryMessageMarkupData &&markup) const = 0;
+	virtual QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const = 0;
 
 	virtual bool hasLocationCoords() const {
 		return false;
 	}
-	virtual bool getLocationCoords(LocationCoords *outLocation) const {
-		return false;
+	virtual std::optional<Data::LocationPoint> getLocationPoint() const {
+		return std::nullopt;
 	}
 	virtual QString getLayoutTitle(const Result *owner) const;
 	virtual QString getLayoutDescription(const Result *owner) const;
+
+private:
+	not_null<Main::Session*> _session;
 
 };
 
@@ -64,34 +74,50 @@ public:
 // Only SendFile and SendPhoto work by their own.
 class SendDataCommon : public SendData {
 public:
-	struct SentMTPMessageFields {
-		MTPString text = MTP_string("");
-		MTPVector<MTPMessageEntity> entities = MTPnullEntities;
+	using SendData::SendData;
+
+	struct SentMessageFields {
+		TextWithEntities text;
 		MTPMessageMedia media = MTP_messageMediaEmpty();
 	};
-	virtual SentMTPMessageFields getSentMessageFields() const = 0;
+	virtual SentMessageFields getSentMessageFields() const = 0;
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MessageFlags flags,
+		MsgId msgId,
+		PeerId fromId,
+		TimeId date,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		HistoryMessageMarkupData &&markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 };
 
 // Plain text message.
 class SendText : public SendDataCommon {
 public:
-	SendText(const QString &message, const EntitiesInText &entities, bool/* noWebPage*/)
-		: _message(message)
-		, _entities(entities) {
+	SendText(
+		not_null<Main::Session*> session,
+		const QString &message,
+		const EntitiesInText &entities,
+		bool/* noWebPage*/)
+	: SendDataCommon(session)
+	, _message(message)
+	, _entities(entities) {
 	}
 
 	bool isValid() const override {
 		return !_message.isEmpty();
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 private:
 	QString _message;
@@ -102,58 +128,79 @@ private:
 // Message with geo location point media.
 class SendGeo : public SendDataCommon {
 public:
-	explicit SendGeo(const MTPDgeoPoint &point) : _location(point) {
+	SendGeo(
+		not_null<Main::Session*> session,
+		const MTPDgeoPoint &point)
+	: SendDataCommon(session)
+	, _location(point) {
+	}
+	SendGeo(
+		not_null<Main::Session*> session,
+		const MTPDgeoPoint &point,
+		int period,
+		std::optional<int> heading,
+		std::optional<int> proximityNotificationRadius)
+	: SendDataCommon(session)
+	, _location(point)
+	, _period(period)
+	, _heading(heading)
+	, _proximityNotificationRadius(proximityNotificationRadius){
 	}
 
 	bool isValid() const override {
 		return true;
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 	bool hasLocationCoords() const override {
 		return true;
 	}
-	bool getLocationCoords(LocationCoords *outLocation) const override {
-		t_assert(outLocation != nullptr);
-		*outLocation = _location;
-		return true;
+	std::optional<Data::LocationPoint> getLocationPoint() const override {
+		return _location;
 	}
 
 private:
-	LocationCoords _location;
+	Data::LocationPoint _location;
+	std::optional<int> _period;
+	std::optional<int> _heading;
+	std::optional<int> _proximityNotificationRadius;
 
 };
 
 // Message with venue media.
 class SendVenue : public SendDataCommon {
 public:
-	SendVenue(const MTPDgeoPoint &point, const QString &venueId,
-		const QString &provider, const QString &title, const QString &address)
-		: _location(point)
-		, _venueId(venueId)
-		, _provider(provider)
-		, _title(title)
-		, _address(address) {
+	SendVenue(
+		not_null<Main::Session*> session,
+		const MTPDgeoPoint &point,
+		const QString &venueId,
+		const QString &provider,
+		const QString &title,
+		const QString &address)
+	: SendDataCommon(session)
+	, _location(point)
+	, _venueId(venueId)
+	, _provider(provider)
+	, _title(title)
+	, _address(address) {
 	}
 
 	bool isValid() const override {
 		return true;
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 	bool hasLocationCoords() const override {
 		return true;
 	}
-	bool getLocationCoords(LocationCoords *outLocation) const override {
-		t_assert(outLocation != nullptr);
-		*outLocation = _location;
-		return true;
+	std::optional<Data::LocationPoint> getLocationPoint() const override {
+		return _location;
 	}
 
 private:
-	LocationCoords _location;
+	Data::LocationPoint _location;
 	QString _venueId, _provider, _title, _address;
 
 };
@@ -161,17 +208,22 @@ private:
 // Message with shared contact media.
 class SendContact : public SendDataCommon {
 public:
-	SendContact(const QString &firstName, const QString &lastName, const QString &phoneNumber)
-		: _firstName(firstName)
-		, _lastName(lastName)
-		, _phoneNumber(phoneNumber) {
+	SendContact(
+		not_null<Main::Session*> session,
+		const QString &firstName,
+		const QString &lastName,
+		const QString &phoneNumber)
+	: SendDataCommon(session)
+	, _firstName(firstName)
+	, _lastName(lastName)
+	, _phoneNumber(phoneNumber) {
 	}
 
 	bool isValid() const override {
 		return (!_firstName.isEmpty() || !_lastName.isEmpty()) && !_phoneNumber.isEmpty();
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 	QString getLayoutDescription(const Result *owner) const override;
 
@@ -183,70 +235,137 @@ private:
 // Message with photo.
 class SendPhoto : public SendData {
 public:
-	SendPhoto(PhotoData *photo, const QString &caption)
-		: _photo(photo)
-		, _caption(caption) {
+	SendPhoto(
+		not_null<Main::Session*> session,
+		PhotoData *photo,
+		const QString &message,
+		const EntitiesInText &entities)
+	: SendData(session)
+	, _photo(photo)
+	, _message(message)
+	, _entities(entities) {
 	}
 
 	bool isValid() const override {
 		return _photo != nullptr;
 	}
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MessageFlags flags,
+		MsgId msgId,
+		PeerId fromId,
+		TimeId date,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		HistoryMessageMarkupData &&markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 private:
 	PhotoData *_photo;
-	QString _caption;
+	QString _message;
+	EntitiesInText _entities;
 
 };
 
 // Message with file.
 class SendFile : public SendData {
 public:
-	SendFile(DocumentData *document, const QString &caption)
-		: _document(document)
-		, _caption(caption) {
+	SendFile(
+		not_null<Main::Session*> session,
+		DocumentData *document,
+		const QString &message,
+		const EntitiesInText &entities)
+	: SendData(session)
+	, _document(document)
+	, _message(message)
+	, _entities(entities) {
 	}
 
 	bool isValid() const override {
 		return _document != nullptr;
 	}
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MessageFlags flags,
+		MsgId msgId,
+		PeerId fromId,
+		TimeId date,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		HistoryMessageMarkupData &&markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 private:
 	DocumentData *_document;
-	QString _caption;
+	QString _message;
+	EntitiesInText _entities;
 
 };
 
 // Message with game.
 class SendGame : public SendData {
 public:
-	SendGame(GameData *game)
-		: _game(game) {
+	SendGame(not_null<Main::Session*> session, GameData *game)
+	: SendData(session)
+	, _game(game) {
 	}
 
 	bool isValid() const override {
 		return _game != nullptr;
 	}
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MessageFlags flags,
+		MsgId msgId,
+		PeerId fromId,
+		TimeId date,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		HistoryMessageMarkupData &&markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 private:
 	GameData *_game;
+
+};
+
+class SendInvoice : public SendDataCommon {
+public:
+	SendInvoice(
+		not_null<Main::Session*> session,
+		MTPMessageMedia media)
+	: SendDataCommon(session)
+	, _media(media) {
+	}
+
+	bool isValid() const override {
+		return true;
+	}
+
+	SentMessageFields getSentMessageFields() const override;
+
+	QString getLayoutDescription(const Result *owner) const override;
+
+private:
+	MTPMessageMedia _media;
 
 };
 

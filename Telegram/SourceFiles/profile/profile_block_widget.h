@@ -1,43 +1,28 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/observer.h"
+#include "ui/rp_widget.h"
 
 namespace Profile {
 
 class SectionMemento;
 
-class BlockWidget : public TWidget, protected base::Subscriber {
-	Q_OBJECT
-
+class BlockWidget : public Ui::RpWidget {
 public:
 	BlockWidget(QWidget *parent, PeerData *peer, const QString &title);
 
 	virtual void showFinished() {
 	}
 
-	virtual void saveState(gsl::not_null<SectionMemento*> memento) {
+	virtual void saveState(not_null<SectionMemento*> memento) {
 	}
-	virtual void restoreState(gsl::not_null<SectionMemento*> memento) {
+	virtual void restoreState(not_null<SectionMemento*> memento) {
 	}
 
 protected:
@@ -52,9 +37,7 @@ protected:
 	int resizeGetHeight(int newWidth) override = 0;
 
 	void contentSizeUpdated() {
-		auto oldHeight = height();
 		resizeToWidth(width());
-		emit heightUpdated();
 	}
 
 	PeerData *peer() const {
@@ -72,7 +55,5 @@ private:
 	QString _title;
 
 };
-
-int defaultOutlineButtonLeft();
 
 } // namespace Profile

@@ -1,49 +1,34 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "boxes/abstract_box.h"
 
-class EditColorBox : public BoxContent {
-	Q_OBJECT
-
+class EditColorBox : public Ui::BoxContent {
 public:
-	EditColorBox(QWidget*, const QString &title, QColor current = QColor(255, 255, 255));
+	enum class Mode {
+		RGBA,
+		HSL,
+	};
+	EditColorBox(QWidget*, const QString &title, Mode mode, QColor current);
 
-	void setSaveCallback(base::lambda<void(QColor)> callback) {
+	void setLightnessLimits(int min, int max);
+
+	void setSaveCallback(Fn<void(QColor)> callback) {
 		_saveCallback = std::move(callback);
 	}
 
-	void setCancelCallback(base::lambda<void()> callback) {
+	void setCancelCallback(Fn<void()> callback) {
 		_cancelCallback = std::move(callback);
 	}
 
 	void showColor(QColor color) {
 		updateFromColor(color);
-	}
-
-	void closeHook() override {
-		if (_cancelCallback) {
-			_cancelCallback();
-		}
 	}
 
 protected:
@@ -56,31 +41,35 @@ protected:
 
 	void setInnerFocus() override;
 
-private slots:
-	void onFieldChanged();
-	void onFieldSubmitted();
-
 private:
+	struct HSB { // HSV or HSL depending on Mode.
+		int hue = 0;
+		int saturation = 0;
+		int brightness = 0;
+	};
 	void saveColor();
+	void fieldSubmitted();
 
+	[[nodiscard]] HSB hsbFromControls() const;
 	void updateFromColor(QColor color);
 	void updateControlsFromColor();
-	void updateControlsFromHSV(int hue, int saturation, int brightness);
-	void updateHSVFields();
+	void updateControlsFromHSB(HSB hsb);
+	void updateHSBFields();
 	void updateRGBFields();
 	void updateResultField();
 	void updateFromControls();
-	void updateFromHSVFields();
+	void updateFromHSBFields();
 	void updateFromRGBFields();
 	void updateFromResultField();
-	void setHSV(int hue, int saturation, int brightness, int alpha);
+	void setHSB(HSB hsb, int alpha);
 	void setRGB(int red, int green, int blue, int alpha);
+	[[nodiscard]] QColor applyLimits(QColor color) const;
 
 	int percentFromByte(int byte) {
-		return snap(qRound(byte * 100 / 255.), 0, 100);
+		return std::clamp(qRound(byte * 100 / 255.), 0, 100);
 	}
 	int percentToByte(int percent) {
-		return snap(qRound(percent * 255 / 100.), 0, 255);
+		return std::clamp(qRound(percent * 255 / 100.), 0, 255);
 	}
 
 	class Picker;
@@ -89,10 +78,12 @@ private:
 	class ResultField;
 
 	QString _title;
+	Mode _mode = Mode();
 
 	object_ptr<Picker> _picker;
-	object_ptr<Slider> _hueSlider;
-	object_ptr<Slider> _opacitySlider;
+	object_ptr<Slider> _hueSlider = { nullptr };
+	object_ptr<Slider> _opacitySlider = { nullptr };
+	object_ptr<Slider> _lightnessSlider = { nullptr };
 
 	object_ptr<Field> _hueField;
 	object_ptr<Field> _saturationField;
@@ -109,7 +100,10 @@ private:
 	QRect _currentRect;
 	QRect _newRect;
 
-	base::lambda<void(QColor)> _saveCallback;
-	base::lambda<void()> _cancelCallback;
+	int _lightnessMin = 0;
+	int _lightnessMax = 255;
+
+	Fn<void(QColor)> _saveCallback;
+	Fn<void()> _cancelCallback;
 
 };

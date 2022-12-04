@@ -1,39 +1,65 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+namespace base::options {
+
+template <typename Type>
+class option;
+
+using toggle = option<bool>;
+
+} // namespace base::options
+
 namespace Platform {
+
+extern const char kOptionGApplication[];
+extern base::options::toggle OptionGApplication;
 
 void start();
 void finish();
 
-void SetWatchingMediaKeys(bool watching);
-bool TranslucentWindowsSupported(QPoint globalPosition);
-void StartTranslucentPaint(QPainter &p, QPaintEvent *e);
-void InitOnTopPanel(QWidget *panel);
-void DeInitOnTopPanel(QWidget *panel);
-void ReInitOnTopPanel(QWidget *panel);
+enum class PermissionStatus {
+	Granted,
+	CanRequest,
+	Denied,
+};
 
-QString SystemLanguage();
-QString SystemCountry();
+enum class PermissionType {
+	Microphone,
+	Camera,
+};
+
+enum class SystemSettingsType {
+	Audio,
+};
+
+void SetApplicationIcon(const QIcon &icon);
+QString SingleInstanceLocalServerName(const QString &hash);
+PermissionStatus GetPermissionStatus(PermissionType type);
+void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
+void OpenSystemSettingsForPermission(PermissionType type);
+bool OpenSystemSettings(SystemSettingsType type);
+void IgnoreApplicationActivationRightNow();
+[[nodiscard]] bool AutostartSupported();
+void AutostartRequestStateFromSystem(Fn<void(bool)> callback);
+void AutostartToggle(bool enabled, Fn<void(bool)> done = nullptr);
+[[nodiscard]] bool AutostartSkip();
+bool TrayIconSupported();
+bool SkipTaskbarSupported();
+void WriteCrashDumpDetails();
+void NewVersionLaunched(int oldVersion);
+void InstallLauncher(bool force = false);
+
+[[nodiscard]] std::optional<bool> IsDarkMode();
+[[nodiscard]] inline bool IsDarkModeSupported() {
+	return IsDarkMode().has_value();
+}
 
 namespace ThirdParty {
 
@@ -45,8 +71,8 @@ void finish();
 
 #ifdef Q_OS_MAC
 #include "platform/mac/specific_mac.h"
-#elif defined Q_OS_LINUX // Q_OS_MAC
+#elif defined Q_OS_UNIX // Q_OS_MAC
 #include "platform/linux/specific_linux.h"
-#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_LINUX
+#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_UNIX
 #include "platform/win/specific_win.h"
-#endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WIN
+#endif // Q_OS_MAC || Q_OS_UNIX || Q_OS_WIN

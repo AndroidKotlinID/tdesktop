@@ -1,24 +1,13 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
+
+#include "ui/effects/animations.h"
 
 namespace Window {
 
@@ -29,16 +18,21 @@ enum class SlideDirection {
 
 class SlideAnimation {
 public:
-	void paintContents(Painter &p, const QRect &update) const;
+	void paintContents(QPainter &p) const;
 
 	void setDirection(SlideDirection direction);
-	void setPixmaps(const QPixmap &oldContentCache, const QPixmap &newContentCache);
+	void setPixmaps(
+		const QPixmap &oldContentCache,
+		const QPixmap &newContentCache);
 	void setTopBarShadow(bool enabled);
+	void setTopSkip(int skip);
+	void setTopBarMask(const QPixmap &mask);
+	void setWithFade(bool withFade);
 
-	using RepaintCallback = base::lambda<void()>;
+	using RepaintCallback = Fn<void()>;
 	void setRepaintCallback(RepaintCallback &&callback);
 
-	using FinishedCallback = base::lambda<void()>;
+	using FinishedCallback = Fn<void()>;
 	void setFinishedCallback(FinishedCallback &&callback);
 
 	void start();
@@ -51,10 +45,13 @@ private:
 	void animationCallback();
 
 	SlideDirection _direction = SlideDirection::FromRight;
+	int _topSkip = 0;
 	bool _topBarShadowEnabled = false;
+	bool _withFade = false;
 
-	mutable Animation _animation;
+	mutable Ui::Animations::Simple _animation;
 	QPixmap _cacheUnder, _cacheOver;
+	QPixmap _mask;
 
 	RepaintCallback _repaintCallback;
 	FinishedCallback _finishedCallback;

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -29,20 +16,37 @@ class Radiobutton;
 class FlatLabel;
 } // namespace Ui
 
-class SelfDestructionBox : public BoxContent, private MTP::Sender {
-	Q_OBJECT
+namespace Main {
+class Session;
+} // namespace Main
 
+class SelfDestructionBox : public Ui::BoxContent {
 public:
-	SelfDestructionBox(QWidget*) {
-	}
+	enum class Type {
+		Account,
+		Sessions,
+	};
+	SelfDestructionBox(
+		QWidget*,
+		not_null<Main::Session*> session,
+		Type type,
+		rpl::producer<int> preloaded);
+
+	static QString DaysLabel(int days);
 
 protected:
 	void prepare() override;
 
 private:
+	void gotCurrent(int days);
+	void showContent();
+
+	const Type _type;
+	const not_null<Main::Session*> _session;
+	bool _prepared = false;
 	std::vector<int> _ttlValues;
 	object_ptr<Ui::FlatLabel> _description = { nullptr };
+	object_ptr<Ui::FlatLabel> _loading;
 	std::shared_ptr<Ui::RadiobuttonGroup> _ttlGroup;
-	std::vector<object_ptr<Ui::Radiobutton>> _options;
 
 };

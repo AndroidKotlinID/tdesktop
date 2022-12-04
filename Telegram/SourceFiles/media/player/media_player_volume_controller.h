@@ -1,38 +1,37 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "ui/rp_widget.h"
+#include "base/object_ptr.h"
+
+class QWheelEvent;
+
 namespace Ui {
-class IconButton;
 class MediaSlider;
 } // namespace Ui
 
-namespace Media {
-namespace Player {
+namespace Window {
+class SessionController;
+} // namespace Window
 
-class VolumeController : public TWidget, private base::Subscriber {
+namespace Media::Player {
+
+class Dropdown;
+
+class VolumeController final : public Ui::RpWidget {
 public:
-	VolumeController(QWidget *parent);
+	VolumeController(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
 
 	void setIsVertical(bool vertical);
+	void outerWheelEvent(not_null<QWheelEvent*> e);
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -45,47 +44,9 @@ private:
 
 };
 
-class VolumeWidget : public TWidget {
-	Q_OBJECT
+void PrepareVolumeDropdown(
+	not_null<Dropdown*> dropdown,
+	not_null<Window::SessionController*> controller,
+	rpl::producer<not_null<QWheelEvent*>> outerWheelEvents);
 
-public:
-	VolumeWidget(QWidget *parent);
-
-	bool overlaps(const QRect &globalRect);
-
-	QMargins getMargin() const;
-
-protected:
-	void resizeEvent(QResizeEvent *e) override;
-	void paintEvent(QPaintEvent *e) override;
-	void enterEventHook(QEvent *e) override;
-	void leaveEventHook(QEvent *e) override;
-
-	bool eventFilter(QObject *obj, QEvent *e) override;
-
-private slots:
-	void onShowStart();
-	void onHideStart();
-	void onWindowActiveChanged();
-
-private:
-	void otherEnter();
-	void otherLeave();
-
-	void appearanceCallback();
-	void hidingFinished();
-	void startAnimation();
-
-	bool _hiding = false;
-
-	QPixmap _cache;
-	Animation _a_appearance;
-
-	QTimer _hideTimer, _showTimer;
-
-	object_ptr<VolumeController> _controller;
-
-};
-
-} // namespace Clip
-} // namespace Media
+} // namespace Media::Player

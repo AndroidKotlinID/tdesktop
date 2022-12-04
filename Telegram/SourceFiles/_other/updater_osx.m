@@ -1,29 +1,16 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #import <Cocoa/Cocoa.h>
+#include <sys/xattr.h>
 
 NSString *appName = @"Telegram.app";
 NSString *appDir = nil;
 NSString *workDir = nil;
-NSString *crashReportArg = nil;
 
 #ifdef _DEBUG
 BOOL _debug = YES;
@@ -58,6 +45,20 @@ void writeLog(NSString *msg) {
 	[_logFile synchronizeFile];
 }
 
+void RemoveQuarantineAttribute(NSString *path) {
+	const char *kQuarantineAttribute = "com.apple.quarantine";
+
+	writeLog([@"Removing quarantine: " stringByAppendingString:path]);
+	removexattr([path fileSystemRepresentation], kQuarantineAttribute, 0);
+}
+
+void RemoveQuarantineFromBundle(NSString *path) {
+	RemoveQuarantineAttribute(path);
+	RemoveQuarantineAttribute([path stringByAppendingString:@"/Contents/MacOS/Telegram"]);
+	RemoveQuarantineAttribute([path stringByAppendingString:@"/Contents/Helpers/crashpad_handler"]);
+	RemoveQuarantineAttribute([path stringByAppendingString:@"/Contents/Frameworks/Updater"]);
+}
+
 void delFolder() {
 	writeLog([@"Fully clearing old path: " stringByAppendingString:[workDir stringByAppendingString:@"tupdates/ready"]]);
 	if (![[NSFileManager defaultManager] removeItemAtPath:[workDir stringByAppendingString:@"tupdates/ready"] error:nil]) {
@@ -89,7 +90,8 @@ int main(int argc, const char * argv[]) {
 
 	openLog();
 	pid_t procId = 0;
-	BOOL update = YES, toSettings = NO, autoStart = NO, startInTray = NO, testMode = NO;
+	BOOL update = YES, toSettings = NO, autoStart = NO, startInTray = NO, freeType = NO;
+	BOOL customWorkingDir = NO;
 	NSString *key = nil;
 	for (int i = 0; i < argc; ++i) {
 		if ([@"-workpath" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
@@ -102,10 +104,6 @@ int main(int argc, const char * argv[]) {
 				[formatter setNumberStyle:NSNumberFormatterDecimalStyle];
 				procId = [[formatter numberFromString:[NSString stringWithUTF8String:argv[i]]] intValue];
 			}
-		} else if ([@"-crashreport" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
-			if (++i < argc) {
-				crashReportArg = [NSString stringWithUTF8String:argv[i]];
-			}
 		} else if ([@"-noupdate" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
 			update = NO;
 		} else if ([@"-tosettings" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
@@ -116,13 +114,18 @@ int main(int argc, const char * argv[]) {
 			_debug = YES;
 		} else if ([@"-startintray" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
 			startInTray = YES;
-		} else if ([@"-testmode" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
-			testMode = YES;
+		} else if ([@"-freetype" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
+			freeType = YES;
+		} else if ([@"-workdir_custom" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
+			customWorkingDir = YES;
 		} else if ([@"-key" isEqualToString:[NSString stringWithUTF8String:argv[i]]]) {
 			if (++i < argc) key = [NSString stringWithUTF8String:argv[i]];
 		}
 	}
-	if (!workDir) workDir = appDir;
+	if (!workDir) {
+		workDir = appDir;
+		customWorkingDir = NO;
+	}
 	openLog();
 	NSMutableArray *argsArr = [[NSMutableArray alloc] initWithCapacity:argc];
 	for (int i = 0; i < argc; ++i) {
@@ -242,31 +245,42 @@ int main(int argc, const char * argv[]) {
 	}
 
 	NSString *appPath = [[NSArray arrayWithObjects:appDir, appRealName, nil] componentsJoinedByString:@""];
-	NSMutableArray *args = [[NSMutableArray alloc] initWithObjects: crashReportArg ? crashReportArg : @"-noupdate", nil];
-	if (!crashReportArg) {
-		if (toSettings) [args addObject:@"-tosettings"];
-		if (_debug) [args addObject:@"-debug"];
-		if (startInTray) [args addObject:@"-startintray"];
-		if (testMode) [args addObject:@"-testmode"];
-		if (autoStart) [args addObject:@"-autostart"];
-		if (key) {
-			[args addObject:@"-key"];
-			[args addObject:key];
-		}
+
+	RemoveQuarantineFromBundle(appPath);
+
+	NSMutableArray *args = [[NSMutableArray alloc] initWithObjects: @"-noupdate", nil];
+	if (toSettings) [args addObject:@"-tosettings"];
+	if (_debug) [args addObject:@"-debug"];
+	if (startInTray) [args addObject:@"-startintray"];
+	if (freeType) [args addObject:@"-freetype"];
+	if (autoStart) [args addObject:@"-autostart"];
+	if (key) {
+		[args addObject:@"-key"];
+		[args addObject:key];
+	}
+	if (customWorkingDir) {
+		[args addObject:@"-workdir"];
+		[args addObject:workDir];
 	}
 	writeLog([[NSArray arrayWithObjects:@"Running application '", appPath, @"' with args '", [args componentsJoinedByString:@"' '"], @"'..", nil] componentsJoinedByString:@""]);
-	NSError *error = nil;
-	NSRunningApplication *result = [[NSWorkspace sharedWorkspace]
+
+	for (int i = 0; i < 5; ++i) {
+		NSError *error = nil;
+		NSRunningApplication *result = [[NSWorkspace sharedWorkspace]
 					launchApplicationAtURL:[NSURL fileURLWithPath:appPath]
 					options:NSWorkspaceLaunchDefault
 					configuration:[NSDictionary
 								   dictionaryWithObject:args
 								   forKey:NSWorkspaceLaunchConfigurationArguments]
 					error:&error];
-	if (!result) {
-		writeLog([@"Could not run application, error: " stringByAppendingString:error ? [error localizedDescription] : @"(nil)"]);
+		if (result) {
+			closeLog();
+			return 0;
+		}
+		writeLog([[NSString stringWithFormat:@"Could not run application, error %ld: ", (long)[error code]] stringByAppendingString: error ? [error localizedDescription] : @"(nil)"]);
+		usleep(200000);
 	}
 	closeLog();
-	return result ? 0 : -1;
+	return -1;
 }
 

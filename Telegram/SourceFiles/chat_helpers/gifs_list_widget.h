@@ -1,27 +1,22 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "chat_helpers/tabbed_selector.h"
+#include "base/timer.h"
 #include "inline_bots/inline_bot_layout_item.h"
+#include "layout/layout_mosaic.h"
+
+#include <QtCore/QTimer>
+
+namespace Api {
+struct SendOptions;
+} // namespace Api
 
 namespace InlineBots {
 namespace Layout {
@@ -31,31 +26,47 @@ class Result;
 } // namespace InlineBots
 
 namespace Ui {
+class PopupMenu;
 class RoundButton;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
+
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
 
 namespace ChatHelpers {
 
-class GifsListWidget : public TabbedSelector::Inner, public InlineBots::Layout::Context, private base::Subscriber, private MTP::Sender {
-	Q_OBJECT
+void AddGifAction(
+	Fn<void(QString, Fn<void()> &&, const style::icon*)> callback,
+	Window::SessionController *controller,
+	not_null<DocumentData*> document);
 
+class GifsListWidget
+	: public TabbedSelector::Inner
+	, public InlineBots::Layout::Context {
 public:
-	GifsListWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller);
+	GifsListWidget(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		Window::GifPauseReason level);
+
+	rpl::producer<FileChosen> fileChosen() const;
+	rpl::producer<PhotoChosen> photoChosen() const;
+	rpl::producer<InlineChosen> inlineResultChosen() const;
 
 	void refreshRecent() override;
 	void preloadImages() override;
 	void clearSelection() override;
 	object_ptr<TabbedSelector::InnerFooter> createFooter() override;
 
-	void setVisibleTopBottom(int visibleTop, int visibleBottom) override;
-
 	void inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout) override;
 	void inlineItemRepaint(const InlineBots::Layout::ItemBase *layout) override;
 	bool inlineItemVisible(const InlineBots::Layout::ItemBase *layout) override;
+	Data::FileOrigin inlineItemFileOrigin() override;
 
 	void afterShown() override;
 	void beforeHiding() override;
@@ -66,9 +77,19 @@ public:
 	void searchForGifs(const QString &query);
 	void sendInlineRequest();
 
+	void cancelled();
+	rpl::producer<> cancelRequests() const;
+
+	base::unique_qptr<Ui::PopupMenu> fillContextMenu(
+		SendMenu::Type type) override;
+
 	~GifsListWidget();
 
 protected:
+	void visibleTopBottomUpdated(
+		int visibleTop,
+		int visibleBottom) override;
+
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
@@ -80,20 +101,7 @@ protected:
 	TabbedSelector::InnerFooter *getFooter() const override;
 	void processHideFinished() override;
 	void processPanelHideFinished() override;
-	int countHeight() override;
-
-private slots:
-	void onPreview();
-	void onUpdateInlineItems();
-
-signals:
-	void selected(DocumentData *sticker);
-	void selected(PhotoData *photo);
-	void selected(InlineBots::Result *result, UserData *bot);
-	void cancelled();
-
-	void emptyInlineRows();
-	void scrollUpdated();
+	int countDesiredHeight(int newWidth) override;
 
 private:
 	enum class Section {
@@ -111,6 +119,7 @@ private:
 		InlineResults results;
 	};
 
+	void clearHeavyData();
 	void cancelGifsSearch();
 	void switchToSavedGifs();
 	void refreshSavedGifs();
@@ -124,42 +133,50 @@ private:
 	void updateSelected();
 	void paintInlineItems(Painter &p, QRect clip);
 
-	Section _section = Section::Gifs;
-	TimeMs _lastScrolled = 0;
-	QTimer _updateInlineItems;
-	bool _inlineWithThumb = false;
+	void updateInlineItems();
+	void repaintItems(crl::time now = 0);
+	void showPreview();
 
-	struct Row {
-		int height = 0;
-		QVector<LayoutItem*> items;
-	};
-	QVector<Row> _rows;
 	void clearInlineRows(bool resultsDeleted);
+	LayoutItem *layoutPrepareSavedGif(not_null<DocumentData*> document);
+	LayoutItem *layoutPrepareInlineResult(not_null<InlineResult*> result);
 
-	std::map<DocumentData*, std::unique_ptr<LayoutItem>> _gifLayouts;
-	LayoutItem *layoutPrepareSavedGif(DocumentData *doc, int32 position);
-
-	std::map<InlineResult*, std::unique_ptr<LayoutItem>> _inlineLayouts;
-	LayoutItem *layoutPrepareInlineResult(InlineResult *result, int32 position);
-
-	bool inlineRowsAddItem(DocumentData *savedGif, InlineResult *result, Row &row, int32 &sumWidth);
-	bool inlineRowFinalize(Row &row, int32 &sumWidth, bool force = false);
-
-	Row &layoutInlineRow(Row &row, int32 sumWidth = 0);
 	void deleteUnusedGifLayouts();
 
 	void deleteUnusedInlineLayouts();
 
 	int validateExistingInlineRows(const InlineResults &results);
-	void selectInlineResult(int row, int column);
+	void selectInlineResult(
+		int index,
+		Api::SendOptions options,
+		bool forceSend = false);
+
+	not_null<Window::SessionController*> _controller;
+
+	MTP::Sender _api;
+
+	Section _section = Section::Gifs;
+	crl::time _lastScrolledAt = 0;
+	crl::time _lastUpdatedAt = 0;
+	base::Timer _updateInlineItems;
+	bool _inlineWithThumb = false;
+
+	std::map<
+		not_null<DocumentData*>,
+		std::unique_ptr<LayoutItem>> _gifLayouts;
+	std::map<
+		not_null<InlineResult*>,
+		std::unique_ptr<LayoutItem>> _inlineLayouts;
 
 	Footer *_footer = nullptr;
+
+	Mosaic::Layout::MosaicLayout<LayoutItem> _mosaic;
 
 	int _selected = -1;
 	int _pressed = -1;
 	QPoint _lastMousePos;
 
-	QTimer _previewTimer;
+	base::Timer _previewTimer;
 	bool _previewShown = false;
 
 	std::map<QString, std::unique_ptr<InlineCacheEntry>> _inlineCache;
@@ -170,6 +187,11 @@ private:
 	PeerData *_inlineQueryPeer = nullptr;
 	QString _inlineQuery, _inlineNextQuery, _inlineNextOffset;
 	mtpRequestId _inlineRequestId = 0;
+
+	rpl::event_stream<FileChosen> _fileChosen;
+	rpl::event_stream<PhotoChosen> _photoChosen;
+	rpl::event_stream<InlineChosen> _inlineResultChosen;
+	rpl::event_stream<> _cancelled;
 
 };
 

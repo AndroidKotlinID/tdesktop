@@ -1,202 +1,245 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/click_handler_types.h"
 
 #include "lang/lang_keys.h"
-#include "messenger.h"
-#include "platform/platform_specific.h"
-#include "boxes/confirm_box.h"
+#include "core/application.h"
+#include "core/local_url_handlers.h"
+#include "mainwidget.h"
+#include "mainwindow.h"
+#include "main/main_session.h"
+#include "ui/boxes/confirm_box.h"
+#include "ui/text/text_entity.h"
+#include "ui/toast/toast.h"
 #include "base/qthelp_regex.h"
-#include "base/qthelp_url.h"
-#include "storage/localstorage.h"
-#include "ui/widgets/tooltip.h"
-#include "core/file_utilities.h"
-
-QString UrlClickHandler::copyToClipboardContextItemText() const {
-	return lang(isEmail() ? lng_context_copy_email : lng_context_copy_link);
-}
+#include "base/qt/qt_key_modifiers.h"
+#include "storage/storage_account.h"
+#include "history/history.h"
+#include "history/view/history_view_element.h"
+#include "history/history_item.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
+#include "window/window_controller.h"
+#include "window/window_session_controller.h"
+#include "styles/style_layers.h"
 
 namespace {
 
-QString tryConvertUrlToLocal(QString url) {
-	if (url.size() > 8192) url = url.mid(0, 8192);
+// Possible context owners: media viewer, profile, history widget.
 
-	using namespace qthelp;
-	auto matchOptions = RegExOption::CaseInsensitive;
-	auto telegramMeMatch = regex_match(qsl("^https?://(www\\.)?(telegram\\.(me|dog)|t\\.me)/(.+)$"), url, matchOptions);
-	if (telegramMeMatch) {
-		auto query = telegramMeMatch->capturedRef(4);
-		if (auto joinChatMatch = regex_match(qsl("^joinchat/([a-zA-Z0-9\\.\\_\\-]+)(\\?|$)"), query, matchOptions)) {
-			return qsl("tg://join?invite=") + url_encode(joinChatMatch->captured(1));
-		} else if (auto stickerSetMatch = regex_match(qsl("^addstickers/([a-zA-Z0-9\\.\\_]+)(\\?|$)"), query, matchOptions)) {
-			return qsl("tg://addstickers?set=") + url_encode(stickerSetMatch->captured(1));
-		} else if (auto shareUrlMatch = regex_match(qsl("^share/url/?\\?(.+)$"), query, matchOptions)) {
-			return qsl("tg://msg_url?") + shareUrlMatch->captured(1);
-		} else if (auto confirmPhoneMatch = regex_match(qsl("^confirmphone/?\\?(.+)"), query, matchOptions)) {
-			return qsl("tg://confirmphone?") + confirmPhoneMatch->captured(1);
-		} else if (auto ivMatch = regex_match(qsl("iv/?\\?(.+)(#|$)"), query, matchOptions)) {
-			auto params = url_parse_params(ivMatch->captured(1), UrlParamNameTransform::ToLower);
-			auto previewedUrl = params.value(qsl("url"));
-			if (previewedUrl.startsWith(qstr("http://"), Qt::CaseInsensitive)
-				|| previewedUrl.startsWith(qstr("https://"), Qt::CaseInsensitive)) {
-				return previewedUrl;
-			}
-		} else if (auto socksMatch = regex_match(qsl("socks/?\\?(.+)(#|$)"), query, matchOptions)) {
-			return qsl("tg://socks?") + socksMatch->captured(1);
-		} else if (auto usernameMatch = regex_match(qsl("^([a-zA-Z0-9\\.\\_]+)(/?\\?|/?$|/(\\d+)/?(?:\\?|$))"), query, matchOptions)) {
-			auto params = query.mid(usernameMatch->captured(0).size()).toString();
-			auto postParam = QString();
-			if (auto postMatch = regex_match(qsl("^/\\d+/?(?:\\?|$)"), usernameMatch->captured(2))) {
-				postParam = qsl("&post=") + usernameMatch->captured(3);
-			}
-			return qsl("tg://resolve/?domain=") + url_encode(usernameMatch->captured(1)) + postParam + (params.isEmpty() ? QString() : '&' + params);
-		}
+void SearchByHashtag(ClickContext context, const QString &tag) {
+	const auto my = context.other.value<ClickHandlerContext>();
+	const auto controller = my.sessionWindow.get();
+	if (!controller) {
+		return;
 	}
-	return url;
+	if (controller->openedFolder().current()) {
+		controller->closeFolder();
+	}
+
+	controller->widget()->ui_hideSettingsAndLayer(anim::type::normal);
+	Core::App().hideMediaView();
+
+	auto &data = controller->session().data();
+	const auto inPeer = my.peer
+		? my.peer
+		: my.itemId
+		? data.message(my.itemId)->history()->peer.get()
+		: nullptr;
+	controller->content()->searchMessages(
+		tag + ' ',
+		(inPeer && !inPeer->isUser())
+			? data.history(inPeer).get()
+			: Dialogs::Key());
 }
 
 } // namespace
 
-void UrlClickHandler::doOpen(QString url) {
-	Ui::Tooltip::Hide();
+bool UrlRequiresConfirmation(const QUrl &url) {
+	using namespace qthelp;
 
-	if (isEmail(url)) {
-		File::OpenEmailLink(url);
+	return !regex_match(
+		"(^|\\.)("
+		"telegram\\.(org|me|dog)"
+		"|t\\.me"
+		"|te\\.?legra\\.ph"
+		"|graph\\.org"
+		"|fragment\\.com"
+		"|telesco\\.pe"
+		")$",
+		url.host(),
+		RegExOption::CaseInsensitive);
+}
+
+QString HiddenUrlClickHandler::copyToClipboardText() const {
+	return url().startsWith(qstr("internal:url:"))
+		? url().mid(qstr("internal:url:").size())
+		: url();
+}
+
+QString HiddenUrlClickHandler::copyToClipboardContextItemText() const {
+	return url().isEmpty()
+		? QString()
+		: !url().startsWith(qstr("internal:"))
+		? UrlClickHandler::copyToClipboardContextItemText()
+		: url().startsWith(qstr("internal:url:"))
+		? UrlClickHandler::copyToClipboardContextItemText()
+		: QString();
+}
+
+QString HiddenUrlClickHandler::dragText() const {
+	return HiddenUrlClickHandler::copyToClipboardText();
+}
+
+void HiddenUrlClickHandler::Open(QString url, QVariant context) {
+	url = Core::TryConvertUrlToLocal(url);
+	if (Core::InternalPassportLink(url)) {
 		return;
 	}
 
-	url = tryConvertUrlToLocal(url);
-
-	if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
-		Messenger::Instance().openLocalUrl(url);
+	const auto open = [=] {
+		UrlClickHandler::Open(url, context);
+	};
+	if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)
+		|| url.startsWith(qstr("internal:"), Qt::CaseInsensitive)) {
+		open();
 	} else {
-		QDesktopServices::openUrl(url);
-	}
-}
-
-QString UrlClickHandler::getExpandedLinkText(ExpandLinksMode mode, const QStringRef &textPart) const {
-	QString result;
-	if (mode != ExpandLinksNone) {
-		result = _originalUrl;
-	}
-	return result;
-}
-
-TextWithEntities UrlClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMode mode, int entityOffset, const QStringRef &textPart) const {
-	TextWithEntities result;
-	auto entityType = isEmail(_originalUrl) ? EntityInTextEmail : EntityInTextUrl;
-	int entityLength = textPart.size();
-	if (mode != ExpandLinksNone) {
-		result.text = _originalUrl;
-		entityLength = _originalUrl.size();
-	}
-	result.entities.push_back({ entityType, entityOffset, entityLength });
-	return result;
-}
-
-void HiddenUrlClickHandler::doOpen(QString url) {
-	auto urlText = tryConvertUrlToLocal(url);
-
-	if (urlText.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
-		Messenger::Instance().openLocalUrl(urlText);
-	} else {
-		auto parsedUrl = QUrl::fromUserInput(urlText);
-		auto displayUrl = parsedUrl.isValid() ? parsedUrl.toDisplayString() : urlText;
-		Ui::show(Box<ConfirmBox>(lang(lng_open_this_link) + qsl("\n\n") + displayUrl, lang(lng_open_link), [urlText] {
-			Ui::hideLayer();
-			UrlClickHandler::doOpen(urlText);
-		}));
-	}
-}
-
-void BotGameUrlClickHandler::onClick(Qt::MouseButton button) const {
-	auto urlText = tryConvertUrlToLocal(url());
-
-	if (urlText.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
-		Messenger::Instance().openLocalUrl(urlText);
-	} else if (!_bot || _bot->isVerified() || Local::isBotTrusted(_bot)) {
-		doOpen(urlText);
-	} else {
-		Ui::show(Box<ConfirmBox>(lng_allow_bot_pass(lt_bot_name, _bot->name), lang(lng_allow_bot), [bot = _bot, urlText] {
-			Ui::hideLayer();
-			Local::makeBotTrusted(bot);
-			UrlClickHandler::doOpen(urlText);
-		}));
-	}
-}
-
-QString HiddenUrlClickHandler::getExpandedLinkText(ExpandLinksMode mode, const QStringRef &textPart) const {
-	QString result;
-	if (mode == ExpandLinksAll) {
-		result = textPart.toString() + qsl(" (") + url() + ')';
-	} else if (mode == ExpandLinksUrlOnly) {
-		result = url();
-	}
-	return result;
-}
-
-TextWithEntities HiddenUrlClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMode mode, int entityOffset, const QStringRef &textPart) const {
-	TextWithEntities result;
-	if (mode == ExpandLinksUrlOnly) {
-		result.text = url();
-		result.entities.push_back({ EntityInTextUrl, entityOffset, result.text.size() });
-	} else {
-		result.entities.push_back({ EntityInTextCustomUrl, entityOffset, textPart.size(), url() });
-		if (mode == ExpandLinksAll) {
-			result.text = textPart.toString() + qsl(" (") + url() + ')';
+		const auto parsedUrl = QUrl::fromUserInput(url);
+		if (UrlRequiresConfirmation(parsedUrl) && !base::IsCtrlPressed()) {
+			Core::App().hideMediaView();
+			const auto displayed = parsedUrl.isValid()
+				? parsedUrl.toDisplayString()
+				: url;
+			const auto displayUrl = !IsSuspicious(displayed)
+				? displayed
+				: parsedUrl.isValid()
+				? QString::fromUtf8(parsedUrl.toEncoded())
+				: ShowEncoded(displayed);
+			const auto my = context.value<ClickHandlerContext>();
+			const auto controller = my.sessionWindow.get();
+			const auto use = controller
+				? &controller->window()
+				: Core::App().activeWindow();
+			auto box = Box([=](not_null<Ui::GenericBox*> box) {
+				Ui::ConfirmBox(box, {
+					.text = (tr::lng_open_this_link(tr::now)),
+					.confirmed = [=](Fn<void()> hide) { hide(); open(); },
+					.confirmText = tr::lng_open_link(),
+				});
+				const auto &st = st::boxLabel;
+				box->addSkip(st.style.lineHeight - st::boxPadding.bottom());
+				const auto url = box->addRow(
+					object_ptr<Ui::FlatLabel>(box, displayUrl, st));
+				url->setSelectable(true);
+				url->setContextCopyText(tr::lng_context_copy_link(tr::now));
+			});
+			if (my.show) {
+				my.show->showBox(std::move(box));
+			} else if (use) {
+				use->show(std::move(box), Ui::LayerOption::KeepOther);
+			}
+		} else {
+			open();
 		}
 	}
-	return result;
+}
+
+void BotGameUrlClickHandler::onClick(ClickContext context) const {
+	const auto url = Core::TryConvertUrlToLocal(this->url());
+	if (Core::InternalPassportLink(url)) {
+		return;
+	}
+
+	const auto open = [=] {
+		UrlClickHandler::Open(url, context.other);
+	};
+	if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
+		open();
+	} else if (!_bot
+		|| _bot->isVerified()
+		|| _bot->session().local().isBotTrustedOpenGame(_bot->id)) {
+		open();
+	} else {
+		const auto my = context.other.value<ClickHandlerContext>();
+		if (const auto controller = my.sessionWindow.get()) {
+			const auto callback = [=, bot = _bot](Fn<void()> close) {
+				close();
+				bot->session().local().markBotTrustedOpenGame(bot->id);
+				open();
+			};
+			controller->show(Ui::MakeConfirmBox({
+				.text = tr::lng_allow_bot_pass(
+					tr::now,
+					lt_bot_name,
+					_bot->name()),
+				.confirmed = callback,
+				.confirmText = tr::lng_allow_bot(),
+			}));
+		}
+	}
+}
+
+auto HiddenUrlClickHandler::getTextEntity() const -> TextEntity {
+	return { EntityType::CustomUrl, url() };
 }
 
 QString MentionClickHandler::copyToClipboardContextItemText() const {
-	return lang(lng_context_copy_mention);
+	return tr::lng_context_copy_mention(tr::now);
 }
 
-void MentionClickHandler::onClick(Qt::MouseButton button) const {
+void MentionClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		App::openPeerByName(_tag.mid(1), ShowAtProfileMsgId);
-	}
-}
-
-TextWithEntities MentionClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMode mode, int entityOffset, const QStringRef &textPart) const {
-	return simpleTextWithEntity({ EntityInTextMention, entityOffset, textPart.size() });
-}
-
-void MentionNameClickHandler::onClick(Qt::MouseButton button) const {
-	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		if (auto user = App::userLoaded(_userId)) {
-			Ui::showPeerProfile(user);
+		const auto my = context.other.value<ClickHandlerContext>();
+		const auto controller = my.sessionWindow.get();
+		const auto use = controller
+			? controller
+			: Core::App().activeWindow()
+			? Core::App().activeWindow()->sessionController()
+			: nullptr;
+		if (use) {
+			using Info = Window::SessionNavigation::PeerByLinkInfo;
+			use->showPeerByLink(Info{
+				.usernameOrId = _tag.mid(1),
+				.resolveType = Window::ResolveType::Mention,
+			});
 		}
 	}
 }
 
-TextWithEntities MentionNameClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMode mode, int entityOffset, const QStringRef &textPart) const {
-	auto data = QString::number(_userId) + '.' + QString::number(_accessHash);
-	return simpleTextWithEntity({ EntityInTextMentionName, entityOffset, textPart.size(), data });
+auto MentionClickHandler::getTextEntity() const -> TextEntity {
+	return { EntityType::Mention };
+}
+
+void MentionNameClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
+	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
+		const auto my = context.other.value<ClickHandlerContext>();
+		if (const auto controller = my.sessionWindow.get()) {
+			if (auto user = _session->data().userLoaded(_userId)) {
+				controller->showPeerInfo(user);
+			}
+		}
+	}
+}
+
+auto MentionNameClickHandler::getTextEntity() const -> TextEntity {
+	const auto data = TextUtilities::MentionNameDataFromFields({
+		.selfId = _session->userId().bare,
+		.userId = _userId.bare,
+		.accessHash = _accessHash,
+	});
+	return { EntityType::MentionName, data };
 }
 
 QString MentionNameClickHandler::tooltip() const {
-	if (auto user = App::userLoaded(_userId)) {
-		auto name = App::peerName(user);
+	if (const auto user = _session->data().userLoaded(_userId)) {
+		const auto name = user->name();
 		if (name != _text) {
 			return name;
 		}
@@ -205,46 +248,106 @@ QString MentionNameClickHandler::tooltip() const {
 }
 
 QString HashtagClickHandler::copyToClipboardContextItemText() const {
-	return lang(lng_context_copy_hashtag);
+	return tr::lng_context_copy_hashtag(tr::now);
 }
 
-void HashtagClickHandler::onClick(Qt::MouseButton button) const {
+void HashtagClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		App::searchByHashtag(_tag, Ui::getPeerForMouseAction());
+		SearchByHashtag(context, _tag);
 	}
 }
 
-TextWithEntities HashtagClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMode mode, int entityOffset, const QStringRef &textPart) const {
-	return simpleTextWithEntity({ EntityInTextHashtag, entityOffset, textPart.size() });
+auto HashtagClickHandler::getTextEntity() const -> TextEntity {
+	return { EntityType::Hashtag };
 }
 
-PeerData *BotCommandClickHandler::_peer = nullptr;
-UserData *BotCommandClickHandler::_bot = nullptr;
-void BotCommandClickHandler::onClick(Qt::MouseButton button) const {
-	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		if (auto peer = peerForCommand()) {
-			if (auto bot = peer->isUser() ? peer->asUser() : botForCommand()) {
-				Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
-				App::sendBotCommand(peer, bot, _cmd);
-				return;
-			}
-		}
+QString CashtagClickHandler::copyToClipboardContextItemText() const {
+	return tr::lng_context_copy_hashtag(tr::now);
+}
 
-		if (auto peer = Ui::getPeerForMouseAction()) { // old way
-			UserData *bot = peer->isUser() ? peer->asUser() : nullptr;
-			if (auto item = App::hoveredLinkItem()) {
-				if (!bot) {
-					bot = item->fromOriginal()->asUser(); // may return nullptr
-				}
-			}
-			Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
-			App::sendBotCommand(peer, bot, _cmd);
-		} else {
-			App::insertBotCommand(_cmd);
-		}
+void CashtagClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
+	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
+		SearchByHashtag(context, _tag);
 	}
 }
 
-TextWithEntities BotCommandClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMode mode, int entityOffset, const QStringRef &textPart) const {
-	return simpleTextWithEntity({ EntityInTextHashtag, entityOffset, textPart.size() });
+auto CashtagClickHandler::getTextEntity() const -> TextEntity {
+	return { EntityType::Cashtag };
+}
+
+void BotCommandClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
+	if (button != Qt::LeftButton && button != Qt::MiddleButton) {
+		return;
+	}
+	const auto my = context.other.value<ClickHandlerContext>();
+	if (const auto delegate = my.elementDelegate ? my.elementDelegate() : nullptr) {
+		delegate->elementSendBotCommand(_cmd, my.itemId);
+	} else if (const auto controller = my.sessionWindow.get()) {
+		auto &data = controller->session().data();
+		const auto peer = my.peer
+			? my.peer
+			: my.itemId
+			? data.message(my.itemId)->history()->peer.get()
+			: nullptr;
+		// Can't find context.
+		if (!peer) {
+			return;
+		}
+		controller->widget()->ui_hideSettingsAndLayer(anim::type::normal);
+		Core::App().hideMediaView();
+		controller->content()->sendBotCommand({
+			.peer = peer,
+			.command = _cmd,
+			.context = my.itemId,
+			.replyTo = 0,
+		});
+	}
+}
+
+auto BotCommandClickHandler::getTextEntity() const -> TextEntity {
+	return { EntityType::BotCommand };
+}
+
+MonospaceClickHandler::MonospaceClickHandler(
+	const QString &text,
+	EntityType type)
+: _text(text)
+, _entity({ type }) {
+}
+
+void MonospaceClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
+	if (button != Qt::LeftButton && button != Qt::MiddleButton) {
+		return;
+	}
+	const auto my = context.other.value<ClickHandlerContext>();
+	if (const auto controller = my.sessionWindow.get()) {
+		auto &data = controller->session().data();
+		const auto item = data.message(my.itemId);
+		const auto hasCopyRestriction = item
+			&& (!item->history()->peer->allowsForwarding()
+				|| item->forbidsForward());
+		const auto toastParent = Window::Show(controller).toastParent();
+		if (hasCopyRestriction) {
+			Ui::Toast::Show(
+				toastParent,
+				item->history()->peer->isBroadcast()
+					? tr::lng_error_nocopy_channel(tr::now)
+					: tr::lng_error_nocopy_group(tr::now));
+			return;
+		}
+		Ui::Toast::Show(toastParent, tr::lng_text_copied(tr::now));
+	}
+	TextUtilities::SetClipboardText(TextForMimeData::Simple(_text.trimmed()));
+}
+
+auto MonospaceClickHandler::getTextEntity() const -> TextEntity {
+	return _entity;
+}
+
+QString MonospaceClickHandler::url() const {
+	return _text;
 }

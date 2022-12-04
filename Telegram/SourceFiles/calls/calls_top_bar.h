@@ -1,68 +1,106 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/weak_unique_ptr.h"
+#include "base/weak_ptr.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
+#include "base/unique_qptr.h"
+#include "ui/effects/animations.h"
+#include "ui/effects/gradient.h"
+#include "ui/rp_widget.h"
 
 namespace Ui {
 class IconButton;
 class AbstractButton;
 class LabelSimple;
 class FlatLabel;
+struct GroupCallUser;
+class GroupCallUserpics;
+class Show;
 } // namespace Ui
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Calls {
 
 class Call;
+class GroupCall;
+class SignalBars;
+class Mute;
+enum class MuteState;
+enum class BarState;
 
-class TopBar : public TWidget, private base::Subscriber {
+class TopBar : public Ui::RpWidget {
 public:
-	TopBar(QWidget *parent, const base::weak_unique_ptr<Call> &call);
-
+	TopBar(
+		QWidget *parent,
+		const base::weak_ptr<Call> &call,
+		std::shared_ptr<Ui::Show> show);
+	TopBar(
+		QWidget *parent,
+		const base::weak_ptr<GroupCall> &call,
+		std::shared_ptr<Ui::Show> show);
 	~TopBar();
+
+	void initBlobsUnder(
+		QWidget *blobsParent,
+		rpl::producer<QRect> barGeometry);
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 
 private:
+	struct User;
+
+	TopBar(
+		QWidget *parent,
+		std::shared_ptr<Ui::Show> show,
+		const base::weak_ptr<Call> &call,
+		const base::weak_ptr<GroupCall> &groupCall);
+
 	void initControls();
 	void updateInfoLabels();
 	void setInfoLabels();
 	void updateDurationText();
 	void updateControlsGeometry();
-	void startDurationUpdateTimer(TimeMs currentDuration);
+	void startDurationUpdateTimer(crl::time currentDuration);
 	void setMuted(bool mute);
 
-	base::weak_unique_ptr<Call> _call;
+	void subscribeToMembersChanges(not_null<GroupCall*> call);
+	void updateUserpics();
+
+	const base::weak_ptr<Call> _call;
+	const base::weak_ptr<GroupCall> _groupCall;
+	const std::shared_ptr<Ui::Show> _show;
 
 	bool _muted = false;
+	std::vector<Ui::GroupCallUser> _users;
+	std::unique_ptr<Ui::GroupCallUserpics> _userpics;
+	int _userpicsWidth = 0;
 	object_ptr<Ui::LabelSimple> _durationLabel;
+	object_ptr<SignalBars> _signalBars;
 	object_ptr<Ui::FlatLabel> _fullInfoLabel;
 	object_ptr<Ui::FlatLabel> _shortInfoLabel;
 	object_ptr<Ui::LabelSimple> _hangupLabel;
-	object_ptr<Ui::IconButton> _mute;
+	object_ptr<Mute> _mute;
 	object_ptr<Ui::AbstractButton> _info;
 	object_ptr<Ui::IconButton> _hangup;
+	base::unique_qptr<Ui::RpWidget> _blobs;
+
+	rpl::variable<bool> _isGroupConnecting = false;
+
+	QBrush _groupBrush;
+	anim::linear_gradients<BarState> _gradients;
+	Ui::Animations::Simple _switchStateAnimation;
 
 	base::Timer _updateDurationTimer;
 

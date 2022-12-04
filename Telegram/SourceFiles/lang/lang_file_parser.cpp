@@ -1,26 +1,18 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/lang_file_parser.h"
 
 #include "base/parse_helper.h"
+#include "base/debug_log.h"
+
+#include <QtCore/QTextStream>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 
 namespace Lang {
 namespace {
@@ -29,13 +21,13 @@ constexpr auto kLangFileLimit = 1024 * 1024;
 
 } // namespace
 
-FileParser::FileParser(const QString &file, const std::set<LangKey> &request)
+FileParser::FileParser(const QString &file, const std::set<ushort> &request)
 : _content(base::parse::stripComments(ReadFile(file, file)))
 , _request(request) {
 	parse();
 }
 
-FileParser::FileParser(const QByteArray &content, base::lambda<void(QLatin1String key, const QByteArray &value)> callback)
+FileParser::FileParser(const QByteArray &content, Fn<void(QLatin1String key, const QByteArray &value)> callback)
 : _content(base::parse::stripComments(content))
 , _callback(std::move(callback)) {
 	parse();
@@ -43,7 +35,7 @@ FileParser::FileParser(const QByteArray &content, base::lambda<void(QLatin1Strin
 
 void FileParser::parse() {
 	if (_content.isEmpty()) {
-		error(qsl("Got empty lang file content"));
+		error(u"Got empty lang file content"_q);
 		return;
 	}
 
@@ -85,25 +77,25 @@ bool FileParser::readKeyValue(const char *&from, const char *end) {
 	auto key = QLatin1String(nameStart, from - nameStart);
 
 	if (from == end || *from != '"') {
-		return error(qsl("Expected quote after key name '%1'!").arg(key));
+		return error(u"Expected quote after key name '%1'!"_q.arg(key));
 	}
 	++from;
 
 	if (!skipWhitespaces(from, end)) {
-		return error(qsl("Unexpected end of file in key '%1'!").arg(key));
+		return error(u"Unexpected end of file in key '%1'!"_q.arg(key));
 	}
 	if (*from != '=') {
-		return error(qsl("'=' expected in key '%1'!").arg(key));
+		return error(u"'=' expected in key '%1'!"_q.arg(key));
 	}
 	if (!skipWhitespaces(++from, end)) {
-		return error(qsl("Unexpected end of file in key '%1'!").arg(key));
+		return error(u"Unexpected end of file in key '%1'!"_q.arg(key));
 	}
 	if (*from != '"') {
-		return error(qsl("Expected string after '=' in key '%1'!").arg(key));
+		return error(u"Expected string after '=' in key '%1'!"_q.arg(key));
 	}
 
 	auto skipping = false;
-	auto keyIndex = kLangKeysCount;
+	auto keyIndex = kKeysCount;
 	if (!_callback) {
 		keyIndex = GetKeyIndex(key);
 		skipping = (_request.find(keyIndex) == _request.end());
@@ -118,11 +110,11 @@ bool FileParser::readKeyValue(const char *&from, const char *end) {
 	const char *start = ++from;
 	while (from < end && *from != '"') {
 		if (*from == '\n') {
-			return error(qsl("Unexpected end of string in key '%1'!").arg(key));
+			return error(u"Unexpected end of string in key '%1'!"_q.arg(key));
 		}
 		if (*from == '\\') {
 			if (from + 1 >= end) {
-				return error(qsl("Unexpected end of file in key '%1'!").arg(key));
+				return error(u"Unexpected end of file in key '%1'!"_q.arg(key));
 			}
 			if (*(from + 1) == '"' || *(from + 1) == '\\') {
 				if (from > start) appendValue(start, from - start);
@@ -136,17 +128,17 @@ bool FileParser::readKeyValue(const char *&from, const char *end) {
 		++from;
 	}
 	if (from >= end) {
-		return error(qsl("Unexpected end of file in key '%1'!").arg(key));
+		return error(u"Unexpected end of file in key '%1'!"_q.arg(key));
 	}
 	if (from > start) {
 		appendValue(start, from - start);
 	}
 
 	if (!skipWhitespaces(++from, end)) {
-		return error(qsl("Unexpected end of file in key '%1'!").arg(key));
+		return error(u"Unexpected end of file in key '%1'!"_q.arg(key));
 	}
 	if (*from != ';') {
-		return error(qsl("';' expected after \"value\" in key '%1'!").arg(key));
+		return error(u"';' expected after \"value\" in key '%1'!"_q.arg(key));
 	}
 
 	skipWhitespaces(++from, end);
@@ -161,9 +153,10 @@ bool FileParser::readKeyValue(const char *&from, const char *end) {
 }
 
 QByteArray FileParser::ReadFile(const QString &absolutePath, const QString &relativePath) {
-	QFile file(QFileInfo(relativePath).exists() ? relativePath : absolutePath);
+	QFile file(QFileInfo::exists(relativePath) ? relativePath : absolutePath);
 	if (!file.open(QIODevice::ReadOnly)) {
-		LOG(("Lang Error: Could not open file at '%1' ('%2')").arg(relativePath).arg(absolutePath));
+		LOG(("Lang Error: Could not open file at '%1' ('%2')")
+			.arg(relativePath, absolutePath));
 		return QByteArray();
 	}
 	if (file.size() > kLangFileLimit) {
@@ -174,22 +167,25 @@ QByteArray FileParser::ReadFile(const QString &absolutePath, const QString &rela
 	constexpr auto kCodecMagicSize = 3;
 	auto codecMagic = file.read(kCodecMagicSize);
 	if (codecMagic.size() < kCodecMagicSize) {
-		LOG(("Lang Error: Found bad file at '%1' ('%2')").arg(relativePath).arg(absolutePath));
+		LOG(("Lang Error: Found bad file at '%1' ('%2')").arg(relativePath, absolutePath));
 		return QByteArray();
 	}
 	file.seek(0);
 
 	QByteArray data;
-	int skip = 0;
 	auto readUtf16Stream = [relativePath, absolutePath](auto &&stream) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		stream.setEncoding(QStringConverter::Utf16);
+#else // Qt >= 6.0.0
 		stream.setCodec("UTF-16");
+#endif // Qt < 6.0.0
 		auto string = stream.readAll();
 		if (stream.status() != QTextStream::Ok) {
-			LOG(("Lang Error: Could not read UTF-16 data from '%1' ('%2')").arg(relativePath).arg(absolutePath));
+			LOG(("Lang Error: Could not read UTF-16 data from '%1' ('%2')").arg(relativePath, absolutePath));
 			return QByteArray();
 		}
 		if (string.isEmpty()) {
-			LOG(("Lang Error: Empty UTF-16 content in '%1' ('%2')").arg(relativePath).arg(absolutePath));
+			LOG(("Lang Error: Empty UTF-16 content in '%1' ('%2')").arg(relativePath, absolutePath));
 			return QByteArray();
 		}
 		return string.toUtf8();
@@ -205,7 +201,7 @@ QByteArray FileParser::ReadFile(const QString &absolutePath, const QString &rela
 		data = data.mid(3); // skip UTF-8 BOM
 	}
 	if (data.isEmpty()) {
-		LOG(("Lang Error: Empty UTF-8 content in '%1' ('%2')").arg(relativePath).arg(absolutePath));
+		LOG(("Lang Error: Empty UTF-8 content in '%1' ('%2')").arg(relativePath, absolutePath));
 		return QByteArray();
 	}
 	return data;

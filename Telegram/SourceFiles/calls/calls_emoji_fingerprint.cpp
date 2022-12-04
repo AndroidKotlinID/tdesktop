@@ -1,31 +1,28 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/calls_emoji_fingerprint.h"
 
 #include "calls/calls_call.h"
+#include "calls/calls_signal_bars.h"
+#include "lang/lang_keys.h"
+#include "data/data_user.h"
+#include "ui/widgets/tooltip.h"
+#include "ui/emoji_config.h"
+#include "ui/painter.h"
+#include "ui/rp_widget.h"
+#include "styles/style_calls.h"
 
 namespace Calls {
 namespace {
 
-ushort Data[] = {
+constexpr auto kTooltipShowTimeoutMs = 1000;
+
+const ushort Data[] = {
 0xd83d, 0xde09, 0xd83d, 0xde0d, 0xd83d, 0xde1b, 0xd83d, 0xde2d, 0xd83d, 0xde31, 0xd83d, 0xde21,
 0xd83d, 0xde0e, 0xd83d, 0xde34, 0xd83d, 0xde35, 0xd83d, 0xde08, 0xd83d, 0xde2c, 0xd83d, 0xde07,
 0xd83d, 0xde0f, 0xd83d, 0xdc6e, 0xd83d, 0xdc77, 0xd83d, 0xdc82, 0xd83d, 0xdc76, 0xd83d, 0xdc68,
@@ -82,7 +79,7 @@ ushort Data[] = {
 0x0030, 0x20e3, 0xd83d, 0xdd1f, 0x2757, 0x2753, 0x2665, 0x2666, 0xd83d, 0xdcaf, 0xd83d, 0xdd17,
 0xd83d, 0xdd31, 0xd83d, 0xdd34, 0xd83d, 0xdd35, 0xd83d, 0xdd36, 0xd83d, 0xdd37 };
 
-ushort Offsets[] = {
+const ushort Offsets[] = {
 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46,
 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70,
@@ -112,7 +109,7 @@ ushort Offsets[] = {
 620, 622, 624, 626, 628, 630, 632, 634, 636, 638, 640, 641,
 642, 643, 644, 646, 648, 650, 652, 654, 656, 658 };
 
-uint64 ComputeEmojiIndex(base::const_byte_span bytes) {
+uint64 ComputeEmojiIndex(bytes::const_span bytes) {
 	Expects(bytes.size() == 8);
 	return ((gsl::to_integer<uint64>(bytes[0]) & 0x7F) << 56)
 		| (gsl::to_integer<uint64>(bytes[1]) << 48)
@@ -126,15 +123,17 @@ uint64 ComputeEmojiIndex(base::const_byte_span bytes) {
 
 } // namespace
 
-std::vector<EmojiPtr> ComputeEmojiFingerprint(gsl::not_null<Call*> call) {
+std::vector<EmojiPtr> ComputeEmojiFingerprint(not_null<Call*> call) {
 	auto result = std::vector<EmojiPtr>();
 	constexpr auto EmojiCount = (base::array_size(Offsets) - 1);
 	for (auto index = 0; index != EmojiCount; ++index) {
 		auto offset = Offsets[index];
 		auto size = Offsets[index + 1] - offset;
-		auto string = QString::fromRawData(reinterpret_cast<QChar*>(Data + offset), size);
+		auto string = QString::fromRawData(
+			reinterpret_cast<const QChar*>(Data + offset),
+			size);
 		auto emoji = Ui::Emoji::Find(string);
-		t_assert(emoji != nullptr);
+		Assert(emoji != nullptr);
 	}
 	if (call->isKeyShaForFingerprintReady()) {
 		auto sha256 = call->getKeyShaForFingerprint();
@@ -144,14 +143,156 @@ std::vector<EmojiPtr> ComputeEmojiFingerprint(gsl::not_null<Call*> call) {
 			auto index = value % EmojiCount;
 			auto offset = Offsets[index];
 			auto size = Offsets[index + 1] - offset;
-			auto string = QString::fromRawData(reinterpret_cast<QChar*>(Data + offset), size);
+			auto string = QString::fromRawData(
+				reinterpret_cast<const QChar*>(Data + offset),
+				size);
 			auto emoji = Ui::Emoji::Find(string);
-			t_assert(emoji != nullptr);
+			Assert(emoji != nullptr);
 			result.push_back(emoji);
 		}
 	}
 	return result;
+}
 
+object_ptr<Ui::RpWidget> CreateFingerprintAndSignalBars(
+		not_null<QWidget*> parent,
+		not_null<Call*> call) {
+	class EmojiTooltipShower final : public Ui::AbstractTooltipShower {
+	public:
+		EmojiTooltipShower(not_null<QWidget*> window, const QString &text)
+		: _window(window)
+		, _text(text) {
+		}
+
+		QString tooltipText() const override {
+			return _text;
+		}
+		QPoint tooltipPos() const override {
+			return QCursor::pos();
+		}
+		bool tooltipWindowActive() const override {
+			return _window->isActiveWindow();
+		}
+
+	private:
+		const not_null<QWidget*> _window;
+		const QString _text;
+
+	};
+
+	auto result = object_ptr<Ui::RpWidget>(parent);
+	const auto raw = result.data();
+
+	// Emoji tooltip.
+	const auto shower = raw->lifetime().make_state<EmojiTooltipShower>(
+		parent->window(),
+		tr::lng_call_fingerprint_tooltip(
+			tr::now,
+			lt_user,
+			call->user()->name()));
+	raw->setMouseTracking(true);
+	raw->events(
+	) | rpl::start_with_next([=](not_null<QEvent*> e) {
+		if (e->type() == QEvent::MouseMove) {
+			Ui::Tooltip::Show(kTooltipShowTimeoutMs, shower);
+		} else if (e->type() == QEvent::Leave) {
+			Ui::Tooltip::Hide();
+		}
+	}, raw->lifetime());
+
+	// Signal bars.
+	const auto bars = Ui::CreateChild<SignalBars>(
+		raw,
+		call,
+		st::callPanelSignalBars);
+	bars->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+	// Geometry.
+	const auto print = ComputeEmojiFingerprint(call);
+	auto realSize = Ui::Emoji::GetSizeNormal();
+	auto size = realSize / cIntRetinaFactor();
+	auto count = print.size();
+	const auto printSize = QSize(
+		count * size + (count - 1) * st::callFingerprintSkip,
+		size);
+	const auto fullPrintSize = QRect(
+		QPoint(),
+		printSize
+	).marginsAdded(st::callFingerprintPadding).size();
+	const auto fullBarsSize = bars->rect().marginsAdded(
+		st::callSignalBarsPadding
+	).size();
+	const auto fullSize = QSize(
+		(fullPrintSize.width()
+			+ st::callFingerprintSignalBarsSkip
+			+ fullBarsSize.width()),
+		fullPrintSize.height());
+	raw->resize(fullSize);
+	bars->moveToRight(
+		st::callSignalBarsPadding.right(),
+		st::callSignalBarsPadding.top());
+
+	// Paint.
+	const auto background = raw->lifetime().make_state<QImage>(
+		fullSize * cIntRetinaFactor(),
+		QImage::Format_ARGB32_Premultiplied);
+	background->setDevicePixelRatio(cRetinaFactor());
+	rpl::merge(
+		rpl::single(rpl::empty),
+		Ui::Emoji::Updated(),
+		style::PaletteChanged()
+	) | rpl::start_with_next([=] {
+		background->fill(Qt::transparent);
+
+		// Prepare.
+		auto p = QPainter(background);
+		const auto height = fullSize.height();
+		const auto fullPrintRect = QRect(QPoint(), fullPrintSize);
+		const auto fullBarsRect = QRect(
+			fullSize.width() - fullBarsSize.width(),
+			0,
+			fullBarsSize.width(),
+			height);
+		const auto bigRadius = height / 2;
+		const auto smallRadius = st::roundRadiusSmall;
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::callBgButton);
+
+		// Fingerprint part.
+		p.setClipRect(0, 0, fullPrintSize.width() / 2, height);
+		p.drawRoundedRect(fullPrintRect, bigRadius, bigRadius);
+		p.setClipRect(fullPrintSize.width() / 2, 0, fullSize.width(), height);
+		p.drawRoundedRect(fullPrintRect, smallRadius, smallRadius);
+
+		// Signal bars part.
+		const auto middle = fullBarsRect.center().x();
+		p.setClipRect(0, 0, middle, height);
+		p.drawRoundedRect(fullBarsRect, smallRadius, smallRadius);
+		p.setClipRect(middle, 0, fullBarsRect.width(), height);
+		p.drawRoundedRect(fullBarsRect, bigRadius, bigRadius);
+
+		// Emoji.
+		const auto realSize = Ui::Emoji::GetSizeNormal();
+		const auto size = realSize / cIntRetinaFactor();
+		auto left = st::callFingerprintPadding.left();
+		const auto top = st::callFingerprintPadding.top();
+		p.setClipping(false);
+		for (const auto emoji : print) {
+			Ui::Emoji::Draw(p, emoji, realSize, left, top);
+			left += st::callFingerprintSkip + size;
+		}
+
+		raw->update();
+	}, raw->lifetime());
+
+	raw->paintRequest(
+	) | rpl::start_with_next([=](QRect clip) {
+		QPainter(raw).drawImage(raw->rect(), *background);
+	}, raw->lifetime());
+
+	raw->show();
+	return result;
 }
 
 } // namespace Calls

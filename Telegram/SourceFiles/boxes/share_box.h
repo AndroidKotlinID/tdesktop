@@ -1,53 +1,101 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "boxes/abstract_box.h"
-#include "base/observer.h"
+#include "base/timer.h"
+#include "history/view/history_view_schedule_box.h"
+#include "ui/chat/forward_options_box.h"
+#include "ui/effects/animations.h"
 #include "ui/effects/round_checkbox.h"
+#include "mtproto/sender.h"
+
+namespace style {
+struct MultiSelect;
+struct InputField;
+struct PeerList;
+} // namespace style
+
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
+
+namespace Window {
+class SessionController;
+} // namespace Window
+
+namespace Api {
+struct SendOptions;
+} // namespace Api
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Dialogs {
 class Row;
 class IndexedList;
 } // namespace Dialogs
 
-namespace Notify {
-struct PeerUpdate;
-} // namespace Notify
+namespace Data {
+enum class ForwardOptions;
+class Thread;
+} // namespace Data
 
 namespace Ui {
 class MultiSelect;
+class InputField;
+struct ScrollToRequest;
+template <typename Widget>
+class SlideWrap;
+class PopupMenu;
 } // namespace Ui
 
-QString AppendShareGameScoreUrl(const QString &url, const FullMsgId &fullId);
-void ShareGameScoreByHash(const QString &hash);
+QString AppendShareGameScoreUrl(
+	not_null<Main::Session*> session,
+	const QString &url,
+	const FullMsgId &fullId);
+void ShareGameScoreByHash(
+	not_null<Window::SessionController*> controller,
+	const QString &hash);
+void FastShareMessage(
+	not_null<Window::SessionController*> controller,
+	not_null<HistoryItem*> item);
 
-class ShareBox : public BoxContent, public RPCSender {
-	Q_OBJECT
-
+class ShareBox final : public Ui::BoxContent {
 public:
-	using CopyCallback = base::lambda<void()>;
-	using SubmitCallback = base::lambda<void(const QVector<PeerData*> &)>;
-	using FilterCallback = base::lambda<bool(PeerData*)>;
-	ShareBox(QWidget*, CopyCallback &&copyCallback, SubmitCallback &&submitCallback, FilterCallback &&filterCallback);
+	using CopyCallback = Fn<void()>;
+	using SubmitCallback = Fn<void(
+		std::vector<not_null<Data::Thread*>>&&,
+		TextWithTags&&,
+		Api::SendOptions,
+		Data::ForwardOptions option)>;
+	using FilterCallback = Fn<bool(not_null<Data::Thread*>)>;
+
+	struct Descriptor {
+		not_null<Main::Session*> session;
+		CopyCallback copyCallback;
+		SubmitCallback submitCallback;
+		FilterCallback filterCallback;
+		object_ptr<Ui::RpWidget> bottomWidget = { nullptr };
+		rpl::producer<QString> copyLinkText;
+		const style::MultiSelect *stMultiSelect = nullptr;
+		const style::InputField *stComment = nullptr;
+		const style::PeerList *st = nullptr;
+		const style::InputField *stLabel = nullptr;
+		struct {
+			int messagesCount = 0;
+			bool show = false;
+			bool hasCaptions = false;
+		} forwardOptions;
+		HistoryView::ScheduleBoxStyleArgs scheduleBoxStyle;
+	};
+	ShareBox(QWidget*, Descriptor &&descriptor);
 
 protected:
 	void prepare() override;
@@ -56,43 +104,57 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
 
-private slots:
-	bool onSearchByUsername(bool searchCache = false);
-	void onNeedSearchByUsername();
-
-	void onSubmit();
-	void onCopyLink();
-
-	void onMustScrollTo(int top, int bottom);
-
 private:
+	void prepareCommentField();
 	void scrollAnimationCallback();
 
-	void onFilterUpdate(const QString &query);
-	void onSelectedChanged();
-	void updateButtons();
+	void submit(Api::SendOptions options);
+	void submitSilent();
+	void submitScheduled();
+	void copyLink();
+	bool searchByUsername(bool useCache = false);
+
+	SendMenu::Type sendMenuType() const;
+
+	void scrollTo(Ui::ScrollToRequest request);
+	void needSearchByUsername();
+	void applyFilterUpdate(const QString &query);
+	void selectedChanged();
 	void createButtons();
 	int getTopScrollSkip() const;
+	int getBottomScrollSkip() const;
+	int contentHeight() const;
 	void updateScrollSkips();
 
-	void addPeerToMultiSelect(PeerData *peer, bool skipAnimation = false);
-	void onPeerSelectedChanged(PeerData *peer, bool checked);
+	void addPeerToMultiSelect(not_null<Data::Thread*> thread);
+	void innerSelectedChanged(not_null<Data::Thread*> thread, bool checked);
 
-	void peopleReceived(const MTPcontacts_Found &result, mtpRequestId requestId);
-	bool peopleFailed(const RPCError &error, mtpRequestId requestId);
+	void peopleDone(
+		const MTPcontacts_Found &result,
+		mtpRequestId requestId);
+	void peopleFail(const MTP::Error &error, mtpRequestId requestId);
 
-	CopyCallback _copyCallback;
-	SubmitCallback _submitCallback;
-	FilterCallback _filterCallback;
+	void showMenu(not_null<Ui::RpWidget*> parent);
+
+	Descriptor _descriptor;
+	MTP::Sender _api;
+
+	std::shared_ptr<Ui::BoxShow> _show;
 
 	object_ptr<Ui::MultiSelect> _select;
+	object_ptr<Ui::SlideWrap<Ui::InputField>> _comment;
+	object_ptr<Ui::RpWidget> _bottomWidget;
+
+	base::unique_qptr<Ui::PopupMenu> _menu;
+	Ui::ForwardOptions _forwardOptions;
 
 	class Inner;
 	QPointer<Inner> _inner;
 
 	bool _hasSelected = false;
+	rpl::variable<QString> _copyLinkText;
 
-	object_ptr<QTimer> _searchTimer;
+	base::Timer _searchTimer;
 	QString _peopleQuery;
 	bool _peopleFull = false;
 	mtpRequestId _peopleRequest = 0;
@@ -103,115 +165,6 @@ private:
 	using PeopleQueries = QMap<mtpRequestId, QString>;
 	PeopleQueries _peopleQueries;
 
-	Animation _scrollAnimation;
-
-};
-
-// This class is hold in header because it requires Qt preprocessing.
-class ShareBox::Inner : public TWidget, public RPCSender, private base::Subscriber {
-	Q_OBJECT
-
-public:
-	Inner(QWidget *parent, ShareBox::FilterCallback &&filterCallback);
-
-	void setPeerSelectedChangedCallback(base::lambda<void(PeerData *peer, bool selected)> callback);
-	void peerUnselected(PeerData *peer);
-
-	QVector<PeerData*> selected() const;
-	bool hasSelected() const;
-
-	void peopleReceived(const QString &query, const QVector<MTPPeer> &people);
-
-	void activateSkipRow(int direction);
-	void activateSkipColumn(int direction);
-	void activateSkipPage(int pageHeight, int direction);
-	void setVisibleTopBottom(int visibleTop, int visibleBottom) override;
-	void updateFilter(QString filter = QString());
-
-	~Inner();
-
-public slots:
-	void onSelectActive();
-
-signals:
-	void mustScrollTo(int ymin, int ymax);
-	void searchByUsername();
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-	void enterEventHook(QEvent *e) override;
-	void leaveEventHook(QEvent *e) override;
-	void mouseMoveEvent(QMouseEvent *e) override;
-	void mousePressEvent(QMouseEvent *e) override;
-	void resizeEvent(QResizeEvent *e) override;
-
-private:
-	// Observed notifications.
-	void notifyPeerUpdated(const Notify::PeerUpdate &update);
-	void invalidateCache();
-
-	int displayedChatsCount() const;
-
-	struct Chat {
-		Chat(PeerData *peer, base::lambda<void()> updateCallback);
-
-		PeerData *peer;
-		Ui::RoundImageCheckbox checkbox;
-		Text name;
-		Animation nameActive;
-	};
-	void paintChat(Painter &p, TimeMs ms, Chat *chat, int index);
-	void updateChat(PeerData *peer);
-	void updateChatName(Chat *chat, PeerData *peer);
-	void repaintChat(PeerData *peer);
-	int chatIndex(PeerData *peer) const;
-	void repaintChatAtIndex(int index);
-	Chat *getChatAtIndex(int index);
-
-	void loadProfilePhotos(int yFrom);
-	void changeCheckState(Chat *chat);
-	enum class ChangeStateWay {
-		Default,
-		SkipCallback,
-	};
-	void changePeerCheckState(Chat *chat, bool checked, ChangeStateWay useCallback = ChangeStateWay::Default);
-
-	Chat *getChat(Dialogs::Row *row);
-	void setActive(int active);
-	void updateUpon(const QPoint &pos);
-
-	void refresh();
-
-	float64 _columnSkip = 0.;
-	float64 _rowWidthReal = 0.;
-	int _rowsLeft = 0;
-	int _rowsTop = 0;
-	int _rowWidth = 0;
-	int _rowHeight = 0;
-	int _columnCount = 4;
-	int _active = -1;
-	int _upon = -1;
-
-	ShareBox::FilterCallback _filterCallback;
-	std::unique_ptr<Dialogs::IndexedList> _chatsIndexed;
-	QString _filter;
-	using FilteredDialogs = QVector<Dialogs::Row*>;
-	FilteredDialogs _filtered;
-
-	using DataMap = QMap<PeerData*, Chat*>;
-	DataMap _dataMap;
-	using SelectedChats = OrderedSet<PeerData*>;
-	SelectedChats _selected;
-
-	base::lambda<void(PeerData *peer, bool selected)> _peerSelectedChangedCallback;
-
-	ChatData *data(Dialogs::Row *row);
-
-	bool _searching = false;
-	QString _lastQuery;
-	using ByUsernameRows = QVector<PeerData*>;
-	using ByUsernameDatas = QVector<Chat*>;
-	ByUsernameRows _byUsernameFiltered;
-	ByUsernameDatas d_byUsernameFiltered;
+	Ui::Animations::Simple _scrollAnimation;
 
 };

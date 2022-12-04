@@ -1,85 +1,70 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "ui/effects/animations.h"
 #include "styles/style_widgets.h"
+
+class Painter;
+enum class ImageRoundRadius;
 
 namespace Ui {
 
 class RoundCheckbox {
 public:
-	RoundCheckbox(const style::RoundCheckbox &st, base::lambda<void()> updateCallback);
+	RoundCheckbox(const style::RoundCheckbox &st, Fn<void()> updateCallback);
 
-	void paint(Painter &p, TimeMs ms, int x, int y, int outerWidth, float64 masterScale = 1.);
+	void paint(QPainter &p, int x, int y, int outerWidth, float64 masterScale = 1.) const;
 
 	void setDisplayInactive(bool displayInactive);
 	bool checked() const {
 		return _checked;
 	}
-	enum class SetStyle {
-		Animated,
-		Fast,
-	};
-	void setChecked(bool newChecked, SetStyle speed = SetStyle::Animated);
+	void setChecked(
+		bool newChecked,
+		anim::type animated = anim::type::normal);
 
 	void invalidateCache();
 
 private:
-	struct Icon {
-		Animation fadeIn;
-		Animation fadeOut;
-		QPixmap wideCheckCache;
-	};
-	void removeFadeOutedIcons();
-	void prepareWideCheckIconCache(Icon *icon);
 	void prepareInactiveCache();
-	QRect cacheDestRect(int x, int y, float64 scale) const;
 
 	const style::RoundCheckbox &_st;
-	base::lambda<void()> _updateCallback;
+	Fn<void()> _updateCallback;
 
 	bool _checked = false;
-	std::vector<Icon> _icons;
+	Ui::Animations::Simple _checkedProgress;
 
 	bool _displayInactive = false;
 	QPixmap _inactiveCacheBg, _inactiveCacheFg;
-
-	// Those pixmaps are shared among all checkboxes that have the same style.
-	QPixmap _wideCheckBgCache, _wideCheckFullCache;
 
 };
 
 class RoundImageCheckbox {
 public:
-	using PaintRoundImage = base::lambda<void(Painter &p, int x, int y, int outerWidth, int size)>;
-	RoundImageCheckbox(const style::RoundImageCheckbox &st, base::lambda<void()> updateCallback, PaintRoundImage &&paintRoundImage);
+	using PaintRoundImage = Fn<void(Painter &p, int x, int y, int outerWidth, int size)>;
+	RoundImageCheckbox(
+		const style::RoundImageCheckbox &st,
+		Fn<void()> updateCallback,
+		PaintRoundImage &&paintRoundImage,
+		Fn<ImageRoundRadius()> roundingRadius = nullptr);
 
-	void paint(Painter &p, TimeMs ms, int x, int y, int outerWidth);
+	void paint(Painter &p, int x, int y, int outerWidth) const;
 	float64 checkedAnimationRatio() const;
+
+	void setColorOverride(std::optional<QBrush> fg);
 
 	bool checked() const {
 		return _check.checked();
 	}
-	using SetStyle = RoundCheckbox::SetStyle;
-	void setChecked(bool newChecked, SetStyle speed = SetStyle::Animated);
+	void setChecked(
+		bool newChecked,
+		anim::type animated = anim::type::normal);
 
 	void invalidateCache() {
 		_check.invalidateCache();
@@ -89,13 +74,16 @@ private:
 	void prepareWideCache();
 
 	const style::RoundImageCheckbox &_st;
-	base::lambda<void()> _updateCallback;
+	Fn<void()> _updateCallback;
 	PaintRoundImage _paintRoundImage;
+	Fn<ImageRoundRadius()> _roundingRadius;
 
 	QPixmap _wideCache;
-	Animation _selection;
+	Ui::Animations::Simple _selection;
 
 	RoundCheckbox _check;
+
+	std::optional<QBrush> _fgOverride;
 
 };
 

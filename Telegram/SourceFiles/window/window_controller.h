@@ -1,117 +1,153 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "mainwindow.h"
+#include "window/window_adaptive.h"
+#include "ui/layers/layer_widget.h"
+
+namespace Main {
+class Account;
+class Session;
+} // namespace Main
+
+namespace Media::View {
+struct OpenRequest;
+} // namespace Media::View
+
 namespace Window {
 
-enum class GifPauseReason {
-	Any = 0,
-	InlineResults = (1 << 0),
-	SavedGifs = (1 << 1),
-	Layer = (1 << 2),
-	RoundPlaying = (1 << 3),
-	MediaPreview = (1 << 4),
-};
-Q_DECLARE_FLAGS(GifPauseReasons, GifPauseReason);
-Q_DECLARE_OPERATORS_FOR_FLAGS(GifPauseReasons);
-
-class MainWindow;
-
-class Controller {
+class Controller final : public base::has_weak_ptr {
 public:
-	static constexpr auto kDefaultDialogsWidthRatio = 5. / 14;
+	Controller();
+	Controller(
+		not_null<PeerData*> singlePeer,
+		MsgId showAtMsgId);
+	~Controller();
 
-	Controller(gsl::not_null<MainWindow*> window) : _window(window) {
-	}
+	Controller(const Controller &other) = delete;
+	Controller &operator=(const Controller &other) = delete;
 
-	gsl::not_null<MainWindow*> window() const {
-		return _window;
-	}
-
-	// This is needed for History TopBar updating when searchInPeer
-	// is changed in the DialogsWidget of the current window.
-	base::Observable<PeerData*> &searchInPeerChanged() {
-		return _searchInPeerChanged;
-	}
-
-	// This is needed while we have one HistoryWidget and one TopBarWidget
-	// for all histories we show in a window. Once each history is shown
-	// in its own HistoryWidget with its own TopBarWidget this can be removed.
-	base::Observable<PeerData*> &historyPeerChanged() {
-		return _historyPeerChanged;
+	void showAccount(not_null<Main::Account*> account);
+	[[nodiscard]] PeerData *singlePeer() const;
+	[[nodiscard]] bool isPrimary() const {
+		return (singlePeer() == nullptr);
 	}
 
-	void enableGifPauseReason(GifPauseReason reason);
-	void disableGifPauseReason(GifPauseReason reason);
-	base::Observable<void> &gifPauseLevelChanged() {
-		return _gifPauseLevelChanged;
+	[[nodiscard]] not_null<::MainWindow*> widget() {
+		return &_widget;
 	}
-	bool isGifPausedAtLeastFor(GifPauseReason reason) const;
-	base::Observable<void> &floatPlayerAreaUpdated() {
-		return _floatPlayerAreaUpdated;
-	}
+	[[nodiscard]] Main::Account &account() const {
+		Expects(_account != nullptr);
 
-	struct ColumnLayout {
-		int bodyWidth;
-		int dialogsWidth;
-		int chatWidth;
-		Adaptive::WindowLayout windowLayout;
-	};
-	ColumnLayout computeColumnLayout() const;
-	int dialogsSmallColumnWidth() const;
-	bool canProvideChatWidth(int requestedWidth) const;
-	void provideChatWidth(int requestedWidth);
+		return *_account;
+	}
+	[[nodiscard]] Main::Account *maybeAccount() const {
+		return _account;
+	}
+	[[nodiscard]] Main::Session *maybeSession() const;
+	[[nodiscard]] SessionController *sessionController() const {
+		return _sessionController.get();
+	}
+	[[nodiscard]] bool locked() const;
 
-	base::Variable<float64> &dialogsWidthRatio() {
-		return _dialogsWidthRatio;
+	[[nodiscard]] Adaptive &adaptive() const;
+
+	void finishFirstShow();
+
+	void setupPasscodeLock();
+	void clearPasscodeLock();
+	void setupIntro();
+	void setupMain(MsgId singlePeerShowAtMsgId);
+
+	void showLogoutConfirmation();
+
+	void showSettings();
+
+	[[nodiscard]] int verticalShadowTop() const;
+
+	template <typename BoxType>
+	QPointer<BoxType> show(
+			object_ptr<BoxType> content,
+			Ui::LayerOptions options = Ui::LayerOption::KeepOther,
+			anim::type animated = anim::type::normal) {
+		const auto result = QPointer<BoxType>(content.data());
+		showBox(std::move(content), options, animated);
+		return result;
 	}
-	const base::Variable<float64> &dialogsWidthRatio() const {
-		return _dialogsWidthRatio;
-	}
-	base::Variable<bool> &dialogsListFocused() {
-		return _dialogsListFocused;
-	}
-	const base::Variable<bool> &dialogsListFocused() const {
-		return _dialogsListFocused;
-	}
-	base::Variable<bool> &dialogsListDisplayForced() {
-		return _dialogsListDisplayForced;
-	}
-	const base::Variable<bool> &dialogsListDisplayForced() const {
-		return _dialogsListDisplayForced;
-	}
+	void showToast(const QString &text);
+	void showLayer(
+		std::unique_ptr<Ui::LayerWidget> &&layer,
+		Ui::LayerOptions options,
+		anim::type animated = anim::type::normal);
+
+	void showRightColumn(object_ptr<TWidget> widget);
+
+	void hideLayer(anim::type animated = anim::type::normal);
+	void hideSettingsAndLayer(anim::type animated = anim::type::normal);
+
+	void activate();
+	void reActivate();
+	void updateIsActiveFocus();
+	void updateIsActiveBlur();
+	void updateIsActive();
+	void minimize();
+	void close();
+
+	void preventOrInvoke(Fn<void()> &&callback);
+
+	void invokeForSessionController(
+		not_null<Main::Account*> account,
+		PeerData *singlePeer,
+		Fn<void(not_null<SessionController*>)> &&callback);
+
+	void openInMediaView(Media::View::OpenRequest &&request);
+	[[nodiscard]] auto openInMediaViewRequests() const
+	-> rpl::producer<Media::View::OpenRequest>;
+
+	QPoint getPointForCallPanelCenter() const;
+
+	rpl::lifetime &lifetime();
 
 private:
-	gsl::not_null<MainWindow*> _window;
+	struct CreateArgs {
+		PeerData *singlePeer = nullptr;
+	};
+	explicit Controller(CreateArgs &&args);
 
-	base::Observable<PeerData*> _searchInPeerChanged;
-	base::Observable<PeerData*> _historyPeerChanged;
+	void showAccount(
+		not_null<Main::Account*> account,
+		MsgId singlePeerShowAtMsgId);
+	void setupSideBar();
+	void sideBarChanged();
+	void logoutWithChecks(Main::Account *account);
 
-	GifPauseReasons _gifPauseReasons = { 0 };
-	base::Observable<void> _gifPauseLevelChanged;
-	base::Observable<void> _floatPlayerAreaUpdated;
+	void showBox(
+		object_ptr<Ui::BoxContent> content,
+		Ui::LayerOptions options,
+		anim::type animated);
+	void checkThemeEditor();
+	void checkLockByTerms();
+	void showTermsDecline();
+	void showTermsDelete();
 
-	base::Variable<float64> _dialogsWidthRatio = { kDefaultDialogsWidthRatio };
-	base::Variable<bool> _dialogsListFocused = { false };
-	base::Variable<bool> _dialogsListDisplayForced = { false };
+	PeerData *_singlePeer = nullptr;
+	Main::Account *_account = nullptr;
+	base::Timer _isActiveTimer;
+	::MainWindow _widget;
+	const std::unique_ptr<Adaptive> _adaptive;
+	std::unique_ptr<SessionController> _sessionController;
+	QPointer<Ui::BoxContent> _termsBox;
+
+	rpl::event_stream<Media::View::OpenRequest> _openInMediaViewRequests;
+
+	rpl::lifetime _accountLifetime;
+	rpl::lifetime _lifetime;
 
 };
 

@@ -1,30 +1,21 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/themes/window_theme_warning.h"
 
-#include "styles/style_boxes.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
+#include "ui/painter.h"
+#include "ui/ui_utility.h"
+#include "ui/cached_round_corners.h"
 #include "window/themes/window_theme.h"
 #include "lang/lang_keys.h"
+#include "styles/style_layers.h"
+#include "styles/style_boxes.h"
 
 namespace Window {
 namespace Theme {
@@ -34,13 +25,14 @@ constexpr int kWaitBeforeRevertMs = 15999;
 
 } // namespace
 
-WarningWidget::WarningWidget(QWidget *parent) : TWidget(parent)
+WarningWidget::WarningWidget(QWidget *parent)
+: TWidget(parent)
+, _timer([=] { handleTimer(); })
 , _secondsLeft(kWaitBeforeRevertMs / 1000)
-, _keepChanges(this, langFactory(lng_theme_keep_changes), st::defaultBoxButton)
-, _revert(this, langFactory(lng_theme_revert), st::defaultBoxButton) {
-	_keepChanges->setClickedCallback([] { Window::Theme::KeepApplied(); });
-	_revert->setClickedCallback([] { Window::Theme::Revert(); });
-	_timer.setTimeoutHandler([this] { handleTimer(); });
+, _keepChanges(this, tr::lng_theme_keep_changes(), st::defaultBoxButton)
+, _revert(this, tr::lng_theme_revert(), st::defaultBoxButton) {
+	_keepChanges->setClickedCallback([] { KeepApplied(); });
+	_revert->setClickedCallback([] { Revert(); });
 	updateText();
 }
 
@@ -54,28 +46,28 @@ void WarningWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	if (!_cache.isNull()) {
-		if (!_animation.animating(getms())) {
+		if (!_animation.animating()) {
 			if (isHidden()) {
 				return;
 			}
 		}
-		p.setOpacity(_animation.current(_hiding ? 0. : 1.));
+		p.setOpacity(_animation.value(_hiding ? 0. : 1.));
 		p.drawPixmap(_outer.topLeft(), _cache);
 		if (!_animation.animating()) {
 			_cache = QPixmap();
 			showChildren();
-			_started = getms(true);
-			_timer.start(100);
+			_started = crl::now();
+			_timer.callOnce(100);
 		}
 		return;
 	}
 
 	Ui::Shadow::paint(p, _inner, width(), st::boxRoundShadow);
-	App::roundRect(p, _inner, st::boxBg, BoxCorners);
+	Ui::FillRoundRect(p, _inner, st::boxBg, Ui::BoxCorners);
 
 	p.setFont(st::boxTitleFont);
 	p.setPen(st::boxTitleFg);
-	p.drawTextLeft(_inner.x() + st::boxTitlePosition.x(), _inner.y() + st::boxTitlePosition.y(), width(), lang(lng_theme_sure_keep));
+	p.drawTextLeft(_inner.x() + st::boxTitlePosition.x(), _inner.y() + st::boxTitlePosition.y(), width(), tr::lng_theme_sure_keep(tr::now));
 
 	p.setFont(st::boxTextFont);
 	p.setPen(st::boxTextFg);
@@ -90,9 +82,9 @@ void WarningWidget::resizeEvent(QResizeEvent *e) {
 }
 
 void WarningWidget::updateControlsGeometry() {
-	auto left = _inner.x() + _inner.width() - st::boxButtonPadding.right() - _keepChanges->width();
-	_keepChanges->moveToLeft(left, _inner.y() + _inner.height() - st::boxButtonPadding.bottom() - _keepChanges->height());
-	_revert->moveToLeft(left - st::boxButtonPadding.left() - _revert->width(), _keepChanges->y());
+	auto left = _inner.x() + _inner.width() - st::defaultBox.buttonPadding.right() - _keepChanges->width();
+	_keepChanges->moveToLeft(left, _inner.y() + _inner.height() - st::defaultBox.buttonPadding.bottom() - _keepChanges->height());
+	_revert->moveToLeft(left - st::defaultBox.buttonPadding.left() - _revert->width(), _keepChanges->y());
 }
 
 void WarningWidget::refreshLang() {
@@ -100,7 +92,7 @@ void WarningWidget::refreshLang() {
 }
 
 void WarningWidget::handleTimer() {
-	auto msPassed = getms(true) - _started;
+	auto msPassed = crl::now() - _started;
 	setSecondsLeft((kWaitBeforeRevertMs - msPassed) / 1000);
 }
 
@@ -113,12 +105,12 @@ void WarningWidget::setSecondsLeft(int secondsLeft) {
 			updateText();
 			update();
 		}
-		_timer.start(100);
+		_timer.callOnce(100);
 	}
 }
 
 void WarningWidget::updateText() {
-	_text = lng_theme_reverting(lt_count, _secondsLeft);
+	_text = tr::lng_theme_reverting(tr::now, lt_count, _secondsLeft);
 }
 
 void WarningWidget::showAnimated() {
@@ -132,12 +124,12 @@ void WarningWidget::hideAnimated() {
 }
 
 void WarningWidget::startAnimation(bool hiding) {
-	_timer.stop();
+	_timer.cancel();
 	_hiding = hiding;
 	if (_cache.isNull()) {
 		showChildren();
-		myEnsureResized(this);
-		_cache = myGrab(this, _outer);
+		Ui::SendPendingMoveResizeEvents(this);
+		_cache = Ui::GrabWidget(this, _outer);
 	}
 	hideChildren();
 	_animation.start([this] {

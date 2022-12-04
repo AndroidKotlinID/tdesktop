@@ -1,42 +1,37 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/widgets/multi_select.h"
 
-#include "styles/style_widgets.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/scroll_area.h"
+#include "ui/effects/animations.h"
 #include "ui/effects/cross_animation.h"
+#include "ui/text/text_options.h"
+#include "ui/painter.h"
+#include "ui/ui_utility.h"
 #include "lang/lang_keys.h"
+
+#include <set>
 
 namespace Ui {
 namespace {
 
 constexpr int kWideScale = 3;
 
-} // namespace
-
-class MultiSelect::Inner::Item {
+class Item {
 public:
-	Item(const style::MultiSelectItem &st, uint64 id, const QString &text, style::color color, PaintRoundImage &&paintRoundImage);
+	Item(
+		const style::MultiSelectItem &st,
+		uint64 id,
+		const QString &text,
+		style::color color,
+		MultiSelect::PaintRoundImage &&paintRoundImage);
 
 	uint64 id() const {
 		return _id;
@@ -56,11 +51,11 @@ public:
 	void setPosition(int x, int y, int outerWidth, int maxVisiblePadding);
 	QRect paintArea(int outerWidth) const;
 
-	void setUpdateCallback(base::lambda<void()> updateCallback) {
+	void setUpdateCallback(Fn<void()> updateCallback) {
 		_updateCallback = updateCallback;
 	}
 	void setText(const QString &text);
-	void paint(Painter &p, int outerWidth, TimeMs ms);
+	void paint(Painter &p, int outerWidth);
 
 	void mouseMoveEvent(QPoint point);
 	void leaveEvent();
@@ -78,8 +73,13 @@ public:
 
 private:
 	void setOver(bool over);
-	void paintOnce(Painter &p, int x, int y, int outerWidth, TimeMs ms);
-	void paintDeleteButton(Painter &p, int x, int y, int outerWidth, float64 overOpacity);
+	void paintOnce(Painter &p, int x, int y, int outerWidth);
+	void paintDeleteButton(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		float64 overOpacity);
 	bool paintCached(Painter &p, int x, int y, int outerWidth);
 	void prepareCache();
 	void setVisibleAnimated(bool visible);
@@ -88,13 +88,18 @@ private:
 
 	uint64 _id;
 	struct SlideAnimation {
-		SlideAnimation(base::lambda<void()> updateCallback, int fromX, int toX, int y, float64 duration)
+		SlideAnimation(
+				Fn<void()> updateCallback,
+				int fromX,
+				int toX,
+				int y,
+				float64 duration)
 			: fromX(fromX)
 			, toX(toX)
 			, y(y) {
 			x.start(updateCallback, fromX, toX, duration);
 		}
-		Animation x;
+		Ui::Animations::Simple x;
 		int fromX, toX;
 		int y;
 	};
@@ -102,21 +107,26 @@ private:
 	int _x = -1;
 	int _y = -1;
 	int _width = 0;
-	Text _text;
+	Text::String _text;
 	style::color _color;
 	bool _over = false;
 	QPixmap _cache;
-	Animation _visibility;
-	Animation _overOpacity;
+	Ui::Animations::Simple _visibility;
+	Ui::Animations::Simple _overOpacity;
 	bool _overDelete = false;
 	bool _active = false;
-	PaintRoundImage _paintRoundImage;
-	base::lambda<void()> _updateCallback;
+	MultiSelect::PaintRoundImage _paintRoundImage;
+	Fn<void()> _updateCallback;
 	bool _hiding = false;
 
 };
 
-MultiSelect::Inner::Item::Item(const style::MultiSelectItem &st, uint64 id, const QString &text, style::color color, PaintRoundImage &&paintRoundImage)
+Item::Item(
+	const style::MultiSelectItem &st,
+	uint64 id,
+	const QString &text,
+	style::color color,
+	MultiSelect::PaintRoundImage &&paintRoundImage)
 : _st(st)
 , _id(id)
 , _color(color)
@@ -124,14 +134,17 @@ MultiSelect::Inner::Item::Item(const style::MultiSelectItem &st, uint64 id, cons
 	setText(text);
 }
 
-void MultiSelect::Inner::Item::setText(const QString &text) {
-	_text.setText(_st.style, text, _textNameOptions);
-	_width = _st.height + _st.padding.left() + _text.maxWidth() + _st.padding.right();
+void Item::setText(const QString &text) {
+	_text.setText(_st.style, text, NameTextOptions());
+	_width = _st.height
+		+ _st.padding.left()
+		+ _text.maxWidth()
+		+ _st.padding.right();
 	accumulate_min(_width, _st.maxWidth);
 }
 
-void MultiSelect::Inner::Item::paint(Painter &p, int outerWidth, TimeMs ms) {
-	if (!_cache.isNull() && !_visibility.animating(ms)) {
+void Item::paint(Painter &p, int outerWidth) {
+	if (!_cache.isNull() && !_visibility.animating()) {
 		if (_hiding) {
 			return;
 		} else {
@@ -139,14 +152,14 @@ void MultiSelect::Inner::Item::paint(Painter &p, int outerWidth, TimeMs ms) {
 		}
 	}
 	if (_copies.empty()) {
-		paintOnce(p, _x, _y, outerWidth, ms);
+		paintOnce(p, _x, _y, outerWidth);
 	} else {
 		for (auto i = _copies.begin(), e = _copies.end(); i != e;) {
-			auto x = qRound(i->x.current(getms(), _x));
+			auto x = qRound(i->x.value(_x));
 			auto y = i->y;
 			auto animating = i->x.animating();
 			if (animating || (y == _y)) {
-				paintOnce(p, x, y, outerWidth, ms);
+				paintOnce(p, x, y, outerWidth);
 			}
 			if (animating) {
 				++i;
@@ -158,14 +171,19 @@ void MultiSelect::Inner::Item::paint(Painter &p, int outerWidth, TimeMs ms) {
 	}
 }
 
-void MultiSelect::Inner::Item::paintOnce(Painter &p, int x, int y, int outerWidth, TimeMs ms) {
+void Item::paintOnce(Painter &p, int x, int y, int outerWidth) {
 	if (!_cache.isNull()) {
 		paintCached(p, x, y, outerWidth);
 		return;
 	}
 
 	auto radius = _st.height / 2;
-	auto inner = rtlrect(x + radius, y, _width - radius, _st.height, outerWidth);
+	auto inner = style::rtlrect(
+		x + radius,
+		y,
+		_width - radius,
+		_st.height,
+		outerWidth);
 
 	auto clipEnabled = p.hasClipping();
 	auto clip = clipEnabled ? p.clipRegion() : QRegion();
@@ -175,7 +193,10 @@ void MultiSelect::Inner::Item::paintOnce(Painter &p, int x, int y, int outerWidt
 	p.setBrush(_active ? _st.textActiveBg : _st.textBg);
 	{
 		PainterHighQualityEnabler hq(p);
-		p.drawRoundedRect(rtlrect(x, y, _width, _st.height, outerWidth), radius, radius);
+		p.drawRoundedRect(
+			style::rtlrect(x, y, _width, _st.height, outerWidth),
+			radius,
+			radius);
 	}
 
 	if (clipEnabled) {
@@ -184,7 +205,7 @@ void MultiSelect::Inner::Item::paintOnce(Painter &p, int x, int y, int outerWidt
 		p.setClipping(false);
 	}
 
-	auto overOpacity = _overOpacity.current(ms, _over ? 1. : 0.);
+	auto overOpacity = _overOpacity.value(_over ? 1. : 0.);
 	if (overOpacity < 1.) {
 		_paintRoundImage(p, x, y, outerWidth, _st.height);
 	}
@@ -195,50 +216,76 @@ void MultiSelect::Inner::Item::paintOnce(Painter &p, int x, int y, int outerWidt
 	auto textLeft = _st.height + _st.padding.left();
 	auto textWidth = _width - textLeft - _st.padding.right();
 	p.setPen(_active ? _st.textActiveFg : _st.textFg);
-	_text.drawLeftElided(p, x + textLeft, y + _st.padding.top(), textWidth, outerWidth);
+	_text.drawLeftElided(
+		p,
+		x + textLeft,
+		y + _st.padding.top(),
+		textWidth,
+		outerWidth);
 }
 
-void MultiSelect::Inner::Item::paintDeleteButton(Painter &p, int x, int y, int outerWidth, float64 overOpacity) {
+void Item::paintDeleteButton(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		float64 overOpacity) {
 	p.setOpacity(overOpacity);
 
 	p.setPen(Qt::NoPen);
 	p.setBrush(_color);
 	{
 		PainterHighQualityEnabler hq(p);
-		p.drawEllipse(rtlrect(x, y, _st.height, _st.height, outerWidth));
+		p.drawEllipse(
+			style::rtlrect(x, y, _st.height, _st.height, outerWidth));
 	}
 
-	CrossAnimation::paint(p, _st.deleteCross, _st.deleteFg, x, y, outerWidth, overOpacity);
+	CrossAnimation::paint(
+		p,
+		_st.deleteCross,
+		_st.deleteFg,
+		x,
+		y,
+		outerWidth,
+		overOpacity);
 
 	p.setOpacity(1.);
 }
 
-bool MultiSelect::Inner::Item::paintCached(Painter &p, int x, int y, int outerWidth) {
+bool Item::paintCached(Painter &p, int x, int y, int outerWidth) {
 	PainterHighQualityEnabler hq(p);
 
-	auto opacity = _visibility.current(_hiding ? 0. : 1.);
-	auto scale = opacity + _st.minScale * (1. - opacity);
+	auto opacity = _visibility.value(_hiding ? 0. : 1.);
 	auto height = opacity * _cache.height() / _cache.devicePixelRatio();
 	auto width = opacity * _cache.width() / _cache.devicePixelRatio();
 
 	p.setOpacity(opacity);
-	p.drawPixmap(rtlrect(x + (_width - width) / 2., y + (_st.height - height) / 2., width, height, outerWidth), _cache);
+	p.drawPixmap(
+		style::rtlrect(
+			x + (_width - width) / 2.,
+			y + (_st.height - height) / 2.,
+			width,
+			height,
+			outerWidth),
+		_cache);
 	p.setOpacity(1.);
 	return true;
 }
 
-void MultiSelect::Inner::Item::mouseMoveEvent(QPoint point) {
-	if (!_cache.isNull()) return;
+void Item::mouseMoveEvent(QPoint point) {
+	if (!_cache.isNull()) {
+		return;
+	}
 	_overDelete = QRect(0, 0, _st.height, _st.height).contains(point);
 	setOver(true);
 }
 
-void MultiSelect::Inner::Item::leaveEvent() {
+void Item::leaveEvent() {
 	_overDelete = false;
 	setOver(false);
 }
 
-void MultiSelect::Inner::Item::setPosition(int x, int y, int outerWidth, int maxVisiblePadding) {
+void Item::setPosition(int x, int y, int outerWidth, int maxVisiblePadding) {
 	if (_x >= 0 && _y >= 0 && (_x != x || _y != y)) {
 		// Make an animation if it is not the first setPosition().
 		auto found = false;
@@ -250,7 +297,11 @@ void MultiSelect::Inner::Item::setPosition(int x, int y, int outerWidth, int max
 					i->x.start(_updateCallback, i->toX, x, _st.duration);
 					found = true;
 				} else {
-					i->x.start(_updateCallback, i->fromX, (i->toX > i->fromX) ? rightHidden : leftHidden, _st.duration);
+					i->x.start(
+						_updateCallback,
+						i->fromX,
+						(i->toX > i->fromX) ? rightHidden : leftHidden,
+						_st.duration);
 				}
 				++i;
 			} else {
@@ -260,16 +311,36 @@ void MultiSelect::Inner::Item::setPosition(int x, int y, int outerWidth, int max
 		}
 		if (_copies.empty()) {
 			if (_y == y) {
-				auto copy = SlideAnimation(_updateCallback, _x, x, _y, _st.duration);
+				auto copy = SlideAnimation(
+					_updateCallback,
+					_x,
+					x,
+					_y,
+					_st.duration);
 				_copies.push_back(std::move(copy));
 			} else {
-				auto copyHiding = SlideAnimation(_updateCallback, _x, (y > _y) ? rightHidden : leftHidden, _y, _st.duration);
+				auto copyHiding = SlideAnimation(
+					_updateCallback,
+					_x,
+					(y > _y) ? rightHidden : leftHidden,
+					_y,
+					_st.duration);
 				_copies.push_back(std::move(copyHiding));
-				auto copyShowing = SlideAnimation(_updateCallback, (y > _y) ? leftHidden : rightHidden, x, y, _st.duration);
+				auto copyShowing = SlideAnimation(
+					_updateCallback,
+					(y > _y) ? leftHidden : rightHidden,
+					x,
+					y,
+					_st.duration);
 				_copies.push_back(std::move(copyShowing));
 			}
 		} else if (!found) {
-			auto copy = SlideAnimation(_updateCallback, (y > _y) ? leftHidden : rightHidden, x, y, _st.duration);
+			auto copy = SlideAnimation(
+				_updateCallback,
+				(y > _y) ? leftHidden : rightHidden,
+				x,
+				y,
+				_st.duration);
 			_copies.push_back(std::move(copy));
 		}
 	}
@@ -277,12 +348,12 @@ void MultiSelect::Inner::Item::setPosition(int x, int y, int outerWidth, int max
 	_y = y;
 }
 
-QRect MultiSelect::Inner::Item::paintArea(int outerWidth) const {
+QRect Item::paintArea(int outerWidth) const {
 	if (_copies.empty()) {
 		return rect();
 	}
 	auto yMin = 0, yMax = 0;
-	for_const (auto &copy, _copies) {
+	for (const auto &copy : _copies) {
 		accumulate_max(yMax, copy.y);
 		if (yMin) {
 			accumulate_min(yMin, copy.y);
@@ -293,23 +364,30 @@ QRect MultiSelect::Inner::Item::paintArea(int outerWidth) const {
 	return QRect(0, yMin, outerWidth, yMax - yMin + _st.height);
 }
 
-void MultiSelect::Inner::Item::prepareCache() {
+void Item::prepareCache() {
 	if (!_cache.isNull()) return;
 
-	t_assert(!_visibility.animating());
-	auto cacheWidth = _width * kWideScale * cIntRetinaFactor();
-	auto cacheHeight = _st.height * kWideScale * cIntRetinaFactor();
-	auto data = QImage(cacheWidth, cacheHeight, QImage::Format_ARGB32_Premultiplied);
+	Assert(!_visibility.animating());
+	auto cacheWidth = _width * kWideScale * style::DevicePixelRatio();
+	auto cacheHeight = _st.height * kWideScale * style::DevicePixelRatio();
+	auto data = QImage(
+		cacheWidth,
+		cacheHeight,
+		QImage::Format_ARGB32_Premultiplied);
 	data.fill(Qt::transparent);
-	data.setDevicePixelRatio(cRetinaFactor());
+	data.setDevicePixelRatio(style::DevicePixelRatio());
 	{
 		Painter p(&data);
-		paintOnce(p, _width * (kWideScale - 1) / 2, _st.height  * (kWideScale - 1) / 2, cacheWidth, getms());
+		paintOnce(
+			p,
+			_width * (kWideScale - 1) / 2,
+			_st.height  * (kWideScale - 1) / 2,
+			cacheWidth);
 	}
-	_cache = App::pixmapFromImageInPlace(std::move(data));
+	_cache = Ui::PixmapFromImage(std::move(data));
 }
 
-void MultiSelect::Inner::Item::setVisibleAnimated(bool visible) {
+void Item::setVisibleAnimated(bool visible) {
 	_hiding = !visible;
 	prepareCache();
 	auto from = visible ? 0. : 1.;
@@ -318,19 +396,133 @@ void MultiSelect::Inner::Item::setVisibleAnimated(bool visible) {
 	_visibility.start(_updateCallback, from, to, _st.duration, transition);
 }
 
-void MultiSelect::Inner::Item::setOver(bool over) {
+void Item::setOver(bool over) {
 	if (over != _over) {
 		_over = over;
-		_overOpacity.start(_updateCallback, _over ? 0. : 1., _over ? 1. : 0., _st.duration);
+		_overOpacity.start(
+			_updateCallback,
+			_over ? 0. : 1.,
+			_over ? 1. : 0.,
+			_st.duration);
 	}
 }
 
-MultiSelect::MultiSelect(QWidget *parent, const style::MultiSelect &st, base::lambda<QString()> placeholderFactory) : TWidget(parent)
+} // namespace
+
+class MultiSelect::Inner : public TWidget {
+public:
+	using ScrollCallback = Fn<void(int activeTop, int activeBottom)>;
+	Inner(
+		QWidget *parent,
+		const style::MultiSelect &st,
+		rpl::producer<QString> placeholder,
+		ScrollCallback callback);
+
+	QString getQuery() const;
+	bool setInnerFocus();
+	void clearQuery();
+
+	void setQueryChangedCallback(Fn<void(const QString &query)> callback);
+	void setSubmittedCallback(Fn<void(Qt::KeyboardModifiers)> callback);
+	void setCancelledCallback(Fn<void()> callback);
+
+	void addItemInBunch(std::unique_ptr<Item> item);
+	void finishItemsBunch(AddItemWay way);
+	void setItemText(uint64 itemId, const QString &text);
+
+	void setItemRemovedCallback(Fn<void(uint64 itemId)> callback);
+	void removeItem(uint64 itemId);
+
+	int getItemsCount() const;
+	QVector<uint64> getItems() const;
+	bool hasItem(uint64 itemId) const;
+
+	void setResizedCallback(Fn<void(int heightDelta)> callback);
+
+	~Inner();
+
+protected:
+	int resizeGetHeight(int newWidth) override;
+
+	void paintEvent(QPaintEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	void mousePressEvent(QMouseEvent *e) override;
+	void keyPressEvent(QKeyEvent *e) override;
+
+private:
+	void submitted(Qt::KeyboardModifiers modifiers);
+	void cancelled();
+	void queryChanged();
+	void fieldFocused();
+	void computeItemsGeometry(int newWidth);
+	void updateItemsGeometry();
+	void updateFieldGeometry();
+	void updateHasAnyItems(bool hasAnyItems);
+	void updateSelection(QPoint mousePosition);
+	void clearSelection() {
+		updateSelection(QPoint(-1, -1));
+	}
+	void updateCursor();
+	void updateHeightStep();
+	void finishHeightAnimation();
+	enum class ChangeActiveWay {
+		Default,
+		SkipSetFocus,
+	};
+	void setActiveItem(
+		int active,
+		ChangeActiveWay skipSetFocus = ChangeActiveWay::Default);
+	void setActiveItemPrevious();
+	void setActiveItemNext();
+
+	QMargins itemPaintMargins() const;
+
+	const style::MultiSelect &_st;
+	Ui::Animations::Simple _iconOpacity;
+
+	ScrollCallback _scrollCallback;
+
+	std::set<uint64> _idsMap;
+	std::vector<std::unique_ptr<Item>> _items;
+	std::set<std::unique_ptr<Item>> _removingItems;
+
+	int _selected = -1;
+	int _active = -1;
+	bool _overDelete = false;
+
+	int _fieldLeft = 0;
+	int _fieldTop = 0;
+	int _fieldWidth = 0;
+	object_ptr<Ui::InputField> _field;
+	object_ptr<Ui::CrossButton> _cancel;
+
+	int _newHeight = 0;
+	Ui::Animations::Simple _height;
+
+	Fn<void(const QString &query)> _queryChangedCallback;
+	Fn<void(Qt::KeyboardModifiers)> _submittedCallback;
+	Fn<void()> _cancelledCallback;
+	Fn<void(uint64 itemId)> _itemRemovedCallback;
+	Fn<void(int heightDelta)> _resizedCallback;
+
+};
+
+MultiSelect::MultiSelect(
+	QWidget *parent,
+	const style::MultiSelect &st,
+	rpl::producer<QString> placeholder)
+: RpWidget(parent)
 , _st(st)
 , _scroll(this, _st.scroll) {
-	_inner = _scroll->setOwnedWidget(object_ptr<Inner>(this, st, std::move(placeholderFactory), [this](int activeTop, int activeBottom) {
+	const auto scrollCallback = [=](int activeTop, int activeBottom) {
 		scrollTo(activeTop, activeBottom);
-	}));
+	};
+	_inner = _scroll->setOwnedWidget(object_ptr<Inner>(
+		this,
+		st,
+		std::move(placeholder),
+		scrollCallback));
 	_scroll->installEventFilter(this);
 	_inner->setResizedCallback([this](int innerHeightDelta) {
 		auto newHeight = resizeGetHeight(width());
@@ -375,15 +567,19 @@ void MultiSelect::scrollTo(int activeTop, int activeBottom) {
 	}
 }
 
-void MultiSelect::setQueryChangedCallback(base::lambda<void(const QString &query)> callback) {
+void MultiSelect::setQueryChangedCallback(Fn<void(const QString &query)> callback) {
 	_queryChangedCallback = std::move(callback);
 }
 
-void MultiSelect::setSubmittedCallback(base::lambda<void(bool ctrlShiftEnter)> callback) {
+void MultiSelect::setSubmittedCallback(Fn<void(Qt::KeyboardModifiers)> callback) {
 	_inner->setSubmittedCallback(std::move(callback));
 }
 
-void MultiSelect::setResizedCallback(base::lambda<void()> callback) {
+void MultiSelect::setCancelledCallback(Fn<void()> callback) {
+	_inner->setCancelledCallback(std::move(callback));
+}
+
+void MultiSelect::setResizedCallback(Fn<void()> callback) {
 	_resizedCallback = std::move(callback);
 }
 
@@ -407,14 +603,14 @@ void MultiSelect::addItem(uint64 itemId, const QString &text, style::color color
 }
 
 void MultiSelect::addItemInBunch(uint64 itemId, const QString &text, style::color color, PaintRoundImage paintRoundImage) {
-	_inner->addItemInBunch(std::make_unique<Inner::Item>(_st.item, itemId, text, color, std::move(paintRoundImage)));
+	_inner->addItemInBunch(std::make_unique<Item>(_st.item, itemId, text, color, std::move(paintRoundImage)));
 }
 
 void MultiSelect::finishItemsBunch() {
 	_inner->finishItemsBunch(AddItemWay::SkipAnimation);
 }
 
-void MultiSelect::setItemRemovedCallback(base::lambda<void(uint64 itemId)> callback) {
+void MultiSelect::setItemRemovedCallback(Fn<void(uint64 itemId)> callback) {
 	_inner->setItemRemovedCallback(std::move(callback));
 }
 
@@ -443,29 +639,31 @@ int MultiSelect::resizeGetHeight(int newWidth) {
 	return newHeight;
 }
 
-MultiSelect::Inner::Inner(QWidget *parent, const style::MultiSelect &st, base::lambda<QString()> placeholder, ScrollCallback callback) : TWidget(parent)
+MultiSelect::Inner::Inner(
+	QWidget *parent,
+	const style::MultiSelect &st,
+	rpl::producer<QString> placeholder,
+	ScrollCallback callback)
+: TWidget(parent)
 , _st(st)
 , _scrollCallback(std::move(callback))
 , _field(this, _st.field, std::move(placeholder))
 , _cancel(this, _st.fieldCancel) {
 	_field->customUpDown(true);
-	connect(_field, SIGNAL(focused()), this, SLOT(onFieldFocused()));
-	connect(_field, SIGNAL(changed()), this, SLOT(onQueryChanged()));
-	connect(_field, SIGNAL(submitted(bool)), this, SLOT(onSubmitted(bool)));
-	_cancel->setClickedCallback([this] {
+	connect(_field, &Ui::InputField::focused, [=] { fieldFocused(); });
+	connect(_field, &Ui::InputField::changed, [=] { queryChanged(); });
+	connect(_field, &Ui::InputField::submitted, this, &Inner::submitted);
+	connect(_field, &Ui::InputField::cancelled, this, &Inner::cancelled);
+	_cancel->setClickedCallback([=] {
 		clearQuery();
 		_field->setFocus();
 	});
 	setMouseTracking(true);
 }
 
-void MultiSelect::Inner::onQueryChanged() {
+void MultiSelect::Inner::queryChanged() {
 	auto query = getQuery();
-	if (query.isEmpty()) {
-		_cancel->hideAnimated();
-	} else {
-		_cancel->showAnimated();
-	}
+	_cancel->toggle(!query.isEmpty(), anim::type::normal);
 	updateFieldGeometry();
 	if (_queryChangedCallback) {
 		_queryChangedCallback(query);
@@ -490,17 +688,22 @@ void MultiSelect::Inner::clearQuery() {
 	_field->setText(QString());
 }
 
-void MultiSelect::Inner::setQueryChangedCallback(base::lambda<void(const QString &query)> callback) {
+void MultiSelect::Inner::setQueryChangedCallback(Fn<void(const QString &query)> callback) {
 	_queryChangedCallback = std::move(callback);
 }
 
-void MultiSelect::Inner::setSubmittedCallback(base::lambda<void(bool ctrlShiftEnter)> callback) {
+void MultiSelect::Inner::setSubmittedCallback(
+		Fn<void(Qt::KeyboardModifiers)> callback) {
 	_submittedCallback = std::move(callback);
+}
+
+void MultiSelect::Inner::setCancelledCallback(Fn<void()> callback) {
+	_cancelledCallback = std::move(callback);
 }
 
 void MultiSelect::Inner::updateFieldGeometry() {
 	auto fieldFinalWidth = _fieldWidth;
-	if (_cancel->isShown()) {
+	if (_cancel->toggled()) {
 		fieldFinalWidth -= _st.fieldCancelSkip;
 	}
 	_field->resizeToWidth(fieldFinalWidth);
@@ -523,12 +726,12 @@ void MultiSelect::Inner::setActiveItem(int active, ChangeActiveWay skipSetFocus)
 	if (_active == active) return;
 
 	if (_active >= 0) {
-		t_assert(_active < _items.size());
+		Assert(_active < _items.size());
 		_items[_active]->setActive(false);
 	}
 	_active = active;
 	if (_active >= 0) {
-		t_assert(_active < _items.size());
+		Assert(_active < _items.size());
 		_items[_active]->setActive(true);
 	}
 	if (skipSetFocus != ChangeActiveWay::SkipSetFocus) {
@@ -571,19 +774,17 @@ int MultiSelect::Inner::resizeGetHeight(int newWidth) {
 void MultiSelect::Inner::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
-	_height.step(ms);
-	_iconOpacity.step(ms);
-
 	auto paintRect = e->rect();
 	p.fillRect(paintRect, _st.bg);
 
-	auto offset = QPoint(rtl() ? _st.padding.right() : _st.padding.left(), _st.padding.top());
+	auto offset = QPoint(
+		style::RightToLeft() ? _st.padding.right() : _st.padding.left(),
+		_st.padding.top());
 	p.translate(offset);
 	paintRect.translate(-offset);
 
 	auto outerWidth = width() - _st.padding.left() - _st.padding.right();
-	auto iconOpacity = _iconOpacity.current(_items.empty() ? 1. : 0.);
+	auto iconOpacity = _iconOpacity.value(_items.empty() ? 1. : 0.);
 	if (iconOpacity > 0.) {
 		p.setOpacity(iconOpacity);
 		_st.fieldIcon.paint(p, 0, 0, outerWidth);
@@ -597,7 +798,7 @@ void MultiSelect::Inner::paintEvent(QPaintEvent *e) {
 		auto itemRect = item->paintArea(outerWidth);
 		itemRect = itemRect.marginsAdded(paintMargins);
 		if (checkRect.intersects(itemRect)) {
-			item->paint(p, outerWidth, ms);
+			item->paint(p, outerWidth);
 		}
 		if (item->hideFinished()) {
 			i = _removingItems.erase(i);
@@ -606,13 +807,13 @@ void MultiSelect::Inner::paintEvent(QPaintEvent *e) {
 			++i;
 		}
 	}
-	for_const (auto &item, _items) {
+	for (const auto &item : _items) {
 		auto itemRect = item->paintArea(outerWidth);
 		itemRect = itemRect.marginsAdded(paintMargins);
 		if (checkRect.y() + checkRect.height() <= itemRect.y()) {
 			break;
 		} else if (checkRect.intersects(itemRect)) {
-			item->paint(p, outerWidth, ms);
+			item->paint(p, outerWidth);
 		}
 	}
 }
@@ -657,7 +858,19 @@ void MultiSelect::Inner::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
-void MultiSelect::Inner::onFieldFocused() {
+void MultiSelect::Inner::submitted(Qt::KeyboardModifiers modifiers) {
+	if (_submittedCallback) {
+		_submittedCallback(modifiers);
+	}
+}
+
+void MultiSelect::Inner::cancelled() {
+	if (_cancelledCallback) {
+		_cancelledCallback();
+	}
+}
+
+void MultiSelect::Inner::fieldFocused() {
 	setActiveItem(-1, ChangeActiveWay::SkipSetFocus);
 }
 
@@ -676,7 +889,7 @@ void MultiSelect::Inner::updateSelection(QPoint mousePosition) {
 	}
 	if (_selected != selected) {
 		if (_selected >= 0) {
-			t_assert(_selected < _items.size());
+			Assert(_selected < _items.size());
 			_items[_selected]->leaveEvent();
 		}
 		_selected = selected;
@@ -725,7 +938,7 @@ void MultiSelect::Inner::finishItemsBunch(AddItemWay way) {
 	if (way != AddItemWay::SkipAnimation) {
 		_items.back()->showAnimated();
 	} else {
-		_field->finishAnimations();
+		_field->finishAnimating();
 		finishHeightAnimation();
 	}
 }
@@ -737,9 +950,9 @@ void MultiSelect::Inner::computeItemsGeometry(int newWidth) {
 	auto itemTop = 0;
 	auto widthLeft = newWidth;
 	auto maxVisiblePadding = qMax(_st.padding.left(), _st.padding.right());
-	for_const (auto &item, _items) {
+	for (const auto &item : _items) {
 		auto itemWidth = item->getWidth();
-		t_assert(itemWidth <= newWidth);
+		Assert(itemWidth <= newWidth);
 		if (itemWidth > widthLeft) {
 			itemLeft = 0;
 			itemTop += _st.item.height + _st.itemSkip;
@@ -751,7 +964,7 @@ void MultiSelect::Inner::computeItemsGeometry(int newWidth) {
 	}
 
 	auto fieldMinWidth = _st.fieldMinWidth + _st.fieldCancelSkip;
-	t_assert(fieldMinWidth <= newWidth);
+	Assert(fieldMinWidth <= newWidth);
 	if (fieldMinWidth > widthLeft) {
 		_fieldLeft = 0;
 		_fieldTop = itemTop + _st.item.height + _st.itemSkip;
@@ -771,7 +984,7 @@ void MultiSelect::Inner::updateItemsGeometry() {
 }
 
 void MultiSelect::Inner::updateHeightStep() {
-	auto newHeight = qRound(_height.current(_newHeight));
+	auto newHeight = qRound(_height.value(_newHeight));
 	if (auto heightDelta = newHeight - height()) {
 		resize(width(), newHeight);
 		if (_resizedCallback) {
@@ -782,12 +995,12 @@ void MultiSelect::Inner::updateHeightStep() {
 }
 
 void MultiSelect::Inner::finishHeightAnimation() {
-	_height.finish();
+	_height.stop();
 	updateHeightStep();
 }
 
 void MultiSelect::Inner::setItemText(uint64 itemId, const QString &text) {
-	for_const (auto &item, _items) {
+	for (const auto &item : _items) {
 		if (item->id() == itemId) {
 			item->setText(text);
 			updateItemsGeometry();
@@ -796,11 +1009,11 @@ void MultiSelect::Inner::setItemText(uint64 itemId, const QString &text) {
 	}
 }
 
-void MultiSelect::Inner::setItemRemovedCallback(base::lambda<void(uint64 itemId)> callback) {
+void MultiSelect::Inner::setItemRemovedCallback(Fn<void(uint64 itemId)> callback) {
 	_itemRemovedCallback = std::move(callback);
 }
 
-void MultiSelect::Inner::setResizedCallback(base::lambda<void(int heightDelta)> callback) {
+void MultiSelect::Inner::setResizedCallback(Fn<void(int heightDelta)> callback) {
 	_resizedCallback = std::move(callback);
 }
 
@@ -814,7 +1027,7 @@ void MultiSelect::Inner::removeItem(uint64 itemId) {
 
 			item->hideAnimated();
 			_idsMap.erase(item->id());
-			auto inserted = _removingItems.insert(std::move(item));
+			_removingItems.insert(std::move(item));
 			_items.erase(_items.begin() + i);
 
 			if (_active == i) {
@@ -849,7 +1062,7 @@ int MultiSelect::Inner::getItemsCount() const {
 QVector<uint64> MultiSelect::Inner::getItems() const {
 	auto result = QVector<uint64>();
 	result.reserve(_items.size());
-	for_const (auto &item, _items) {
+	for (const auto &item : _items) {
 		result.push_back(item->id());
 	}
 	return result;

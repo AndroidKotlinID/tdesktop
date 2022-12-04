@@ -1,30 +1,28 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "core/utils.h"
+#include "base/const_string.h"
 
-#define BETA_VERSION_MACRO (0ULL)
+#define TDESKTOP_REQUESTED_ALPHA_VERSION (0ULL)
 
-constexpr int AppVersion = 1001010;
-constexpr str_const AppVersionStr = "1.1.10";
-constexpr bool AppAlphaVersion = false;
-constexpr uint64 AppBetaVersion = BETA_VERSION_MACRO;
+#ifdef TDESKTOP_ALLOW_CLOSED_ALPHA
+#define TDESKTOP_ALPHA_VERSION TDESKTOP_REQUESTED_ALPHA_VERSION
+#else // TDESKTOP_ALLOW_CLOSED_ALPHA
+#define TDESKTOP_ALPHA_VERSION (0ULL)
+#endif // TDESKTOP_ALLOW_CLOSED_ALPHA
+
+// used in Updater.cpp and Setup.iss for Windows
+constexpr auto AppId = "{53F49750-6209-4FBF-9CA8-7A333C87D1ED}"_cs;
+constexpr auto AppNameOld = "Telegram Win (Unofficial)"_cs;
+constexpr auto AppName = "Telegram Desktop"_cs;
+constexpr auto AppFile = "Telegram"_cs;
+constexpr auto AppVersion = 4003004;
+constexpr auto AppVersionStr = "4.3.4";
+constexpr auto AppBetaVersion = false;
+constexpr auto AppAlphaVersion = TDESKTOP_ALPHA_VERSION;

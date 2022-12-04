@@ -1,27 +1,15 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-using "basic.style";
-using "history/history.style";
+using "ui/basic.style";
+using "ui/chat/chat.style";
 using "ui/widgets/widgets.style";
-using "media/view/mediaview.style";
+using "media/view/media_view.style";
+using "boxes/boxes.style";
 
 OverviewFileLayout {
 	maxWidth: pixels;
@@ -39,6 +27,15 @@ OverviewFileLayout {
 	songCancelSelected: icon;
 	songDownload: icon;
 	songDownloadSelected: icon;
+
+	voicePause: icon;
+	voicePauseSelected: icon;
+	voicePlay: icon;
+	voicePlaySelected: icon;
+	voiceCancel: icon;
+	voiceCancelSelected: icon;
+	voiceDownload: icon;
+	voiceDownloadSelected: icon;
 
 	filePadding: margins;
 	fileThumbSize: pixels;
@@ -59,11 +56,13 @@ overviewCheck: RoundCheckbox(defaultRoundCheckbox) {
 	sizeSmall: 0.3;
 	check: icon {{ "overview_photo_check", overviewCheckFgActive, point(4px, 8px) }};
 }
+overviewSmallCheck: RoundCheckbox(defaultPeerListCheck) {
+	border: overviewCheckBorder;
+}
 overviewCheckSkip: 5px;
 
-overviewPhotoSkip: 10px;
 overviewPhotoBg: windowBgOver;
-overviewPhotoMinSize: minPhotoSize;
+overviewPhotoMinSize: 90px;
 overviewVideoBg: imageBg;
 
 overviewFileThumbBg: imageBg;
@@ -74,14 +73,27 @@ overviewFileExtTop: 24px;
 overviewFileExtFg: windowFgActive;
 overviewFileExtFont: font(18px semibold);
 
-overviewSongPause: icon {{ "playlist_pause", msgInBg }};
-overviewSongPauseSelected: icon {{ "playlist_pause", msgInBgSelected }};
-overviewSongPlay: icon {{ "playlist_play", msgInBg }};
-overviewSongPlaySelected: icon {{ "playlist_play", msgInBgSelected }};
-overviewSongCancel: icon {{ "playlist_cancel", msgInBg }};
-overviewSongCancelSelected: icon {{ "playlist_cancel", msgInBgSelected }};
-overviewSongDownload: icon {{ "playlist_download", msgInBg }};
-overviewSongDownloadSelected: icon {{ "playlist_download", msgInBgSelected }};
+overviewVoicePause: icon {{ "player/playlist_pause", historyFileInIconFg }};
+overviewVoicePauseSelected: icon {{ "player/playlist_pause", historyFileInIconFgSelected }};
+overviewVoicePlay: icon {{ "player/playlist_play", historyFileInIconFg }};
+overviewVoicePlaySelected: icon {{ "player/playlist_play", historyFileInIconFgSelected }};
+overviewVoiceCancel: icon {{ "player/playlist_cancel", historyFileInIconFg }};
+overviewVoiceCancelSelected: icon {{ "player/playlist_cancel", historyFileInIconFgSelected }};
+overviewVoiceDownload: icon {{ "player/playlist_download", historyFileInIconFg }};
+overviewVoiceDownloadSelected: icon {{ "player/playlist_download", historyFileInIconFgSelected }};
+
+overviewSongPause: icon {{ "player/playlist_pause", historyFileThumbIconFg }};
+overviewSongPauseSelected: icon {{ "player/playlist_pause", historyFileThumbIconFgSelected }};
+overviewSongPlay: icon {{ "player/playlist_play", historyFileThumbIconFg }};
+overviewSongPlaySelected: icon {{ "player/playlist_play", historyFileThumbIconFgSelected }};
+overviewSongCancel: icon {{ "player/playlist_cancel", historyFileThumbIconFg }};
+overviewSongCancelSelected: icon {{ "player/playlist_cancel", historyFileThumbIconFgSelected }};
+overviewSongDownload: icon {{ "player/playlist_download", historyFileThumbIconFg }};
+overviewSongDownloadSelected: icon {{ "player/playlist_download", historyFileThumbIconFgSelected }};
+overviewSmallCancel: icon {{ "history_audio_cancel", historyFileInIconFg }};
+overviewSmallCancelSelected: icon {{ "history_audio_cancel", historyFileInIconFgSelected }};
+overviewSmallDownload: icon {{ "history_audio_download", historyFileInIconFg }};
+overviewSmallDownloadSelected: icon {{ "history_audio_download", historyFileInIconFgSelected }};
 overviewFileLayout: OverviewFileLayout {
 	maxWidth: 520px;
 	songPadding: margins(17px, 7px, 10px, 6px);
@@ -98,6 +110,15 @@ overviewFileLayout: OverviewFileLayout {
 	songCancelSelected: overviewSongCancelSelected;
 	songDownload: overviewSongDownload;
 	songDownloadSelected: overviewSongDownloadSelected;
+
+	voicePause: overviewVoicePause;
+	voicePauseSelected: overviewVoicePauseSelected;
+	voicePlay: overviewVoicePlay;
+	voicePlaySelected: overviewVoicePlaySelected;
+	voiceCancel: overviewVoiceCancel;
+	voiceCancelSelected: overviewVoiceCancelSelected;
+	voiceDownload: overviewVoiceDownload;
+	voiceDownloadSelected: overviewVoiceDownloadSelected;
 
 	filePadding: margins(0px, 3px, 16px, 3px);
 	fileThumbSize: 70px;
@@ -126,22 +147,12 @@ linksDateColor: windowSubTextFg;
 linksDateMargin: margins(0px, 15px, 0px, 2px);
 linksPhotoSize: 46px;
 linksPhotoPadding: 12px;
-overviewLinksCheck: icon {
-	{ "overview_links_check_bg", overviewCheckBg },
-	{ "overview_links_check", overviewCheckFg, point(4px, 5px) },
-};
-overviewLinksChecked: icon {
-	{ "overview_links_check_bg", overviewCheckBgActive },
-	{ "overview_links_check", overviewCheckFgActive, point(4px, 5px) },
-};
 
-overviewFilter: FlatInput(defaultFlatInput) {
-	font: font(fsize);
-	phColor: placeholderFg;
-	phFocusColor: placeholderFgActive;
-	icon: fieldSearchIcon;
-
-	width: 240px;
-	height: 32px;
-	textMrg: margins(32px, 3px, 32px, 3px);
-}
+overviewVideoStatusMargin: 3px;
+overviewVideoStatusPadding: point(6px, 0px);
+overviewVideoStatusRadius: 4px;
+overviewVideoPlay: icon {{ "overview_video_play", historyFileThumbIconFg }};
+overviewVideoPlaySelected: icon {{ "overview_video_play", historyFileThumbIconFgSelected }};
+overviewVideoDownload: icon {{ "overview_video_download", historyFileThumbIconFg }};
+overviewVideoDownloadSelected: icon {{ "overview_video_download", historyFileThumbIconFgSelected }};
+overviewVideoRadialSize: 36px;

@@ -1,102 +1,129 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include <windows.h>
+#include "base/platform/win/base_windows_h.h"
+
 #include <shlobj.h>
-#include <roapi.h>
+#include <dwmapi.h>
+#include <RestartManager.h>
+#include <psapi.h>
+
+#ifdef __MINGW32__
+#define __in
+#endif
 
 namespace Platform {
 namespace Dlls {
 
-void init();
+void CheckLoadedModules();
 
-// KERNEL32.DLL
-typedef BOOL (FAR STDAPICALLTYPE *f_SetDllDirectory)(LPCWSTR lpPathName);
-extern f_SetDllDirectory SetDllDirectory;
-
-void start();
-
-template <typename Function>
-bool load(HINSTANCE library, LPCSTR name, Function &func) {
-	if (!library) return false;
-
-	func = reinterpret_cast<Function>(GetProcAddress(library, name));
-	return (func != nullptr);
-}
-
-// UXTHEME.DLL
-typedef HRESULT (FAR STDAPICALLTYPE *f_SetWindowTheme)(HWND hWnd, LPCWSTR pszSubAppName, LPCWSTR pszSubIdList);
-extern f_SetWindowTheme SetWindowTheme;
+//inline void(__stdcall *RefreshImmersiveColorPolicyState)();
+//
+//inline BOOL(__stdcall *AllowDarkModeForApp)(BOOL allow);
+//
+//enum class PreferredAppMode {
+//	Default,
+//	AllowDark,
+//	ForceDark,
+//	ForceLight,
+//	Max
+//};
+//
+//inline PreferredAppMode(__stdcall *SetPreferredAppMode)(
+//	PreferredAppMode appMode);
+//inline BOOL(__stdcall *AllowDarkModeForWindow)(HWND hwnd, BOOL allow);
+//inline void(__stdcall *FlushMenuThemes)();
 
 // SHELL32.DLL
-typedef HRESULT (FAR STDAPICALLTYPE *f_SHAssocEnumHandlers)(PCWSTR pszExtra, ASSOC_FILTER afFilter, IEnumAssocHandlers **ppEnumHandler);
-extern f_SHAssocEnumHandlers SHAssocEnumHandlers;
-
-typedef HRESULT (FAR STDAPICALLTYPE *f_SHCreateItemFromParsingName)(PCWSTR pszPath, IBindCtx *pbc, REFIID riid, void **ppv);
-extern f_SHCreateItemFromParsingName SHCreateItemFromParsingName;
-
-typedef HRESULT (FAR STDAPICALLTYPE *f_SHOpenWithDialog)(HWND hwndParent, const OPENASINFO *poainfo);
-extern f_SHOpenWithDialog SHOpenWithDialog;
-
-typedef HRESULT (FAR STDAPICALLTYPE *f_OpenAs_RunDLL)(HWND hWnd, HINSTANCE hInstance, LPCWSTR lpszCmdLine, int nCmdShow);
-extern f_OpenAs_RunDLL OpenAs_RunDLL;
-
-typedef HRESULT (FAR STDAPICALLTYPE *f_SHQueryUserNotificationState)(QUERY_USER_NOTIFICATION_STATE *pquns);
-extern f_SHQueryUserNotificationState SHQueryUserNotificationState;
-
-typedef void (FAR STDAPICALLTYPE *f_SHChangeNotify)(LONG wEventId, UINT uFlags, __in_opt LPCVOID dwItem1, __in_opt LPCVOID dwItem2);
-extern f_SHChangeNotify SHChangeNotify;
-
-typedef HRESULT (FAR STDAPICALLTYPE *f_SetCurrentProcessExplicitAppUserModelID)(__in PCWSTR AppID);
-extern f_SetCurrentProcessExplicitAppUserModelID SetCurrentProcessExplicitAppUserModelID;
-
-// WTSAPI32.DLL
-
-typedef BOOL (FAR STDAPICALLTYPE *f_WTSRegisterSessionNotification)(HWND hWnd, DWORD dwFlags);
-extern f_WTSRegisterSessionNotification WTSRegisterSessionNotification;
-
-typedef BOOL (FAR STDAPICALLTYPE *f_WTSUnRegisterSessionNotification)(HWND hWnd);
-extern f_WTSUnRegisterSessionNotification WTSUnRegisterSessionNotification;
+inline HRESULT(__stdcall *SHAssocEnumHandlers)(
+	PCWSTR pszExtra,
+	ASSOC_FILTER afFilter,
+	IEnumAssocHandlers **ppEnumHandler);
+inline HRESULT(__stdcall *SHCreateItemFromParsingName)(
+	PCWSTR pszPath,
+	IBindCtx *pbc,
+	REFIID riid,
+	void **ppv);
+inline HRESULT(__stdcall *SHOpenWithDialog)(
+	HWND hwndParent,
+	const OPENASINFO *poainfo);
+inline HRESULT(__stdcall *OpenAs_RunDLL)(
+	HWND hWnd,
+	HINSTANCE hInstance,
+	LPCWSTR lpszCmdLine,
+	int nCmdShow);
+inline HRESULT(__stdcall *SHQueryUserNotificationState)(
+	QUERY_USER_NOTIFICATION_STATE *pquns);
+inline void(__stdcall *SHChangeNotify)(
+	LONG wEventId,
+	UINT uFlags,
+	__in_opt LPCVOID dwItem1,
+	__in_opt LPCVOID dwItem2);
+inline HRESULT(__stdcall *SetCurrentProcessExplicitAppUserModelID)(
+	__in PCWSTR AppID);
 
 // PROPSYS.DLL
 
-typedef HRESULT (FAR STDAPICALLTYPE *f_PropVariantToString)(_In_ REFPROPVARIANT propvar, _Out_writes_(cch) PWSTR psz, _In_ UINT cch);
-extern f_PropVariantToString PropVariantToString;
+inline HRESULT(__stdcall *PSStringFromPropertyKey)(
+	_In_ REFPROPERTYKEY pkey,
+	_Out_writes_(cch) LPWSTR psz,
+	_In_ UINT cch);
 
-typedef HRESULT (FAR STDAPICALLTYPE *f_PSStringFromPropertyKey)(_In_ REFPROPERTYKEY pkey, _Out_writes_(cch) LPWSTR psz, _In_ UINT cch);
-extern f_PSStringFromPropertyKey PSStringFromPropertyKey;
+// PSAPI.DLL
 
-// COMBASE.DLL
+inline BOOL(__stdcall *GetProcessMemoryInfo)(
+	HANDLE Process,
+	PPROCESS_MEMORY_COUNTERS ppsmemCounters,
+	DWORD cb);
 
-typedef HRESULT (FAR STDAPICALLTYPE *f_RoGetActivationFactory)(_In_ HSTRING activatableClassId, _In_ REFIID iid, _COM_Outptr_ void ** factory);
-extern f_RoGetActivationFactory RoGetActivationFactory;
+// USER32.DLL
 
-typedef HRESULT (FAR STDAPICALLTYPE *f_WindowsCreateStringReference)(_In_reads_opt_(length + 1) PCWSTR sourceString, UINT32 length, _Out_ HSTRING_HEADER * hstringHeader, _Outptr_result_maybenull_ _Result_nullonfailure_ HSTRING * string);
-extern f_WindowsCreateStringReference WindowsCreateStringReference;
+enum class WINDOWCOMPOSITIONATTRIB {
+	WCA_UNDEFINED = 0,
+	WCA_NCRENDERING_ENABLED = 1,
+	WCA_NCRENDERING_POLICY = 2,
+	WCA_TRANSITIONS_FORCEDISABLED = 3,
+	WCA_ALLOW_NCPAINT = 4,
+	WCA_CAPTION_BUTTON_BOUNDS = 5,
+	WCA_NONCLIENT_RTL_LAYOUT = 6,
+	WCA_FORCE_ICONIC_REPRESENTATION = 7,
+	WCA_EXTENDED_FRAME_BOUNDS = 8,
+	WCA_HAS_ICONIC_BITMAP = 9,
+	WCA_THEME_ATTRIBUTES = 10,
+	WCA_NCRENDERING_EXILED = 11,
+	WCA_NCADORNMENTINFO = 12,
+	WCA_EXCLUDED_FROM_LIVEPREVIEW = 13,
+	WCA_VIDEO_OVERLAY_ACTIVE = 14,
+	WCA_FORCE_ACTIVEWINDOW_APPEARANCE = 15,
+	WCA_DISALLOW_PEEK = 16,
+	WCA_CLOAK = 17,
+	WCA_CLOAKED = 18,
+	WCA_ACCENT_POLICY = 19,
+	WCA_FREEZE_REPRESENTATION = 20,
+	WCA_EVER_UNCLOAKED = 21,
+	WCA_VISUAL_OWNER = 22,
+	WCA_HOLOGRAPHIC = 23,
+	WCA_EXCLUDED_FROM_DDA = 24,
+	WCA_PASSIVEUPDATEMODE = 25,
+	WCA_USEDARKMODECOLORS = 26,
+	WCA_LAST = 27
+};
 
-typedef HRESULT (FAR STDAPICALLTYPE *f_WindowsDeleteString)(_In_opt_ HSTRING string);
-extern f_WindowsDeleteString WindowsDeleteString;
+struct WINDOWCOMPOSITIONATTRIBDATA {
+	WINDOWCOMPOSITIONATTRIB Attrib;
+	PVOID pvData;
+	SIZE_T cbData;
+};
 
-
+inline BOOL(__stdcall *SetWindowCompositionAttribute)(
+	HWND hWnd,
+	WINDOWCOMPOSITIONATTRIBDATA*);
 
 } // namespace Dlls
 } // namespace Platform

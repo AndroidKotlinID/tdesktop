@@ -1,32 +1,42 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/tooltip.h"
+#include "ui/effects/animations.h"
+#include "ui/effects/cross_line.h"
 #include "styles/style_window.h"
 #include "styles/style_widgets.h"
 
 class PeerData;
 
+namespace Data {
+class CloudImageView;
+} // namespace Data
+
+namespace Window {
+class Controller;
+class SessionController;
+} // namespace Window
+
+namespace Media {
+namespace Streaming {
+class Instance;
+struct Update;
+enum class Error;
+struct Information;
+} // namespace Streaming
+} // namespace Media
+
 namespace Ui {
+
+class PopupMenu;
 
 class HistoryDownButton : public RippleButton {
 public:
@@ -50,132 +60,164 @@ private:
 
 };
 
-class EmojiButton : public RippleButton {
+class UserpicButton : public RippleButton {
 public:
-	EmojiButton(QWidget *parent, const style::IconButton &st);
+	enum class Role {
+		ChoosePhoto,
+		ChangePhoto,
+		OpenPhoto,
+		OpenProfile,
+		Custom,
+	};
 
-	void setLoading(bool loading);
-	void setColorOverrides(const style::icon *iconOverride, const style::color *colorOverride, const style::color *rippleOverride);
+	UserpicButton(
+		QWidget *parent,
+		not_null<::Window::Controller*> window,
+		not_null<PeerData*> peer,
+		Role role,
+		const style::UserpicButton &st);
+	UserpicButton(
+		QWidget *parent,
+		not_null<::Window::Controller*> window,
+		const QString &cropTitle,
+		Role role,
+		const style::UserpicButton &st);
+	UserpicButton(
+		QWidget *parent,
+		not_null<::Window::SessionController*> controller,
+		not_null<PeerData*> peer,
+		Role role,
+		const style::UserpicButton &st);
+	UserpicButton(
+		QWidget *parent,
+		not_null<PeerData*> peer,
+		Role role,
+		const style::UserpicButton &st);
+
+	void switchChangePhotoOverlay(bool enabled);
+	void showSavedMessagesOnSelf(bool enabled);
+
+	// Role::ChoosePhoto
+	[[nodiscard]] rpl::producer<QImage> chosenImages() const {
+		return _chosenImages.events();
+	}
+
+	// Role::ChangePhoto
+	[[nodiscard]] rpl::producer<> uploadPhotoRequests() const {
+		return _uploadPhotoRequests.events();
+	}
+	[[nodiscard]] QImage takeResultImage() {
+		return std::move(_result);
+	}
+
+	// For Role::OpenPhoto as if it is Role::ChangePhoto.
+	void changeTo(QImage &&image);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
+
 	void onStateChanged(State was, StateChangeSource source) override;
 
 	QImage prepareRippleMask() const override;
 	QPoint prepareRippleStartPosition() const override;
 
 private:
-	void step_loading(TimeMs ms, bool timer) {
-		if (timer) {
-			update();
-		}
-	}
+	void prepare();
+	void setImage(QImage &&image);
+	void setupPeerViewers();
+	void startAnimation();
+	void processPeerPhoto();
+	void processNewPeerPhoto();
+	void startNewPhotoShowing();
+	void prepareUserpicPixmap();
+	QPoint countPhotoPosition() const;
+	void startChangeOverlayAnimation();
+	void updateCursorInChangeOverlay(QPoint localPos);
+	void setCursorInChangeOverlay(bool inOverlay);
+	void updateCursor();
+	void updateVideo();
+	bool showSavedMessages() const;
+	bool showRepliesMessages() const;
+	void checkStreamedIsStarted();
+	bool createStreamingObjects(not_null<PhotoData*> photo);
+	void clearStreaming();
+	void handleStreamingUpdate(Media::Streaming::Update &&update);
+	void handleStreamingError(Media::Streaming::Error &&error);
+	void streamingReady(Media::Streaming::Information &&info);
+	void paintUserpicFrame(Painter &p, QPoint photoPosition);
 
-	const style::IconButton &_st;
+	void grabOldUserpic();
+	void setClickHandlerByRole();
+	void openPeerPhoto();
+	void choosePhotoLocally();
+	void changePhotoLocally(bool requestToUpload = false);
 
-	bool _loading = false;
-	Animation a_loading;
-	BasicAnimation _a_loading;
+	const style::UserpicButton &_st;
+	::Window::SessionController *_controller = nullptr;
+	::Window::Controller *_window = nullptr;
+	PeerData *_peer = nullptr;
+	std::shared_ptr<Data::CloudImageView> _userpicView;
+	QString _cropTitle;
+	Role _role = Role::ChangePhoto;
+	bool _notShownYet = true;
+	bool _waiting = false;
+	QPixmap _userpic, _oldUserpic;
+	bool _userpicHasImage = false;
+	bool _userpicCustom = false;
+	bool _requestToUpload = false;
+	InMemoryKey _userpicUniqueKey;
+	Ui::Animations::Simple _a_appearance;
+	QImage _result;
+	QImage _ellipseMask;
+	std::unique_ptr<Media::Streaming::Instance> _streamed;
+	PhotoData *_streamedPhoto = nullptr;
 
-	const style::icon *_iconOverride = nullptr;
-	const style::color *_colorOverride = nullptr;
-	const style::color *_rippleOverride = nullptr;
+	base::unique_qptr<Ui::PopupMenu> _menu;
+
+	bool _showSavedMessagesOnSelf = false;
+	bool _canOpenPhoto = false;
+	bool _cursorInChangeOverlay = false;
+	bool _changeOverlayEnabled = false;
+	Ui::Animations::Simple _changeOverlayShown;
+
+	rpl::event_stream<QImage> _chosenImages;
+	rpl::event_stream<> _uploadPhotoRequests;
 
 };
 
-class SendButton : public RippleButton {
+class SilentToggle
+	: public Ui::RippleButton
+	, public Ui::AbstractTooltipShower {
 public:
-	SendButton(QWidget *parent);
+	SilentToggle(QWidget *parent, not_null<ChannelData*> channel);
 
-	enum class Type {
-		Send,
-		Save,
-		Record,
-		Cancel,
-	};
-	Type type() const {
-		return _type;
-	}
-	void setType(Type state);
-	void setRecordActive(bool recordActive);
-	void finishAnimation();
-
-	void setRecordStartCallback(base::lambda<void()> callback) {
-		_recordStartCallback = std::move(callback);
-	}
-	void setRecordUpdateCallback(base::lambda<void(QPoint globalPos)> callback) {
-		_recordUpdateCallback = std::move(callback);
-	}
-	void setRecordStopCallback(base::lambda<void(bool active)> callback) {
-		_recordStopCallback = std::move(callback);
-	}
-	void setRecordAnimationCallback(base::lambda<void()> callback) {
-		_recordAnimationCallback = std::move(callback);
+	void setChecked(bool checked);
+	bool checked() const {
+		return _checked;
 	}
 
-	float64 recordActiveRatio() {
-		return _a_recordActive.current(getms(), _recordActive ? 1. : 0.);
-	}
+	// AbstractTooltipShower interface
+	QString tooltipText() const override;
+	QPoint tooltipPos() const override;
+	bool tooltipWindowActive() const override;
 
 protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
-	void paintEvent(QPaintEvent *e) override;
-	void onStateChanged(State was, StateChangeSource source) override;
+	void mouseReleaseEvent(QMouseEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 
 	QImage prepareRippleMask() const override;
 	QPoint prepareRippleStartPosition() const override;
 
 private:
-	void recordAnimationCallback();
-	QPixmap grabContent();
+	const style::IconButton &_st;
 
-	Type _type = Type::Send;
-	bool _recordActive = false;
-	QPixmap _contentFrom, _contentTo;
+	not_null<ChannelData*> _channel;
+	bool _checked = false;
 
-	Animation _a_typeChanged;
-	Animation _a_recordActive;
-
-	bool _recording = false;
-	base::lambda<void()> _recordStartCallback;
-	base::lambda<void(bool active)> _recordStopCallback;
-	base::lambda<void(QPoint globalPos)> _recordUpdateCallback;
-	base::lambda<void()> _recordAnimationCallback;
-
-};
-
-class PeerAvatarButton : public AbstractButton {
-public:
-	PeerAvatarButton(QWidget *parent, PeerData *peer, const style::PeerAvatarButton &st);
-
-	void setPeer(PeerData *peer) {
-		_peer = peer;
-		update();
-	}
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	PeerData *_peer;
-	const style::PeerAvatarButton &_st;
-
-};
-
-class NewAvatarButton : public RippleButton {
-public:
-	NewAvatarButton(QWidget *parent, int size, QPoint position);
-
-	void setImage(const QImage &image);
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-
-	QImage prepareRippleMask() const override;
-
-private:
-	QPixmap _image;
-	QPoint _position;
+	Ui::Animations::Simple _crossLineAnimation;
 
 };
 

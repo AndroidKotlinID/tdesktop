@@ -1,44 +1,62 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-class BoxLayerTitleShadow;
+#include "data/data_cloud_themes.h"
+#include "ui/rp_widget.h"
+#include "base/object_ptr.h"
+
+namespace style {
+struct colorizer;
+} // namespace style
 
 namespace Ui {
 class FlatButton;
 class ScrollArea;
 class CrossButton;
 class MultiSelect;
+class PlainShadow;
+class DropdownMenu;
+class IconButton;
 } // namespace Ui
 
 namespace Window {
+
+class Controller;
+
 namespace Theme {
 
+struct ParsedTheme {
+	QByteArray palette;
+	QByteArray background;
+	bool isPng = false;
+	bool tiled = false;
+};
+
+[[nodiscard]] QByteArray ColorHexString(const QColor &color);
+[[nodiscard]] QByteArray ReplaceValueInPaletteContent(
+	const QByteArray &content,
+	const QByteArray &name,
+	const QByteArray &value);
+[[nodiscard]] QByteArray WriteCloudToText(const Data::CloudTheme &cloud);
+[[nodiscard]] Data::CloudTheme ReadCloudFromText(const QByteArray &text);
+[[nodiscard]] QByteArray StripCloudTextFields(const QByteArray &text);
+
 class Editor : public TWidget {
-	Q_OBJECT
-
 public:
-	Editor(QWidget*, const QString &path);
+	Editor(
+		QWidget*,
+		not_null<Window::Controller*> window,
+		const Data::CloudTheme &cloud);
 
-	static void Start();
+	[[nodiscard]] static QByteArray ColorizeInContent(
+		QByteArray content,
+		const style::colorizer &colorizer);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -48,16 +66,28 @@ protected:
 	void focusInEvent(QFocusEvent *e) override;
 
 private:
+	void save();
+	void showMenu();
+	void exportTheme();
+	void importTheme();
 	void closeEditor();
+	void closeWithConfirmation();
+	void updateControlsGeometry();
+
+	const not_null<Window::Controller*> _window;
+	const Data::CloudTheme _cloud;
 
 	object_ptr<Ui::ScrollArea> _scroll;
 	class Inner;
 	QPointer<Inner> _inner;
 	object_ptr<Ui::CrossButton> _close;
+	object_ptr<Ui::IconButton> _menuToggle;
+	base::unique_qptr<Ui::DropdownMenu> _menu;
 	object_ptr<Ui::MultiSelect> _select;
-	object_ptr<BoxLayerTitleShadow> _leftShadow;
-	object_ptr<BoxLayerTitleShadow> _topShadow;
-	object_ptr<Ui::FlatButton> _export;
+	object_ptr<Ui::PlainShadow> _leftShadow;
+	object_ptr<Ui::PlainShadow> _topShadow;
+	object_ptr<Ui::FlatButton> _save;
+	bool _saving = false;
 
 };
 

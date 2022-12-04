@@ -1,30 +1,19 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "ui/twidget.h"
+#include "ui/effects/animations.h"
+#include "ui/rp_widget.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Ui {
@@ -35,23 +24,34 @@ namespace ChatHelpers {
 
 class TabbedSelector;
 
-class TabbedPanel : public TWidget {
-	Q_OBJECT
+extern const char kOptionTabbedPanelShowOnClick[];
 
+class TabbedPanel : public Ui::RpWidget {
 public:
-	TabbedPanel(QWidget *parent, gsl::not_null<Window::Controller*> controller);
-	TabbedPanel(QWidget *parent, gsl::not_null<Window::Controller*> controller, object_ptr<TabbedSelector> selector);
+	TabbedPanel(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		not_null<TabbedSelector*> selector);
+	TabbedPanel(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		object_ptr<TabbedSelector> selector);
 
-	object_ptr<TabbedSelector> takeSelector();
-	QPointer<TabbedSelector> getSelector() const;
-	void moveBottom(int bottom);
+	[[nodiscard]] bool isSelectorStolen() const;
+	[[nodiscard]] not_null<TabbedSelector*> selector() const;
+
+	void moveBottomRight(int bottom, int right);
+	void moveTopRight(int top, int right);
+	void setDesiredHeightValues(
+		float64 ratio,
+		int minHeight,
+		int maxHeight);
+	void setDropDown(bool dropDown);
 
 	void hideFast();
 	bool hiding() const {
 		return _hiding || _hideTimer.isActive();
 	}
-
-	void stickersInstalled(uint64 setId);
 
 	bool overlaps(const QRect &globalRect) const;
 
@@ -62,7 +62,7 @@ public:
 	~TabbedPanel();
 
 protected:
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void otherEnter();
 	void otherLeave();
@@ -70,33 +70,26 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
-private slots:
-	void onWndActiveChanged();
-
 private:
+	TabbedPanel(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		object_ptr<TabbedSelector> ownedSelector,
+		TabbedSelector *nonOwnedSelector);
+
 	void hideByTimerOrLeave();
-	void moveByBottom();
-	bool isDestroying() const {
-		return !_selector;
-	}
+	void moveHorizontally();
+	void showFromSelector();
 
 	style::margins innerPadding() const;
 
 	// Rounded rect which has shadow around it.
 	QRect innerRect() const;
 
-	// Inner rect with removed st::buttonRadius from top and bottom.
-	// This one is allowed to be not rounded.
-	QRect horizontalRect() const;
-
-	// Inner rect with removed st::buttonRadius from left and right.
-	// This one is allowed to be not rounded.
-	QRect verticalRect() const;
-
 	QImage grabForAnimation();
 	void startShowAnimation();
 	void startOpacityAnimation(bool hiding);
-	void prepareCache();
+	void prepareCacheFor(bool hiding);
 
 	void opacityAnimationCallback();
 
@@ -106,20 +99,29 @@ private:
 	bool preventAutoHide() const;
 	void updateContentHeight();
 
-	gsl::not_null<Window::Controller*> _controller;
-	object_ptr<TabbedSelector> _selector;
+	const not_null<Window::SessionController*> _controller;
+	const object_ptr<TabbedSelector> _ownedSelector = { nullptr };
+	const not_null<TabbedSelector*> _selector;
 
 	int _contentMaxHeight = 0;
 	int _contentHeight = 0;
+	int _top = 0;
 	int _bottom = 0;
+	int _right = 0;
+	float64 _heightRatio = 1.;
+	int _minContentHeight = 0;
+	int _maxContentHeight = 0;
 
 	std::unique_ptr<Ui::PanelAnimation> _showAnimation;
-	Animation _a_show;
+	Ui::Animations::Simple _a_show;
+
+	bool _shouldFinishHide = false;
+	bool _dropDown = false;
 
 	bool _hiding = false;
 	bool _hideAfterSlide = false;
 	QPixmap _cache;
-	Animation _a_opacity;
+	Ui::Animations::Simple _a_opacity;
 	base::Timer _hideTimer;
 
 };

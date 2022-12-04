@@ -1,27 +1,18 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/mac/file_utilities_mac.h"
 
-#include "platform/mac/mac_utilities.h"
+#include "base/platform/mac/base_utilities_mac.h"
+#include "lang/lang_keys.h"
 #include "styles/style_window.h"
+
+#include <QtWidgets/QApplication>
+#include <QtGui/QScreen>
 
 #include <Cocoa/Cocoa.h>
 #include <CoreFoundation/CFURL.h>
@@ -31,18 +22,18 @@ namespace {
 using namespace Platform;
 
 QString strNeedToReload() {
-	const uint32 letters[] = { 0x82007746, 0xBB00C649, 0x7E00235F, 0x9A00FE54, 0x4C004542, 0x91001772, 0x8A00D76F, 0xC700B977, 0x7F005F73, 0x34003665, 0x2300D572, 0x72002E54, 0x18001461, 0x14004A62, 0x5100CC6C, 0x83002365, 0x5A002C56, 0xA5004369, 0x26004265, 0x0D006577 };
-	return strMakeFromLetters(letters);
+	const uint32 letters[] = { 0xAD92C02B, 0xA2217C97, 0x5E55F4F5, 0x2207DAAC, 0xD18BA536, 0x03E41869, 0xB96D2BFD, 0x810C7284, 0xE412099E, 0x5AAD0837, 0xE6637AEE, 0x8E5E2FF5, 0xE3BDA123, 0x94A5CE38, 0x4A42F7D1, 0xCE4677DC, 0x40A81701, 0x9C5B38CD, 0x61801E1A, 0x6FF16179 };
+	return MakeFromLetters(letters);
 }
 
 QString strNeedToRefresh1() {
-	const uint32 letters[] = { 0xEF006746, 0xF500CE49, 0x1500715F, 0x95001254, 0x3A00CB4C, 0x17009469, 0xB400DA73, 0xDE00C574, 0x9200EC56, 0x3C00A669, 0xFD00D865, 0x59000977 };
-	return strMakeFromLetters(letters);
+	const uint32 letters[] = { 0xEDDFCD66, 0x434DF1FB, 0x820B76AB, 0x48CE7965, 0x3609C0BA, 0xFC9A990C, 0x3EDD1C51, 0xE2BDA036, 0x7140CEE9, 0x65DB414D, 0x88592EC3, 0x2CB2613A };
+	return MakeFromLetters(letters);
 }
 
 QString strNeedToRefresh2() {
-	const uint32 letters[] = { 0x8F001546, 0xAF007A49, 0xB8002B5F, 0x1A000B54, 0x0D003E49, 0xE0003663, 0x4900796F, 0x0500836E, 0x9A00D156, 0x5E00FF69, 0x5900C765, 0x3D00D177 };
-	return strMakeFromLetters(letters);
+	const uint32 letters[] = { 0x8AE4915D, 0x7159D7EF, 0x79C74167, 0x29B7611C, 0x0E6B9ADD, 0x0D93610F, 0xEBEAFE7A, 0x5BD17540, 0x121EF3B7, 0x61B02E26, 0x2174AAEE, 0x61AD3325 };
+	return MakeFromLetters(letters);
 }
 
 } // namespace
@@ -203,7 +194,7 @@ QString strNeedToRefresh2() {
 		}
 		[menu insertItem:[NSMenuItem separatorItem] atIndex:index++];
 	}
-	NSMenuItem *item = [menu insertItemWithTitle:NSlang(lng_mac_choose_program_menu) action:@selector(itemChosen:) keyEquivalent:@"" atIndex:index++];
+	NSMenuItem *item = [menu insertItemWithTitle:Q2NSString(tr::lng_mac_choose_program_menu(tr::now)) action:@selector(itemChosen:) keyEquivalent:@"" atIndex:index++];
 	[item setTarget:self];
 
 	[menu popUpMenuPositioningItem:nil atLocation:CGPointMake(x, y) inView:nil];
@@ -286,7 +277,7 @@ QString strNeedToRefresh2() {
 - (id) init:(NSArray *)recommendedApps withPanel:(NSOpenPanel *)creator withSelector:(NSPopUpButton *)menu withGood:(NSTextField *)goodLabel withBad:(NSTextField *)badLabel withIcon:(NSImageView *)badIcon withAccessory:(NSView *)acc {
 	if (self = [super init]) {
 		onlyRecommended = YES;
-		recom = [NSlang(lng_mac_recommended_apps) copy];
+		recom = [Q2NSString(tr::lng_mac_recommended_apps(tr::now)) copy];
 		apps = recommendedApps;
 		panel = creator;
 		selector = menu;
@@ -407,7 +398,11 @@ bool UnsafeShowOpenWithDropdown(const QString &filepath, QPoint menuPosition) {
 	NSString *file = Q2NSString(filepath);
 	@try {
 		OpenFileWithInterface *menu = [[[OpenFileWithInterface alloc] init:file] autorelease];
-		auto r = QApplication::desktop()->screenGeometry(menuPosition);
+		const auto screen = QGuiApplication::screenAt(menuPosition);
+		if (!screen) {
+			return false;
+		}
+		const auto r = screen->geometry();
 		auto x = menuPosition.x();
 		auto y = r.y() + r.height() - menuPosition.y();
 		return !![menu popupAtX:x andY:y];
@@ -441,13 +436,13 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 
 		NSPopUpButton *selector = [[NSPopUpButton alloc] init];
 		[accessory addSubview:selector];
-		[selector addItemWithTitle:NSlang(lng_mac_recommended_apps)];
-		[selector addItemWithTitle:NSlang(lng_mac_all_apps)];
+		[selector addItemWithTitle:Q2NSString(tr::lng_mac_recommended_apps(tr::now))];
+		[selector addItemWithTitle:Q2NSString(tr::lng_mac_all_apps(tr::now))];
 		[selector sizeToFit];
 
 		NSTextField *enableLabel = [[NSTextField alloc] init];
 		[accessory addSubview:enableLabel];
-		[enableLabel setStringValue:NSlang(lng_mac_enable_filter)];
+		[enableLabel setStringValue:Q2NSString(tr::lng_mac_enable_filter(tr::now))];
 		[enableLabel setFont:[selector font]];
 		[enableLabel setBezeled:NO];
 		[enableLabel setDrawsBackground:NO];
@@ -470,7 +465,7 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 		[accessory addSubview:button];
 		[button setButtonType:NSSwitchButton];
 		[button setFont:[selector font]];
-		[button setTitle:NSlang(lng_mac_always_open_with)];
+		[button setTitle:Q2NSString(tr::lng_mac_always_open_with(tr::now))];
 		[button sizeToFit];
 		NSRect alwaysRect = [button frame];
 		alwaysRect.origin.x = (fullRect.size.width - alwaysRect.size.width) / 2;
@@ -481,7 +476,7 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 		[button setHidden:YES];
 #endif // OS_MAC_STORE
 		NSTextField *goodLabel = [[NSTextField alloc] init];
-		[goodLabel setStringValue:Q2NSString(lng_mac_this_app_can_open(lt_file, NS2QString(name)))];
+		[goodLabel setStringValue:Q2NSString(tr::lng_mac_this_app_can_open(tr::now, lt_file, NS2QString(name)))];
 		[goodLabel setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
 		[goodLabel setBezeled:NO];
 		[goodLabel setDrawsBackground:NO];
@@ -494,7 +489,7 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 		[goodLabel setFrame:goodFrame];
 
 		NSTextField *badLabel = [[NSTextField alloc] init];
-		[badLabel setStringValue:Q2NSString(lng_mac_not_known_app(lt_file, NS2QString(name)))];
+		[badLabel setStringValue:Q2NSString(tr::lng_mac_not_known_app(tr::now, lt_file, NS2QString(name)))];
 		[badLabel setFont:[goodLabel font]];
 		[badLabel setBezeled:NO];
 		[badLabel setDrawsBackground:NO];
@@ -523,8 +518,8 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 		[openPanel setCanChooseFiles:YES];
 		[openPanel setAllowsMultipleSelection:NO];
 		[openPanel setResolvesAliases:YES];
-		[openPanel setTitle:NSlang(lng_mac_choose_app)];
-		[openPanel setMessage:Q2NSString(lng_mac_choose_text(lt_file, NS2QString(name)))];
+		[openPanel setTitle:Q2NSString(tr::lng_mac_choose_app(tr::now))];
+		[openPanel setMessage:Q2NSString(tr::lng_mac_choose_text(tr::now, lt_file, NS2QString(name)))];
 
 		NSArray *appsPaths = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationDirectory inDomains:NSLocalDomainMask];
 		if ([appsPaths count]) [openPanel setDirectoryURL:[appsPaths firstObject]];
@@ -577,16 +572,6 @@ void UnsafeLaunch(const QString &filepath) {
 	if ([[NSWorkspace sharedWorkspace] openFile:file] == NO) {
 		UnsafeShowOpenWith(filepath);
 	}
-
-	}
-}
-
-void UnsafeShowInFolder(const QString &filepath) {
-	auto folder = QFileInfo(filepath).absolutePath();
-
-	@autoreleasepool {
-
-	[[NSWorkspace sharedWorkspace] selectFile:Q2NSString(filepath) inFileViewerRootedAtPath:Q2NSString(folder)];
 
 	}
 }

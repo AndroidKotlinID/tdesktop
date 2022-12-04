@@ -1,31 +1,41 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "ui/twidget.h"
-#include "window/window_slide_animation.h"
+#include "ui/rp_widget.h"
+#include "chat_helpers/bot_command.h"
+#include "dialogs/dialogs_key.h"
+#include "media/player/media_player_float.h" // FloatSectionDelegate
+#include "base/object_ptr.h"
+#include "window/window_section_common.h"
+
+class PeerData;
+
+namespace Data {
+struct ReactionId;
+class ForumTopic;
+} // namespace Data
+
+namespace Main {
+class Session;
+} // namespace Main
+
+namespace Ui {
+class LayerWidget;
+class ChatTheme;
+} // namespace Ui
 
 namespace Window {
 
-class Controller;
+class SessionController;
+class SlideAnimation;
+struct SectionShow;
+enum class SlideDirection;
 
 enum class Column {
 	First,
@@ -33,26 +43,32 @@ enum class Column {
 	Third,
 };
 
-class AbstractSectionWidget : public TWidget, protected base::Subscriber {
+class AbstractSectionWidget
+	: public Ui::RpWidget
+	, public Media::Player::FloatSectionDelegate {
 public:
-	AbstractSectionWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller) : TWidget(parent), _controller(controller) {
-	}
+	AbstractSectionWidget(
+		QWidget *parent,
+		not_null<SessionController*> controller,
+		rpl::producer<PeerData*> peerForBackground);
 
-	// Float player interface.
-	virtual bool wheelEventFromFloatPlayer(QEvent *e, Window::Column myColumn, Window::Column playerColumn) {
-		return false;
-	}
-	virtual QRect rectForFloatPlayer(Window::Column myColumn, Window::Column playerColumn) {
-		return mapToGlobal(rect());
-	}
-
-protected:
-	gsl::not_null<Window::Controller*> controller() const {
+	[[nodiscard]] Main::Session &session() const;
+	[[nodiscard]] not_null<SessionController*> controller() const {
 		return _controller;
 	}
 
+	// Tabbed selector management.
+	virtual bool pushTabbedSelectorToThirdSection(
+			not_null<Data::Thread*> thread,
+			const SectionShow &params) {
+		return false;
+	}
+	virtual bool returnTabbedSelector() {
+		return false;
+	}
+
 private:
-	gsl::not_null<Window::Controller*> _controller;
+	const not_null<SessionController*> _controller;
 
 };
 
@@ -60,8 +76,11 @@ class SectionMemento;
 
 struct SectionSlideParams {
 	QPixmap oldContentCache;
+	int topSkip = 0;
+	QPixmap topMask;
 	bool withTopBarShadow = false;
-	bool withTabbedSection = false;
+	bool withTabs = false;
+	bool withFade = false;
 
 	explicit operator bool() const {
 		return !oldContentCache.isNull();
@@ -70,10 +89,17 @@ struct SectionSlideParams {
 
 class SectionWidget : public AbstractSectionWidget {
 public:
-	SectionWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller);
+	SectionWidget(
+		QWidget *parent,
+		not_null<SessionController*> controller,
+		rpl::producer<PeerData*> peerForBackground = nullptr);
+	SectionWidget(
+		QWidget *parent,
+		not_null<SessionController*> controller,
+		not_null<PeerData*> peerForBackground);
 
-	virtual PeerData *peerForDialogs() const {
-		return nullptr;
+	virtual Dialogs::RowDescriptor activeChat() const {
+		return {};
 	}
 
 	// When resizing the widget with top edge moved up or down and we
@@ -84,14 +110,18 @@ public:
 	virtual bool hasTopBarShadow() const {
 		return false;
 	}
-	void showAnimated(SlideDirection direction, const SectionSlideParams &params);
+	virtual bool forceAnimateBack() const {
+		return false;
+	}
+	void showAnimated(
+		SlideDirection direction,
+		const SectionSlideParams &params);
 	void showFast();
+	[[nodiscard]] bool animatingShow() const;
 
 	// This can be used to grab with or without top bar shadow.
 	// This will be protected when animation preparation will be done inside.
-	virtual QPixmap grabForShowAnimation(const SectionSlideParams &params) {
-		return myGrab(this);
-	}
+	virtual QPixmap grabForShowAnimation(const SectionSlideParams &params);
 
 	// Attempt to show the required section inside the existing one.
 	// For example if this section already shows exactly the required
@@ -99,15 +129,61 @@ public:
 	//
 	// If this method returns false it is not supposed to modify the memento.
 	// If this method returns true it may modify the memento ("take" heavy items).
-	virtual bool showInternal(gsl::not_null<SectionMemento*> memento) = 0;
+	virtual bool showInternal(
+		not_null<SectionMemento*> memento,
+		const SectionShow &params) = 0;
+
+	virtual bool showMessage(
+			PeerId peerId,
+			const SectionShow &params,
+			MsgId messageId) {
+		return false;
+	}
+
+	[[nodiscard]] virtual bool preventsClose(
+			Fn<void()> &&continueCallback) const {
+		return false;
+	}
+
+	// Send bot command from peer info or media viewer.
+	virtual SectionActionResult sendBotCommand(
+			Bot::SendCommandRequest request) {
+		return SectionActionResult::Ignore;
+	}
+
+	virtual bool confirmSendingFiles(const QStringList &files) {
+		return false;
+	}
+	virtual bool confirmSendingFiles(not_null<const QMimeData*> data) {
+		return false;
+	}
 
 	// Create a memento of that section to store it in the history stack.
 	// This method may modify the section ("take" heavy items).
-	virtual std::unique_ptr<SectionMemento> createMemento() = 0;
+	virtual std::shared_ptr<SectionMemento> createMemento();
 
 	void setInnerFocus() {
 		doSetInnerFocus();
 	}
+	virtual void checkActivation() {
+	}
+
+	[[nodiscard]] virtual rpl::producer<int> desiredHeight() const;
+	[[nodiscard]] virtual rpl::producer<> removeRequests() const {
+		return rpl::never<>();
+	}
+
+	// Some sections convert to layers on some geometry sizes.
+	[[nodiscard]] virtual object_ptr<Ui::LayerWidget> moveContentToLayer(
+			QRect bodyGeometry) {
+		return nullptr;
+	}
+
+	static void PaintBackground(
+		not_null<SessionController*> controller,
+		not_null<Ui::ChatTheme*> theme,
+		not_null<QWidget*> widget,
+		QRect clip);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -119,7 +195,8 @@ protected:
 	}
 
 	// Called after the hideChildren() call in showAnimated().
-	virtual void showAnimatedHook() {
+	virtual void showAnimatedHook(
+		const SectionSlideParams &params) {
 	}
 
 	// Called after the showChildren() call in showFinished().
@@ -130,18 +207,30 @@ protected:
 		setFocus();
 	}
 
-	bool animating() const {
-		return _showAnimation != nullptr;
-	}
+	~SectionWidget();
 
 private:
 	void showFinished();
 
 	std::unique_ptr<SlideAnimation> _showAnimation;
 
-	// Saving here topDelta in resizeWithTopMoved() to get it passed to resizeEvent().
+	// Saving here topDelta in setGeometryWithTopMoved() to get it passed to resizeEvent().
 	int _topDelta = 0;
 
 };
+
+[[nodiscard]] auto ChatThemeValueFromPeer(
+	not_null<SessionController*> controller,
+	not_null<PeerData*> peer)
+-> rpl::producer<std::shared_ptr<Ui::ChatTheme>>;
+
+[[nodiscard]] bool ShowSendPremiumError(
+	not_null<SessionController*> controller,
+	not_null<DocumentData*> document);
+
+[[nodiscard]] bool ShowReactPremiumError(
+	not_null<SessionController*> controller,
+	not_null<HistoryItem*> item,
+	const Data::ReactionId &id);
 
 } // namespace Window

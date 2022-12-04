@@ -1,61 +1,94 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "window/window_title.h"
+#include "ui/widgets/rp_window.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
+#include "core/core_settings.h"
+#include "base/required.h"
 
-class MediaView;
+namespace Main {
+class Session;
+class Account;
+} // namespace Main
+
+namespace Ui {
+class BoxContent;
+class PlainShadow;
+} // namespace Ui
+
+namespace Core {
+struct WindowPosition;
+enum class QuitReason;
+} // namespace Core
 
 namespace Window {
 
 class Controller;
+class SessionController;
 class TitleWidget;
+struct TermsLock;
 
-QImage LoadLogo();
-QImage LoadLogoNoMargin();
-QIcon CreateIcon();
+[[nodiscard]] const QImage &Logo();
+[[nodiscard]] const QImage &LogoNoMargin();
+[[nodiscard]] QIcon CreateIcon(
+	Main::Session *session = nullptr,
+	bool returnNullIfDefault = false);
+void ConvertIconToBlack(QImage &image);
 
-class MainWindow : public QWidget, protected base::Subscriber {
-	Q_OBJECT
+struct CounterLayerArgs {
+	template <typename T>
+	using required = base::required<T>;
 
+	required<int> size = 16;
+	required<int> count = 1;
+	required<style::color> bg;
+	required<style::color> fg;
+};
+
+[[nodiscard]] QImage GenerateCounterLayer(CounterLayerArgs &&args);
+[[nodiscard]] QImage WithSmallCounter(QImage image, CounterLayerArgs &&args);
+
+class MainWindow : public Ui::RpWindow {
 public:
-	MainWindow();
+	explicit MainWindow(not_null<Controller*> controller);
+	virtual ~MainWindow();
 
-	Window::Controller *controller() const {
-		return _controller.get();
+	[[nodiscard]] Window::Controller &controller() const {
+		return *_controller;
 	}
-	void setInactivePress(bool inactive);
-	bool wasInactivePress() const {
-		return _wasInactivePress;
-	}
+	[[nodiscard]] PeerData *singlePeer() const;
+	[[nodiscard]] bool isPrimary() const;
+	[[nodiscard]] Main::Account &account() const;
+	[[nodiscard]] Window::SessionController *sessionController() const;
 
 	bool hideNoQuit();
-	void hideMediaview();
+
+	void showFromTray();
+	void quitFromTray();
+	void activate();
+
+	[[nodiscard]] QRect desktopRect() const;
+	[[nodiscard]] Core::WindowPosition withScreenInPosition(
+		Core::WindowPosition position) const;
+	[[nodiscard]] static Core::WindowPosition SecondaryInitPosition();
 
 	void init();
-	HitTestResult hitTest(const QPoint &p) const;
-	void updateIsActive(int timeout);
-	bool isActive() const {
+
+	void updateIsActive();
+
+	[[nodiscard]] bool isActive() const {
 		return _isActive;
+	}
+	[[nodiscard]] virtual bool isActiveForTrayMenu() {
+		updateIsActive();
+		return isActive();
 	}
 
 	bool positionInited() const {
@@ -63,80 +96,66 @@ public:
 	}
 	void positionUpdated();
 
-	bool titleVisible() const;
-	void setTitleVisible(bool visible);
-	QString titleText() const {
-		return _titleText;
-	}
-
-	void reActivateWindow() {
-		onReActivate();
-		QTimer::singleShot(200, this, SLOT(onReActivate()));
-	}
-
-	void showPhoto(const PhotoOpenClickHandler *lnk, HistoryItem *item = 0);
-	void showPhoto(PhotoData *photo, HistoryItem *item);
-	void showPhoto(PhotoData *photo, PeerData *item);
-	void showDocument(DocumentData *doc, HistoryItem *item);
-	bool ui_isMediaViewShown();
-
-	QWidget *filedialogParent();
+	void reActivateWindow();
 
 	void showRightColumn(object_ptr<TWidget> widget);
-	bool canExtendWidthBy(int addToWidth);
-	void tryToExtendWidthBy(int addToWidth);
+	int maximalExtendBy() const;
+	bool canExtendNoMove(int extendBy) const;
 
-	virtual void updateTrayMenu(bool force = false) {
+	// Returns how much could the window get extended.
+	int tryToExtendWidthBy(int addToWidth);
+
+	virtual void fixOrder() {
+	}
+	virtual void setInnerFocus() {
+		setFocus();
 	}
 
-	// TODO: rewrite using base::Observable
-	void documentUpdated(DocumentData *doc);
-	virtual void changingMsgId(HistoryItem *row, MsgId newId);
-
-	virtual ~MainWindow();
-
-	TWidget *bodyWidget() {
+	Ui::RpWidget *bodyWidget() {
 		return _body.data();
 	}
-	virtual PeerData *ui_getPeerForMouseAction();
 
-	void launchDrag(std::unique_ptr<QMimeData> data);
-	base::Observable<void> &dragFinished() {
-		return _dragFinished;
-	}
-	base::Observable<void> &widgetGrabbed() {
-		return _widgetGrabbed;
-	}
+	void launchDrag(std::unique_ptr<QMimeData> data, Fn<void()> &&callback);
 
-public slots:
+	rpl::producer<> leaveEvents() const;
+
+	virtual void updateWindowIcon();
+
+	void clearWidgets();
+
+	int computeMinWidth() const;
+	int computeMinHeight() const;
+
+	void recountGeometryConstraints();
+	virtual void updateControlsGeometry();
+
 	bool minimizeToTray();
 	void updateGlobalMenu() {
 		updateGlobalMenuHook();
 	}
 
+	[[nodiscard]] virtual bool preventsQuit(Core::QuitReason reason) {
+		return false;
+	}
+
 protected:
-	void resizeEvent(QResizeEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 
 	void savePosition(Qt::WindowState state = Qt::WindowActive);
 	void handleStateChanged(Qt::WindowState state);
 	void handleActiveChanged();
+	void handleVisibleChanged(bool visible);
 
 	virtual void initHook() {
 	}
 
-	virtual void updateIsActiveHook() {
+	virtual void handleVisibleChangedHook(bool visible) {
 	}
 
-	void clearWidgets();
 	virtual void clearWidgetsHook() {
 	}
 
-	virtual void updateWindowIcon();
-
 	virtual void stateChangedHook(Qt::WindowState state) {
-	}
-
-	virtual void titleVisibilityChangedHook() {
 	}
 
 	virtual void unreadCounterChangedHook() {
@@ -149,58 +168,56 @@ protected:
 	virtual void updateGlobalMenuHook() {
 	}
 
-	virtual bool hasTrayIcon() const {
+	virtual void workmodeUpdated(Core::Settings::WorkMode mode) {
+	}
+
+	virtual void createGlobalMenu() {
+	}
+
+	virtual bool initGeometryFromSystem() {
 		return false;
 	}
-	virtual void showTrayTooltip() {
-	}
-
-	virtual void workmodeUpdated(DBIWorkMode mode) {
-	}
-
-	virtual void updateControlsGeometry();
 
 	// This one is overriden in Windows for historical reasons.
 	virtual int32 screenNameChecksum(const QString &name) const;
 
 	void setPositionInited();
+	void updateUnreadCounter();
 
-	void createMediaView();
-
-private slots:
-	void savePositionByTimer() {
-		savePosition();
-	}
-	void onReActivate();
+	virtual QRect computeDesktopRect() const;
 
 private:
-	void checkAuthSession();
+	void refreshTitleWidget();
+	void updateMinimumSize();
 	void updatePalette();
-	void updateUnreadCounter();
-	void initSize();
+
+	[[nodiscard]] Core::WindowPosition positionFromSettings() const;
+	[[nodiscard]] QRect countInitialGeometry(Core::WindowPosition position);
+	void initGeometry();
 
 	bool computeIsActive() const;
 
-	object_ptr<QTimer> _positionUpdatedTimer;
+	not_null<Window::Controller*> _controller;
+
+	base::Timer _positionUpdatedTimer;
 	bool _positionInited = false;
 
-	std::unique_ptr<Window::Controller> _controller;
-	object_ptr<TitleWidget> _title = { nullptr };
-	object_ptr<TWidget> _body;
+	object_ptr<Ui::PlainShadow> _titleShadow = { nullptr };
+	object_ptr<Ui::RpWidget> _outdated;
+	object_ptr<Ui::RpWidget> _body;
 	object_ptr<TWidget> _rightColumn = { nullptr };
 
 	QIcon _icon;
-	QString _titleText;
+	bool _usingSupportIcon = false;
 
 	bool _isActive = false;
-	base::Timer _isActiveTimer;
-	bool _wasInactivePress = false;
-	base::Timer _inactivePressTimer;
 
-	object_ptr<MediaView> _mediaView = { nullptr };
+	rpl::event_stream<> _leaveEvents;
 
-	base::Observable<void> _dragFinished;
-	base::Observable<void> _widgetGrabbed;
+	bool _maximizedBeforeHide = false;
+
+	mutable QRect _monitorRect;
+	mutable crl::time _monitorLastGot = 0;
 
 };
 

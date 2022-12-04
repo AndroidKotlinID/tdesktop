@@ -1,31 +1,20 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
+
+#include "ui/rp_widget.h"
 
 class EditColorBox;
 
 namespace Window {
 namespace Theme {
 
-class EditorBlock : public TWidget, private base::Subscriber {
+class EditorBlock final : public Ui::RpWidget {
 public:
 	enum class Type {
 		Existing,
@@ -36,8 +25,8 @@ public:
 		QString name;
 		QString possibleCopyOf;
 
-		base::Observable<void> updated;
-		base::Observable<void> resized;
+		rpl::event_stream<> updated;
+		rpl::event_stream<> resized;
 
 		struct AppendData {
 			QString name;
@@ -45,27 +34,27 @@ public:
 			QColor value;
 			QString description;
 		};
-		base::Observable<AppendData> appended;
+		rpl::event_stream<AppendData> appended;
 
 		struct ChangeData {
 			QStringList names;
 			QColor value;
 		};
-		base::Observable<ChangeData> changed;
+		rpl::event_stream<ChangeData> changed;
 
 		struct EditionData {
 			QString name;
 			QString copyOf;
 			QColor value;
 		};
-		base::Observable<EditionData> pending;
+		rpl::event_stream<EditionData> pending;
 
 		struct ScrollData {
-			Type type;
-			int position;
-			int height;
+			Type type = {};
+			int position = 0;
+			int height = 0;
 		};
-		base::Observable<ScrollData> scroll;
+		rpl::event_stream<ScrollData> scroll;
 	};
 	EditorBlock(QWidget *parent, Type type, Context *context);
 
@@ -84,6 +73,8 @@ public:
 	const QColor *find(const QString &name);
 
 	bool feedDescription(const QString &name, const QString &description);
+
+	void sortByDistance(const QColor &to);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -120,7 +111,7 @@ private:
 	Row *findRow(const QString &name);
 	int findRowIndex(const Row *row);
 	void updateRow(const Row &row);
-	void paintRow(Painter &p, int index, const Row &row, TimeMs ms);
+	void paintRow(Painter &p, int index, const Row &row);
 
 	void updateSelected(QPoint localPosition);
 	void setSelected(int selected);
@@ -153,8 +144,8 @@ private:
 	QMap<QString, int> _indices;
 
 	QString _searchQuery;
-	QVector<int> _searchResults;
-	QMap<QChar, OrderedSet<int>> _searchIndex;
+	std::vector<int> _searchResults;
+	base::flat_map<QChar, base::flat_set<int>> _searchIndex;
 
 	int _selected = -1;
 	int _pressed = -1;

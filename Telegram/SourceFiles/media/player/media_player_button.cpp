@@ -1,50 +1,19 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/player/media_player_button.h"
 
+#include "ui/painter.h"
 #include "styles/style_widgets.h"
 
 namespace Media {
 namespace Player {
-namespace {
 
-template <int N>
-QPainterPath interpolatePaths(QPointF (&from)[N], QPointF (&to)[N], float64 k) {
-	static_assert(N > 1, "Wrong points count in path!");
-
-	auto from_coef = 1. - k, to_coef = k;
-	QPainterPath result;
-	auto x = from[0].x() * from_coef + to[0].x() * to_coef;
-	auto y = from[0].y() * from_coef + to[0].y() * to_coef;
-	result.moveTo(x, y);
-	for (int i = 1; i != N; ++i) {
-		result.lineTo(from[i].x() * from_coef + to[i].x() * to_coef, from[i].y() * from_coef + to[i].y() * to_coef);
-	}
-	result.lineTo(x, y);
-	return result;
-}
-
-} // namespace
-
-PlayButtonLayout::PlayButtonLayout(const style::MediaPlayerButton &st, base::lambda<void()> callback)
+PlayButtonLayout::PlayButtonLayout(const style::MediaPlayerButton &st, Fn<void()> callback)
 : _st(st)
 , _callback(std::move(callback)) {
 }
@@ -53,7 +22,7 @@ void PlayButtonLayout::setState(State state) {
 	if (_nextState == state) return;
 
 	_nextState = state;
-	if (!_transformProgress.animating(getms())) {
+	if (!_transformProgress.animating()) {
 		_oldState = _state;
 		_state = _nextState;
 		_transformBackward = false;
@@ -69,32 +38,32 @@ void PlayButtonLayout::setState(State state) {
 }
 
 void PlayButtonLayout::finishTransform() {
-	_transformProgress.finish();
+	_transformProgress.stop();
 	_transformBackward = false;
 	if (_callback) _callback();
 }
 
-void PlayButtonLayout::paint(Painter &p, const QBrush &brush) {
-	if (_transformProgress.animating(getms())) {
+void PlayButtonLayout::paint(QPainter &p, const QBrush &brush) {
+	if (_transformProgress.animating()) {
 		auto from = _oldState, to = _state;
 		auto backward = _transformBackward;
-		auto progress = _transformProgress.current(1.);
+		auto progress = _transformProgress.value(1.);
 		if (from == State::Cancel || (from == State::Pause && to == State::Play)) {
 			qSwap(from, to);
 			backward = !backward;
 		}
 		if (backward) progress = 1. - progress;
 
-		t_assert(from != to);
+		Assert(from != to);
 		if (from == State::Play) {
 			if (to == State::Pause) {
 				paintPlayToPause(p, brush, progress);
 			} else {
-				t_assert(to == State::Cancel);
+				Assert(to == State::Cancel);
 				paintPlayToCancel(p, brush, progress);
 			}
 		} else {
-			t_assert(from == State::Pause && to == State::Cancel);
+			Assert(from == State::Pause && to == State::Cancel);
 			paintPauseToCancel(p, brush, progress);
 		}
 	} else {
@@ -106,7 +75,7 @@ void PlayButtonLayout::paint(Painter &p, const QBrush &brush) {
 	}
 }
 
-void PlayButtonLayout::paintPlay(Painter &p, const QBrush &brush) {
+void PlayButtonLayout::paintPlay(QPainter &p, const QBrush &brush) {
 	auto playLeft = 0. + _st.playPosition.x();
 	auto playTop = 0. + _st.playPosition.y();
 	auto playWidth = _st.playOuter.width() - 2 * playLeft;
@@ -124,7 +93,7 @@ void PlayButtonLayout::paintPlay(Painter &p, const QBrush &brush) {
 	p.fillPath(pathPlay, brush);
 }
 
-void PlayButtonLayout::paintPlayToPause(Painter &p, const QBrush &brush, float64 progress) {
+void PlayButtonLayout::paintPlayToPause(QPainter &p, const QBrush &brush, float64 progress) {
 	auto playLeft = 0. + _st.playPosition.x();
 	auto playTop = 0. + _st.playPosition.y();
 	auto playWidth = _st.playOuter.width() - 2 * playLeft;
@@ -151,7 +120,7 @@ void PlayButtonLayout::paintPlayToPause(Painter &p, const QBrush &brush, float64
 		{ playLeft + (playWidth / 2.), playTop + (3 * playHeight / 4.) },
 		{ playLeft, playTop + playHeight },
 	};
-	p.fillPath(interpolatePaths(pathLeftPlay, pathLeftPause, progress), brush);
+	p.fillPath(anim::interpolate(pathLeftPlay, pathLeftPause, progress), brush);
 
 	QPointF pathRightPause[] = {
 		{ pauseLeft + pauseWidth - pauseStroke, pauseTop },
@@ -165,10 +134,10 @@ void PlayButtonLayout::paintPlayToPause(Painter &p, const QBrush &brush, float64
 		{ playLeft + playWidth, playTop + (playHeight / 2.) },
 		{ playLeft + (playWidth / 2.), playTop + (3 * playHeight / 4.) },
 	};
-	p.fillPath(interpolatePaths(pathRightPlay, pathRightPause, progress), brush);
+	p.fillPath(anim::interpolate(pathRightPlay, pathRightPause, progress), brush);
 }
 
-void PlayButtonLayout::paintPlayToCancel(Painter &p, const QBrush &brush, float64 progress) {
+void PlayButtonLayout::paintPlayToCancel(QPainter &p, const QBrush &brush, float64 progress) {
 	static const auto sqrt2 = sqrt(2.);
 
 	auto playLeft = 0. + _st.playPosition.x();
@@ -213,10 +182,10 @@ void PlayButtonLayout::paintPlayToCancel(Painter &p, const QBrush &brush, float6
 		{ cancelLeft, cancelTop + cancelHeight - cancelStroke },
 		{ cancelLeft + (cancelWidth / 2.) - cancelStroke, cancelTop + (cancelHeight / 2.) },
 	};
-	p.fillPath(interpolatePaths(pathPlay, pathCancel, progress), brush);
+	p.fillPath(anim::interpolate(pathPlay, pathCancel, progress), brush);
 }
 
-void PlayButtonLayout::paintPauseToCancel(Painter &p, const QBrush &brush, float64 progress) {
+void PlayButtonLayout::paintPauseToCancel(QPainter &p, const QBrush &brush, float64 progress) {
 	static const auto sqrt2 = sqrt(2.);
 
 	auto pauseLeft = 0. + _st.pausePosition.x();
@@ -246,7 +215,7 @@ void PlayButtonLayout::paintPauseToCancel(Painter &p, const QBrush &brush, float
 		{ cancelLeft + cancelWidth, cancelTop + cancelHeight - cancelStroke },
 		{ cancelLeft + cancelWidth - cancelStroke, cancelTop + cancelHeight },
 	};
-	p.fillPath(interpolatePaths(pathLeftPause, pathLeftCancel, progress), brush);
+	p.fillPath(anim::interpolate(pathLeftPause, pathLeftCancel, progress), brush);
 
 	QPointF pathRightPause[] = {
 		{ pauseLeft + pauseWidth - pauseStroke, pauseTop },
@@ -260,7 +229,7 @@ void PlayButtonLayout::paintPauseToCancel(Painter &p, const QBrush &brush, float
 		{ cancelLeft + cancelStroke, cancelTop + cancelHeight },
 		{ cancelLeft, cancelTop + cancelHeight - cancelStroke },
 	};
-	p.fillPath(interpolatePaths(pathRightPause, pathRightCancel, progress), brush);
+	p.fillPath(anim::interpolate(pathRightPause, pathRightCancel, progress), brush);
 }
 
 void PlayButtonLayout::animationCallback() {

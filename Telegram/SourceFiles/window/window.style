@@ -1,34 +1,29 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-
-using "basic.style";
+using "ui/basic.style";
 using "ui/widgets/widgets.style";
-using "history/history.style";
+using "ui/chat/chat.style";
+using "boxes/boxes.style"; // UserpicButton
 
 windowMinWidth: 380px;
 windowMinHeight: 480px;
 windowDefaultWidth: 800px;
 windowDefaultHeight: 600px;
-windowShadow: icon {{ "window_shadow", windowShadowFg }};
-windowShadowShift: 1px;
+windowBigDefaultWidth: 1024px;
+windowBigDefaultHeight: 768px;
+windowResizeArea: 4px;
+
+columnMinimalWidthLeft: 260px;
+columnMaximalWidthLeft: 540px;
+columnMinimalWidthMain: 380px;
+columnDesiredWidthMain: 512px;
+columnMinimalWidthThird: 292px;
+columnMaximalWidthThird: 392px;
 
 adaptiveChatWideWidth: 880px;
 
@@ -89,34 +84,46 @@ notifySendReply: IconButton {
 	iconOver: historySendIconOver;
 	iconPosition: point(6px, 6px);
 }
+notifyFadeRight: icon {{ "fade_horizontal", notificationBg }};
 
-titleUnreadCounterTop: 5px;
+titleUnreadCounterTop: 6px;
 titleUnreadCounterRight: 35px;
 
 mainMenuWidth: 274px;
 mainMenuCoverHeight: 134px;
 mainMenuUserpicLeft: 24px;
 mainMenuUserpicTop: 20px;
-mainMenuUserpicSize: 48px;
+mainMenuUserpic: UserpicButton(defaultUserpicButton) {
+	size: size(48px, 48px);
+	photoSize: 48px;
+}
 mainMenuCloudButton: IconButton {
-	width: 64px;
-	height: 64px;
+	width: 48px;
+	height: 48px;
 
 	icon: icon {
-		{ "menu_cloud", mainMenuCloudFg },
+//		{ "menu_cloud", mainMenuCloudFg },
 	};
 	iconPosition: point(22px, 22px);
 }
 mainMenuCloudSize: 32px;
-mainMenuCoverTextLeft: 30px;
+mainMenuResetScaleFont: font(20px semibold);
+mainMenuResetScaleLeft: 36px;
+mainMenuResetScaleRight: 12px;
+mainMenuResetScaleTop: 2px;
+mainMenuResetScaleIconLeft: 5px;
+mainMenuCoverNameLeft: 26px;
 mainMenuCoverNameTop: 84px;
-mainMenuCoverStatusTop: 102px;
-mainMenuSkip: 13px;
+mainMenuCoverStatusLeft: mainMenuCoverNameLeft;
+mainMenuCoverStatusTop: 103px;
+mainMenuPhoneFont: font(12px);
+mainMenuSkip: 6px;
+mainMenuFooterHeightMin: 80px;
 mainMenu: Menu(defaultMenu) {
 	itemFg: windowBoldFg;
 	itemFgOver: windowBoldFgOver;
-	itemFont: semiboldFont;
-	itemIconPosition: point(28px, 10px);
+	itemStyle: semiboldTextStyle;
+	itemIconPosition: point(26px, 8px);
 	itemPadding: margins(76px, 13px, 28px, 13px);
 	itemToggle: Toggle(defaultMenuToggle) {
 		toggledFg: mainMenuCoverBg;
@@ -126,19 +133,23 @@ mainMenu: Menu(defaultMenu) {
 	}
 	itemToggleShift: 11px;
 }
-mainMenuNewGroup: icon {{ "menu_new_group", menuIconFg }};
-mainMenuNewGroupOver: icon {{ "menu_new_group", menuIconFgOver }};
-mainMenuNewChannel: icon {{ "menu_new_channel", menuIconFg }};
-mainMenuNewChannelOver: icon {{ "menu_new_channel", menuIconFgOver }};
-mainMenuContacts: icon {{ "menu_contacts", menuIconFg }};
-mainMenuContactsOver: icon {{ "menu_contacts", menuIconFgOver }};
-mainMenuCalls: icon {{ "menu_calls", menuIconFg }};
-mainMenuCallsOver: icon {{ "menu_calls", menuIconFgOver }};
-mainMenuSettings: icon {{ "menu_settings", menuIconFg }};
-mainMenuSettingsOver: icon {{ "menu_settings", menuIconFgOver }};
-mainMenuNightMode: icon {{ "menu_night_mode", menuIconFg }};
-mainMenuNightModeOver: icon {{ "menu_night_mode", menuIconFgOver }};
-mainMenuFooterLeft: 30px;
+mainMenuButton: SettingsButton(defaultSettingsButton) {
+	style: semiboldTextStyle;
+	padding: margins(61px, 11px, 20px, 9px);
+	toggleSkip: 19px;
+	iconLeft: 21px;
+}
+mainMenuAddAccountButton: SettingsButton(mainMenuButton) {
+	iconLeft: 23px;
+}
+
+mainMenuShadow: icon {{ "menu_shadow", windowShadowFg }};
+mainMenuAccountSize: 26px;
+mainMenuAccountLine: 2px;
+mainMenuBadgeFont: font(11px bold);
+mainMenuBadgeSize: 18px;
+
+mainMenuFooterLeft: 25px;
 mainMenuTelegramLabel: FlatLabel(defaultFlatLabel) {
 	align: align(left);
 	textFg: windowSubTextFg;
@@ -151,150 +162,173 @@ mainMenuTelegramLabel: FlatLabel(defaultFlatLabel) {
 		linkFg: windowSubTextFg;
 	}
 }
-mainMenuTelegramBottom: 43px;
+mainMenuTelegramBottom: 38px;
 mainMenuVersionLabel: FlatLabel(mainMenuTelegramLabel) {
 	style: defaultTextStyle;
 }
-mainMenuVersionBottom: 21px;
+mainMenuVersionBottom: 17px;
 
-// Windows specific title
-
-titleHeight: 21px;
-titleButtonMinimize: IconButton {
-	width: 24px;
-	height: 21px;
-
-	icon: icon {
-		{ size(24px, 21px), titleButtonBg },
-		{ "title_button_minimize", titleButtonFg, point(4px, 4px) },
-	};
-	iconOver: icon {
-		{ size(24px, 21px), titleButtonBgOver },
-		{ "title_button_minimize", titleButtonFgOver, point(4px, 4px) },
-	};
-	iconPosition: point(0px, 0px);
-}
-titleButtonMinimizeIconActive: icon {
-	{ size(24px, 21px), titleButtonBgActive },
-	{ "title_button_minimize", titleButtonFgActive, point(4px, 4px) },
-};
-titleButtonMinimizeIconActiveOver: icon {
-	{ size(24px, 21px), titleButtonBgActiveOver },
-	{ "title_button_minimize", titleButtonFgActiveOver, point(4px, 4px) },
-};
-titleButtonMaximize: IconButton(titleButtonMinimize) {
-	icon: icon {
-		{ size(24px, 21px), titleButtonBg },
-		{ "title_button_maximize", titleButtonFg, point(4px, 4px) },
-	};
-	iconOver: icon {
-		{ size(24px, 21px), titleButtonBgOver },
-		{ "title_button_maximize", titleButtonFgOver, point(4px, 4px) },
-	};
-}
-titleButtonMaximizeIconActive: icon {
-	{ size(24px, 21px), titleButtonBgActive },
-	{ "title_button_maximize", titleButtonFgActive, point(4px, 4px) },
-};
-titleButtonMaximizeIconActiveOver: icon {
-	{ size(24px, 21px), titleButtonBgActiveOver },
-	{ "title_button_maximize", titleButtonFgActiveOver, point(4px, 4px) },
-};
-titleButtonRestoreIcon: icon {
-	{ size(24px, 21px), titleButtonBg },
-	{ "title_button_restore", titleButtonFg, point(4px, 4px) },
-};
-titleButtonRestoreIconOver: icon {
-	{ size(24px, 21px), titleButtonBgOver },
-	{ "title_button_restore", titleButtonFgOver, point(4px, 4px) },
-};
-titleButtonRestoreIconActive: icon {
-	{ size(24px, 21px), titleButtonBgActive },
-	{ "title_button_restore", titleButtonFgActive, point(4px, 4px) },
-};
-titleButtonRestoreIconActiveOver: icon {
-	{ size(24px, 21px), titleButtonBgActiveOver },
-	{ "title_button_restore", titleButtonFgActiveOver, point(4px, 4px) },
-};
-titleButtonClose: IconButton(titleButtonMinimize) {
-	width: 25px;
-
-	icon: icon {
-		{ size(25px, 21px), titleButtonCloseBg },
-		{ "title_button_close", titleButtonCloseFg, point(5px, 4px) },
-	};
-	iconOver: icon {
-		{ size(25px, 21px), titleButtonCloseBgOver },
-		{ "title_button_close", titleButtonCloseFgOver, point(5px, 4px) },
-	};
-}
-titleButtonCloseIconActive: icon {
-	{ size(25px, 21px), titleButtonCloseBgActive },
-	{ "title_button_close", titleButtonCloseFgActive, point(5px, 4px) },
-};
-titleButtonCloseIconActiveOver: icon {
-	{ size(25px, 21px), titleButtonCloseBgActiveOver },
-	{ "title_button_close", titleButtonCloseFgActiveOver, point(5px, 4px) },
-};
-
-// Legacy top bar.
-topBarHeight: 54px;
-topBarMenuPosition: point(-2px, 35px);
-topBarDuration: 200;
-topBarBackward: icon {{ "title_back", menuIconFg }};
-topBarForwardAlpha: 0.6;
-topBarBack: icon {{ "title_back", lightButtonFg }};
-topBarArrowPadding: margins(39px, 8px, 17px, 8px);
-topBarMinPadding: 5px;
-topBarButton: RoundButton(defaultLightButton) {
-	width: -18px;
-	padding: margins(0px, 10px, 12px, 10px);
-}
-topBarClearButton: RoundButton(defaultLightButton) {
-	width: -18px;
-}
-topBarSearch: IconButton {
-	width: 44px;
-	height: topBarHeight;
-
-	icon: icon {{ "title_search-flip_horizontal", menuIconFg }};
-	iconOver: icon {{ "title_search-flip_horizontal", menuIconFgOver }};
-	iconPosition: point(15px, 18px);
-
-	rippleAreaPosition: point(4px, 7px);
-	rippleAreaSize: 40px;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: windowBgOver;
-	}
-}
-topBarCall: IconButton(topBarSearch) {
-	icon: icon {{ "add_contact_phone", menuIconFg }};
-	iconOver: icon {{ "add_contact_phone", menuIconFgOver }};
-}
-topBarMenuToggle: IconButton(topBarSearch) {
-	icon: icon {{ "title_menu_dots", menuIconFg }};
-	iconOver: icon {{ "title_menu_dots", menuIconFgOver }};
-	iconPosition: point(16px, 17px);
-
-	rippleAreaPosition: point(0px, 7px);
-}
-topBarActionSkip: 10px;
-
-PeerAvatarButton {
-	size: pixels;
-	photoSize: pixels;
-}
-topBarInfoButton: PeerAvatarButton {
-	size: topBarHeight;
-	photoSize: 42px;
-}
-topBarSlideDuration: 200;
+mainMenuToggleSize: 6px;
+mainMenuToggleFourStrokes: 4px;
+mainMenuTogglePosition: point(30px, 30px);
 
 themeEditorSampleSize: size(90px, 51px);
 themeEditorMargin: margins(17px, 10px, 17px, 10px);
 themeEditorDescriptionSkip: 10px;
 themeEditorNameFont: font(15px semibold);
 themeEditorCopyNameFont: font(fsize semibold);
+
+windowEmojiSuggestionsPopup: PopupMenu(defaultPopupMenu) {
+	menu: Menu(defaultMenu) {
+		itemPadding: margins(48px, 8px, 17px, 7px);
+		widthMax: 512px;
+	}
+}
+
+connectingLeftShadow: icon {{ "connecting_left_shadow", windowShadowFg }};
+connectingLeft: icon {{ "connecting_left", windowBg }};
+connectingRightShadow: icon {{ "connecting_right_shadow", windowShadowFg }};
+connectingRight: icon {{ "connecting_right", windowBg }};
+connectingBodyShadow: icon {{ "connecting_body_shadow", windowShadowFg }};
+connectingBody: icon {{ "connecting_body", windowBg }};
+connectingMargin: margins(2px, 2px, 2px, 2px);
+connectingTextPadding: margins(18px, 11px, 18px, 0px);
+connectingRadialSkip: 6px;
+connectingRadial: InfiniteRadialAnimation(defaultInfiniteRadialAnimation) {
+	color: menuIconFg;
+	thickness: 2px;
+	size: size(20px, 20px);
+}
+connectingRetryLink: LinkButton(defaultLinkButton) {
+	padding: margins(6px, 11px, 6px, 0px);
+}
+connectingProxyOff: icon {{ "proxy_off", menuIconFg }};
+connectingProxyOn: icon {{ "proxy_on", windowBgActive }};
+connectingDuration: 150;
+
+windowOutdatedDetails: FlatLabel(defaultFlatLabel) {
+	align: align(top);
+	minWidth: 100px;
+	textFg: outdatedFg;
+}
+windowOutdatedTitle: FlatLabel(windowOutdatedDetails) {
+	style: semiboldTextStyle;
+}
+windowOutdatedPadding: margins(10px, 10px, 10px, 10px);
+windowOutdatedSkip: 6px;
+windowOutdatedClose: IconButton(defaultIconButton) {
+	width: 60px;
+	height: 60px;
+	icon: icon {{ "info/info_close", outdatedFg }};
+	iconOver: icon {{ "info/info_close", outdatedFg }};
+	iconPosition: point(-1px, -1px);
+}
+
+createThemeImportButton: SettingsButton(defaultSettingsButton) {
+	textFg: lightButtonFg;
+	textFgOver: lightButtonFgOver;
+	textBg: windowBg;
+	textBgOver: windowBgOver;
+
+	style: semiboldTextStyle;
+
+	height: 20px;
+	padding: margins(22px, 10px, 22px, 8px);
+
+	ripple: defaultRippleAnimation;
+}
+createThemeLink: InputField(defaultInputField) {
+	textMargins: margins(0px, 7px, 0px, 0px);
+	textBg: boxBg;
+
+	placeholderFg: placeholderFg;
+	placeholderFgActive: placeholderFgActive;
+	placeholderFgError: placeholderFgActive;
+	placeholderMargins: margins(0px, 0px, 0px, 0px);
+	placeholderScale: 0.;
+	placeholderFont: boxTextFont;
+
+	heightMin: 34px;
+
+	font: boxTextFont;
+}
+
+windowFiltersWidth: 72px;
+windowFiltersButton: SideBarButton(defaultSideBarButton) {
+	textTop: 40px;
+	textSkip: 6px;
+	minHeight: 62px;
+	minTextWidth: 48px;
+	style: TextStyle(defaultTextStyle) {
+		font: font(11px semibold);
+	}
+	badgeStyle: TextStyle(defaultTextStyle) {
+		font: font(12px semibold);
+	}
+	badgeSkip: 4px;
+	badgeHeight: 17px;
+	badgeStroke: 2px;
+	badgePosition: point(3px, 7px);
+	iconPosition: point(-1px, 6px);
+}
+windowFiltersMainMenu: SideBarButton(windowFiltersButton) {
+	icon: icon {{ "dialogs/dialogs_menu", sideBarIconFg }};
+	iconPosition: point(-1px, -1px);
+	minHeight: 54px;
+}
+windowFiltersMainMenuUnread: icon {
+	{ "dialogs/dialogs_menu_unread", sideBarIconFg },
+	{ "dialogs/dialogs_menu_unread_dot", sideBarBadgeBg },
+};
+windowFiltersMainMenuUnreadMuted: icon {
+	{ "dialogs/dialogs_menu_unread", sideBarIconFg },
+	{ "dialogs/dialogs_menu_unread_dot", sideBarBadgeBgMuted },
+};
+windowFilterSmallItem: PeerListItem(defaultPeerListItem) {
+	height: 44px;
+	photoPosition: point(13px, 5px);
+	namePosition: point(59px, 14px);
+	photoSize: 34px;
+	checkbox: RoundImageCheckbox(defaultPeerListCheckbox) {
+		imageRadius: 17px;
+		imageSmallRadius: 14px;
+	}
+}
+windowFilterSmallList: PeerList(defaultPeerList) {
+	item: windowFilterSmallItem;
+}
+windowFilterSmallRemove: IconButton(notifyClose) {
+}
+windowFilterSmallRemoveRight: 10px;
+windowFilterNameInput: InputField(defaultInputField) {
+	textMargins: margins(0px, 26px, 36px, 4px);
+}
+windowFilterIconToggleSize: size(36px, 36px);
+windowFilterIconTogglePosition: point(-4px, 12px);
+windwoFilterIconPanelPosition: point(-2px, -1px);
+windowFilterIconSingle: size(44px, 42px);
+windowFilterIconPadding: margins(10px, 36px, 10px, 8px);
+windowFilterIconHeaderPosition: point(18px, 14px);
+windowFilterTypeContacts: icon {{ "folders/folders_type_contacts", historyPeerUserpicFg }};
+windowFilterTypeNonContacts: icon {{ "folders/folders_type_noncontacts", historyPeerUserpicFg }};
+windowFilterTypeGroups: icon {{ "folders/folders_type_groups", historyPeerUserpicFg }};
+windowFilterTypeChannels: icon {{ "folders/folders_type_channels", historyPeerUserpicFg }};
+windowFilterTypeBots: icon {{ "folders/folders_type_bots", historyPeerUserpicFg }};
+windowFilterTypeNoMuted: icon {{ "folders/folders_type_muted", historyPeerUserpicFg }};
+windowFilterTypeNoArchived: icon {{ "folders/folders_type_archived", historyPeerUserpicFg }};
+windowFilterTypeNoRead: icon {{ "folders/folders_type_read", historyPeerUserpicFg }};
+windowFilterChatsSectionSubtitle: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: searchedBarFont;
+	}
+	textFg: searchedBarFg;
+}
+windowFilterChatsSectionSubtitlePadding: margins(17px, 7px, 17px, 7px);
+
+windowArchiveToast: Toast(defaultToast) {
+	minWidth: boxWideWidth;
+	maxWidth: boxWideWidth;
+}
 
 // Mac specific
 
@@ -307,6 +341,6 @@ macAlwaysThisAppTop: 4;
 macAppHintTop: 8;
 macCautionIconSize: 16;
 
-macWindowRoundRadius: 5;
+macWindowRoundRadius: 10;
 macWindowShadowTopLeft: icon {{ "mac_window_shadow_top_left", windowShadowFg }};
 macTrayIcon: icon {{ "mac_tray_icon", windowFg }};

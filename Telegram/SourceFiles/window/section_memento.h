@@ -1,35 +1,44 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+namespace Ui {
+class LayerWidget;
+} // namespace Ui
+
 namespace Window {
 
-class Controller;
+class SessionController;
 class SectionWidget;
+enum class Column;
 
 class SectionMemento {
 public:
-	virtual object_ptr<Window::SectionWidget> createWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller, const QRect &geometry) = 0;
-	virtual ~SectionMemento() {
+	[[nodiscard]] virtual object_ptr<SectionWidget> createWidget(
+		QWidget *parent,
+		not_null<SessionController*> controller,
+		Column column,
+		const QRect &geometry) = 0;
+
+	[[nodiscard]] virtual object_ptr<Ui::LayerWidget> createLayer(
+			not_null<SessionController*> controller,
+			const QRect &geometry) {
+		return nullptr;
 	}
+	[[nodiscard]] virtual bool instant() const {
+		return false;
+	}
+
+	[[nodiscard]] virtual rpl::producer<> removeRequests() const {
+		return rpl::never<>();
+	}
+
+	virtual ~SectionMemento() = default;
 
 };
 

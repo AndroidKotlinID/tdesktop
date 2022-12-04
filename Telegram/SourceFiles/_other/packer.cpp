@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "packer.h"
 
@@ -26,8 +13,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 //Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
 #endif
 
-bool AlphaChannel = false;
-quint64 BetaVersion = 0;
+bool BetaChannel = false;
+quint64 AlphaVersion = 0;
+bool OnlyAlphaKey = false;
 
 const char *PublicKey = "\
 -----BEGIN RSA PUBLIC KEY-----\n\
@@ -37,7 +25,7 @@ BZpkIfKaRcl6XzNJiN28cVwO1Ui5JSa814UAiDHzWUqCaXUiUEQ6NmNTneiGx2sQ\n\
 -----END RSA PUBLIC KEY-----\
 ";
 
-const char *PublicAlphaKey = "\
+const char *PublicBetaKey = "\
 -----BEGIN RSA PUBLIC KEY-----\n\
 MIGJAoGBALWu9GGs0HED7KG7BM73CFZ6o0xufKBRQsdnq3lwA8nFQEvmdu+g/I1j\n\
 0LQ+0IQO7GW4jAgzF/4+soPDb6uHQeNFrlVx1JS9DZGhhjZ5rf65yg11nTCIHZCG\n\
@@ -46,11 +34,11 @@ w/CVnbwQOw0g5GBwwFV3r0uTTvy44xx8XXxk+Qknu4eBCsmrAFNnAgMBAAE=\n\
 ";
 
 extern const char *PrivateKey;
-extern const char *PrivateAlphaKey;
-#include "../../../../TelegramPrivate/packer_private.h" // RSA PRIVATE KEYS for update signing
-#include "../../../../TelegramPrivate/beta_private.h" // private key for beta version file generation
+extern const char *PrivateBetaKey;
+#include "../../../../DesktopPrivate/packer_private.h" // RSA PRIVATE KEYS for update signing
+#include "../../../../DesktopPrivate/alpha_private.h" // private key for alpha version file generation
 
-QString countBetaVersionSignature(quint64 version);
+QString countAlphaVersionSignature(quint64 version);
 
 // sha1 hash
 typedef unsigned char uchar;
@@ -58,6 +46,18 @@ typedef unsigned int uint32;
 typedef signed int int32;
 
 namespace{
+
+struct BIODeleter {
+	void operator()(BIO *value) {
+		BIO_free(value);
+	}
+};
+
+inline auto makeBIO(const void *buf, int len) {
+	return std::unique_ptr<BIO, BIODeleter>{
+		BIO_new_mem_buf(buf, len),
+	};
+}
 
 inline uint32 sha1Shift(uint32 v, uint32 shift) {
 	return ((v << shift) | (v >> (32 - shift)));
@@ -137,7 +137,22 @@ int32 *hashSha1(const void *data, uint32 len, void *dest) {
 	return (int32*)sha1To;
 }
 
-QString BetaSignature;
+QString AlphaSignature;
+
+int writeAlphaKey() {
+	if (!AlphaVersion) {
+		return 0;
+	}
+	QString keyName(QString("talpha_%1_key").arg(AlphaVersion));
+	QFile key(keyName);
+	if (!key.open(QIODevice::WriteOnly)) {
+		cout << "Can't open '" << keyName.toUtf8().constData() << "' for write..\n";
+		return -1;
+	}
+	key.write(AlphaSignature.toUtf8());
+	key.close();
+	return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -145,7 +160,8 @@ int main(int argc, char *argv[])
 
 	QString remove;
 	int version = 0;
-	bool target32 = false;
+	[[maybe_unused]] bool targetwin64 = false;
+	[[maybe_unused]] bool targetarmac = false;
 	QFileInfoList files;
 	for (int i = 0; i < argc; ++i) {
 		if (string("-path") == argv[i] && i + 1 < argc) {
@@ -154,24 +170,35 @@ int main(int argc, char *argv[])
 			files.push_back(info);
 			if (remove.isEmpty()) remove = info.canonicalPath() + "/";
 		} else if (string("-target") == argv[i] && i + 1 < argc) {
-			target32 = (string("mac32") == argv[i + 1]);
+			targetwin64 = (string("win64") == argv[i + 1]);
+		} else if (string("-arch") == argv[i] && i + 1 < argc) {
+			targetarmac = (string("arm64") == argv[i + 1]);
+			if (!targetarmac && string("x86_64") != argv[i + 1]) {
+				cout << "Bad -arch param value passed: " << argv[i + 1] << "\n";
+				return -1;
+			}
 		} else if (string("-version") == argv[i] && i + 1 < argc) {
 			version = QString(argv[i + 1]).toInt();
-		} else if (string("-alpha") == argv[i]) {
-			AlphaChannel = true;
-		} else if (string("-beta") == argv[i] && i + 1 < argc) {
-			BetaVersion = QString(argv[i + 1]).toULongLong();
-			if (BetaVersion > version * 1000ULL && BetaVersion < (version + 1) * 1000ULL) {
-				AlphaChannel = false;
-				BetaSignature = countBetaVersionSignature(BetaVersion);
-				if (BetaSignature.isEmpty()) {
+		} else if (string("-beta") == argv[i]) {
+			BetaChannel = true;
+		} else if (string("-alphakey") == argv[i]) {
+			OnlyAlphaKey = true;
+		} else if (string("-alpha") == argv[i] && i + 1 < argc) {
+			AlphaVersion = QString(argv[i + 1]).toULongLong();
+			if (AlphaVersion > version * 1000ULL && AlphaVersion < (version + 1) * 1000ULL) {
+				BetaChannel = false;
+				AlphaSignature = countAlphaVersionSignature(AlphaVersion);
+				if (AlphaSignature.isEmpty()) {
 					return -1;
 				}
 			} else {
-				cout << "Bad -beta param value passed, should be for the same version: " << version << ", beta: " << BetaVersion << "\n";
+				cout << "Bad -alpha param value passed, should be for the same version: " << version << ", alpha: " << AlphaVersion << "\n";
 				return -1;
 			}
 		}
+	}
+	if (OnlyAlphaKey) {
+		return writeAlphaKey();
 	}
 
 	if (files.isEmpty() || remove.isEmpty() || version <= 1016 || version > 999999999) {
@@ -224,9 +251,9 @@ int main(int argc, char *argv[])
 		QDataStream stream(&buffer);
 		stream.setVersion(QDataStream::Qt_5_1);
 
-		if (BetaVersion) {
+		if (AlphaVersion) {
 			stream << quint32(0x7FFFFFFF);
-			stream << quint64(BetaVersion);
+			stream << quint64(AlphaVersion);
 		} else {
 			stream << quint32(version);
 		}
@@ -246,7 +273,7 @@ int main(int argc, char *argv[])
 			}
 			QByteArray inner = f.readAll();
 			stream << name << quint32(inner.size()) << inner;
-#if defined Q_OS_MAC || defined Q_OS_LINUX
+#ifdef Q_OS_UNIX
 			stream << (QFileInfo(fullName).isExecutable() ? true : false);
 #endif
 		}
@@ -260,7 +287,7 @@ int main(int argc, char *argv[])
 	cout << "Compression start, size: " << resultSize << "\n";
 
 	QByteArray compressed, resultCheck;
-#ifdef Q_OS_WIN // use Lzma SDK for win
+#if defined Q_OS_WIN && !defined DESKTOP_APP_USE_PACKAGED // use Lzma SDK for win
 	const int32 hSigLen = 128, hShaLen = 20, hPropsLen = LZMA_PROPS_SIZE, hOriginalSizeLen = sizeof(int32), hSize = hSigLen + hShaLen + hPropsLen + hOriginalSizeLen; // header
 
 	compressed.resize(hSize + resultSize + 1024 * 1024); // rsa signature + sha1 + lzma props + max compressed size
@@ -420,7 +447,15 @@ int main(int argc, char *argv[])
 	uint32 siglen = 0;
 
 	cout << "Signing..\n";
-	RSA *prKey = PEM_read_bio_RSAPrivateKey(BIO_new_mem_buf(const_cast<char*>((AlphaChannel || BetaVersion) ? PrivateAlphaKey : PrivateKey), -1), 0, 0, 0);
+	RSA *prKey = [] {
+		const auto bio = makeBIO(
+			const_cast<char*>(
+				(BetaChannel || AlphaVersion)
+					? PrivateBetaKey
+					: PrivateKey),
+			-1);
+		return PEM_read_bio_RSAPrivateKey(bio.get(), 0, 0, 0);
+	}();
 	if (!prKey) {
 		cout << "Could not read RSA private key!\n";
 		return -1;
@@ -443,7 +478,15 @@ int main(int argc, char *argv[])
 	}
 
 	cout << "Checking signature..\n";
-	RSA *pbKey = PEM_read_bio_RSAPublicKey(BIO_new_mem_buf(const_cast<char*>((AlphaChannel || BetaVersion) ? PublicAlphaKey : PublicKey), -1), 0, 0, 0);
+	RSA *pbKey = [] {
+		const auto bio = makeBIO(
+			const_cast<char*>(
+				(BetaChannel || AlphaVersion)
+					? PublicBetaKey
+					: PublicKey),
+			-1);
+		return PEM_read_bio_RSAPublicKey(bio.get(), 0, 0, 0);
+	}();
 	if (!pbKey) {
 		cout << "Could not read RSA public key!\n";
 		return -1;
@@ -456,18 +499,16 @@ int main(int argc, char *argv[])
 	cout << "Signature verified!\n";
 	RSA_free(pbKey);
 #ifdef Q_OS_WIN
-	QString outName(QString("tupdate%1").arg(BetaVersion ? BetaVersion : version));
+	QString outName((targetwin64 ? QString("tx64upd%1") : QString("tupdate%1")).arg(AlphaVersion ? AlphaVersion : version));
 #elif defined Q_OS_MAC
-	QString outName((target32 ? QString("tmac32upd%1") : QString("tmacupd%1")).arg(BetaVersion ? BetaVersion : version));
-#elif defined Q_OS_LINUX32
-	QString outName(QString("tlinux32upd%1").arg(BetaVersion ? BetaVersion : version));
-#elif defined Q_OS_LINUX64
-	QString outName(QString("tlinuxupd%1").arg(BetaVersion ? BetaVersion : version));
+	QString outName((targetarmac ? QString("tarmacupd%1") : QString("tmacupd%1")).arg(AlphaVersion ? AlphaVersion : version));
+#elif defined Q_OS_UNIX
+	QString outName(QString("tlinuxupd%1").arg(AlphaVersion ? AlphaVersion : version));
 #else
 #error Unknown platform!
 #endif
-	if (BetaVersion) {
-		outName += "_" + BetaSignature;
+	if (AlphaVersion) {
+		outName += "_" + AlphaSignature;
 	}
 	QFile out(outName);
 	if (!out.open(QIODevice::WriteOnly)) {
@@ -477,26 +518,15 @@ int main(int argc, char *argv[])
 	out.write(compressed);
 	out.close();
 
-	if (BetaVersion) {
-		QString keyName(QString("tbeta_%1_key").arg(BetaVersion));
-		QFile key(keyName);
-		if (!key.open(QIODevice::WriteOnly)) {
-			cout << "Can't open '" << keyName.toUtf8().constData() << "' for write..\n";
-			return -1;
-		}
-		key.write(BetaSignature.toUtf8());
-		key.close();
-	}
-
 	cout << "Update file '" << outName.toUtf8().constData() << "' written successfully!\n";
 
-	return 0;
+	return writeAlphaKey();
 }
 
-QString countBetaVersionSignature(quint64 version) { // duplicated in autoupdate.cpp
-	QByteArray cBetaPrivateKey(BetaPrivateKey);
-	if (cBetaPrivateKey.isEmpty()) {
-		cout << "Error: Trying to count beta version signature without beta private key!\n";
+QString countAlphaVersionSignature(quint64 version) { // duplicated in autoupdater.cpp
+	QByteArray cAlphaPrivateKey(AlphaPrivateKey);
+	if (cAlphaPrivateKey.isEmpty()) {
+		cout << "Error: Trying to count alpha version signature without alpha private key!\n";
 		return QString();
 	}
 
@@ -509,27 +539,32 @@ QString countBetaVersionSignature(quint64 version) { // duplicated in autoupdate
 
 	uint32 siglen = 0;
 
-	RSA *prKey = PEM_read_bio_RSAPrivateKey(BIO_new_mem_buf(const_cast<char*>(cBetaPrivateKey.constData()), -1), 0, 0, 0);
+	RSA *prKey = [&] {
+		const auto bio = makeBIO(
+			const_cast<char*>(cAlphaPrivateKey.constData()),
+			-1);
+		return PEM_read_bio_RSAPrivateKey(bio.get(), 0, 0, 0);
+	}();
 	if (!prKey) {
-		cout << "Error: Could not read beta private key!\n";
+		cout << "Error: Could not read alpha private key!\n";
 		return QString();
 	}
 	if (RSA_size(prKey) != keySize) {
-		cout << "Error: Bad beta private key size: " << RSA_size(prKey) << "\n";
+		cout << "Error: Bad alpha private key size: " << RSA_size(prKey) << "\n";
 		RSA_free(prKey);
 		return QString();
 	}
 	QByteArray signature;
 	signature.resize(keySize);
 	if (RSA_sign(NID_sha1, (const uchar*)(sha1Buffer), shaSize, (uchar*)(signature.data()), &siglen, prKey) != 1) { // count signature
-		cout << "Error: Counting beta version signature failed!\n";
+		cout << "Error: Counting alpha version signature failed!\n";
 		RSA_free(prKey);
 		return QString();
 	}
 	RSA_free(prKey);
 
 	if (siglen != keySize) {
-		cout << "Error: Bad beta version signature length: " << siglen << "\n";
+		cout << "Error: Bad alpha version signature length: " << siglen << "\n";
 		return QString();
 	}
 
