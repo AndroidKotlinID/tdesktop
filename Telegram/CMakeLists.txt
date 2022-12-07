@@ -5,7 +5,7 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_executable(Telegram WIN32 MACOSX_BUNDLE)
-init_non_host_target(Telegram)
+init_non_host_target(Telegram ltcg)
 
 add_subdirectory(lib_rpl)
 add_subdirectory(lib_crl)
@@ -980,6 +980,8 @@ PRIVATE
     media/view/media_view_playback_progress.cpp
     media/view/media_view_playback_progress.h
     media/view/media_view_open_common.h
+    menu/menu_antispam_validator.cpp
+    menu/menu_antispam_validator.h
     menu/menu_item_download_files.cpp
     menu/menu_item_download_files.h
     menu/menu_mute.cpp
@@ -1173,6 +1175,8 @@ PRIVATE
     settings/settings_experimental.h
     settings/settings_folders.cpp
     settings/settings_folders.h
+    settings/settings_global_ttl.cpp
+    settings/settings_global_ttl.h
     settings/settings_information.cpp
     settings/settings_information.h
     settings/settings_intro.cpp
@@ -1269,8 +1273,6 @@ PRIVATE
     ui/widgets/level_meter.h
     ui/countryinput.cpp
     ui/countryinput.h
-    ui/empty_userpic.cpp
-    ui/empty_userpic.h
     ui/filter_icons.cpp
     ui/filter_icons.h
     ui/filter_icon_panel.cpp
@@ -1342,8 +1344,6 @@ PRIVATE
     apiwrap.cpp
     apiwrap.h
     config.h
-    facades.cpp
-    facades.h
     logs.cpp
     logs.h
     main.cpp
