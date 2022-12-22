@@ -338,7 +338,7 @@ def runStages():
             continue
         index = index + 1
         version = ('#' + str(stage['version'])) if (stage['version'] != '0') else ''
-        prefix = '[' + os.path.join(str(index), str(count)) + '](' + os.path.join(stage['location'], stage['name']) + version + ')'
+        prefix = '[' + str(index) + '/' + str(count) + '](' + stage['location'] + '/' + stage['name'] + version + ')'
         print(prefix + ': ', end = '', flush=True)
         stage['key'] = computeCacheKey(stage)
         commands = removeDir(stage['name']) + '\n' + stage['commands']
@@ -416,6 +416,15 @@ win:
     pacman -S --noconfirm mingw-w64-x86_64-perl mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm mingw-w64-x86_64-ninja
 
     SET PATH=%PATH_BACKUP_%
+""", 'ThirdParty')
+
+stage('python', """
+version: """ + (subprocess.run(['python', '-V'], capture_output=True, env=modifiedEnv).stdout.decode().strip().split()[-1] if win else '0') + """
+win:
+    python -m venv python
+    python\\Scripts\\activate.bat
+    pip install pywin32 six
+    deactivate
 """, 'ThirdParty')
 
 stage('NuGet', """
@@ -953,6 +962,8 @@ win:
     ) else (
         SET "FolderPostfix="
     )
+depends:python/Scripts/activate.bat
+    %THIRDPARTY_DIR%\\python\\Scripts\\activate.bat
     cd src\\client\\windows
     gyp --no-circular-check breakpad_client.gyp --format=ninja
     cd ..\\..
@@ -963,6 +974,8 @@ release:
     gyp dump_syms.gyp --format=ninja
     cd ..\\..\\..
     ninja -C out/Release%FolderPostfix% dump_syms
+win:
+    deactivate
 mac:
     git clone https://chromium.googlesource.com/linux-syscall-support src/third_party/lss
     cd src/third_party/lss
