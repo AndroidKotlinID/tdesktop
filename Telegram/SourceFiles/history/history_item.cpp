@@ -1431,12 +1431,18 @@ void HistoryItem::applyEdition(const MTPDmessageService &message) {
 		if (wasGrouped) {
 			history()->owner().groups().unregisterMessage(this);
 		}
+		if (const auto reply = Get<HistoryMessageReply>()) {
+			reply->clearData(this);
+		}
 		clearDependencyMessage();
 		UpdateComponents(0);
 		createServiceFromMtp(message);
 		applyServiceDateEdition(message);
 		finishEditionToEmpty();
 	} else if (isService()) {
+		if (const auto reply = Get<HistoryMessageReply>()) {
+			reply->clearData(this);
+		}
 		clearDependencyMessage();
 		UpdateComponents(0);
 		createServiceFromMtp(message);
@@ -4384,7 +4390,9 @@ PreparedServiceText HistoryItem::prepareCallScheduledText(
 				Ui::Text::WithEntities);
 		}
 	};
-	const auto time = QLocale().toString(scheduled.time(), cTimeFormat());
+	const auto time = QLocale().toString(
+		scheduled.time(),
+		QLocale::ShortFormat);
 	const auto prepareGeneric = [&] {
 		prepareWithDate(tr::lng_group_call_starts_date(
 			tr::now,
