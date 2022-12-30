@@ -132,7 +132,9 @@ void StartServiceAsync(Fn<void()> callback) {
 						const auto errorName =
 							Gio::DBus::ErrorUtils::get_remote_error(e).raw();
 
-						if (!ranges::contains(NotSupportedErrors, errorName)) {
+						if (!ranges::contains(
+								NotSupportedErrors,
+								errorName)) {
 							throw e;
 						}
 					}
@@ -385,12 +387,12 @@ bool NotificationData::init(
 		const QString &msg,
 		Window::Notifications::Manager::DisplayOptions options) {
 	if (_application) {
-		_notification = Gio::Notification::create(title.toStdString());
-
-		_notification->set_body(
+		_notification = Gio::Notification::create(
 			subtitle.isEmpty()
-				? msg.toStdString()
-				: u"%1\n%2"_q.arg(subtitle, msg).toStdString());
+				? title.toStdString()
+				: subtitle.toStdString() + " (" + title.toStdString() + ')');
+
+		_notification->set_body(msg.toStdString());
 
 		_notification->set_icon(
 			Gio::ThemedIcon::create(base::IconName().toStdString()));
@@ -500,19 +502,22 @@ bool NotificationData::init(
 		});
 	};
 
-	_title = title.toStdString();
 	_imageKey = GetImageKey(CurrentServerInformationValue().specVersion);
 
 	if (capabilities.contains(u"body-markup"_q)) {
+		_title = title.toStdString();
+
 		_body = subtitle.isEmpty()
 			? msg.toHtmlEscaped().toStdString()
 			: u"<b>%1</b>\n%2"_q.arg(
 				subtitle.toHtmlEscaped(),
 				msg.toHtmlEscaped()).toStdString();
 	} else {
-		_body = subtitle.isEmpty()
-			? msg.toStdString()
-			: u"%1\n%2"_q.arg(subtitle, msg).toStdString();
+		_title = subtitle.isEmpty()
+			? title.toStdString()
+			: subtitle.toStdString() + " (" + title.toStdString() + ')';
+
+		_body = msg.toStdString();
 	}
 
 	if (capabilities.contains("actions")) {
@@ -531,12 +536,13 @@ bool NotificationData::init(
 				_actions.push_back(
 					tr::lng_notification_reply(tr::now).toStdString());
 
-				_notificationRepliedSignalId = _dbusConnection->signal_subscribe(
-					signalEmitted,
-					std::string(kService),
-					std::string(kInterface),
-					"NotificationReplied",
-					std::string(kObjectPath));
+				_notificationRepliedSignalId =
+					_dbusConnection->signal_subscribe(
+						signalEmitted,
+						std::string(kService),
+						std::string(kInterface),
+						"NotificationReplied",
+						std::string(kObjectPath));
 			} else {
 				// icon name according to https://specifications.freedesktop.org/icon-naming-spec/icon-naming-spec-latest.html
 				_actions.push_back("mail-reply-sender");
@@ -820,8 +826,6 @@ bool ByDefault() {
 	static const auto NeededCapabilities = {
 		// To show message content
 		u"body"_q,
-		// To make the sender name bold
-		u"body-markup"_q,
 		// To have buttons on notifications
 		u"actions"_q,
 		// To have quick reply
@@ -894,7 +898,8 @@ void Create(Window::Notifications::System *system) {
 			return;
 		}
 
-		GetServerInformation([=](const std::optional<ServerInformation> &result) {
+		GetServerInformation([=](
+				const std::optional<ServerInformation> &result) {
 			CurrentServerInformation = result;
 			oneReady();
 		});
