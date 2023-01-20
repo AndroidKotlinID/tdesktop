@@ -553,15 +553,6 @@ HistoryWidget::HistoryWidget(
 		});
 	}, lifetime());
 
-	session().data().animationPlayInlineRequest(
-	) | rpl::start_with_next([=](not_null<HistoryItem*> item) {
-		if (const auto view = item->mainView()) {
-			if (const auto media = view->media()) {
-				media->playAnimation();
-			}
-		}
-	}, lifetime());
-
 	session().data().webPageUpdates(
 	) | rpl::filter([=](not_null<WebPageData*> page) {
 		return (_previewData == page.get());
@@ -732,8 +723,9 @@ HistoryWidget::HistoryWidget(
 		if (flags & PeerUpdateFlag::UnavailableReason) {
 			const auto unavailable = _peer->computeUnavailableReason();
 			if (!unavailable.isEmpty()) {
+				const auto account = &_peer->account();
 				closeCurrent();
-				if (const auto primary = Core::App().primaryWindow()) {
+				if (const auto primary = Core::App().windowFor(account)) {
 					primary->show(Ui::MakeInformBox(unavailable));
 				}
 				return;
@@ -2987,7 +2979,6 @@ void HistoryWidget::unreadCountUpdated() {
 		crl::on_main(this, [=, history = _history] {
 			if (history == _history) {
 				closeCurrent();
-				_cancelRequests.fire({});
 			}
 		});
 	} else {
@@ -3017,7 +3008,7 @@ void HistoryWidget::messagesFailed(const MTP::Error &error, int requestId) {
 		|| error.type() == u"USER_BANNED_IN_CHANNEL"_q) {
 		auto was = _peer;
 		closeCurrent();
-		if (const auto primary = Core::App().primaryWindow()) {
+		if (const auto primary = Core::App().windowFor(&was->account())) {
 			Ui::ShowMultilineToast({
 				.parentOverride = Window::Show(primary).toastParent(),
 				.text = { (was && was->isMegagroup())
@@ -4544,39 +4535,52 @@ bool HistoryWidget::updateCmdStartShown() {
 }
 
 void HistoryWidget::searchInChat() {
+	if (_history) {
+		controller()->content()->searchInChat(_history);
+	}
+}
+
+void HistoryWidget::searchInChatEmbedded(std::optional<QString> query) {
 	if (!_history) {
 		return;
-	} else if (controller()->isPrimary()) {
-		controller()->content()->searchInChat(_history);
-	} else if (!_composeSearch) {
-		const auto search = [=] {
-			const auto update = [=] {
-				updateControlsVisibility();
-				updateBotKeyboard();
-				updateFieldPlaceholder();
-
-				updateControlsGeometry();
-			};
-			_composeSearch = std::make_unique<HistoryView::ComposeSearch>(
-				this,
-				controller(),
-				_history);
-
-			update();
-			setInnerFocus();
-			_composeSearch->destroyRequests(
-			) | rpl::take(
-				1
-			) | rpl::start_with_next([=] {
-				_composeSearch = nullptr;
-
-				update();
-				setInnerFocus();
-			}, _composeSearch->lifetime());
-		};
-		if (!preventsClose(search)) {
-			search();
+	} else if (_composeSearch) {
+		if (query) {
+			_composeSearch->setQuery(*query);
 		}
+		_composeSearch->setInnerFocus();
+		return;
+	}
+	const auto search = crl::guard(_list, [=] {
+		if (!_history) {
+			return;
+		}
+		const auto update = [=] {
+			updateControlsVisibility();
+			updateBotKeyboard();
+			updateFieldPlaceholder();
+
+			updateControlsGeometry();
+		};
+		_composeSearch = std::make_unique<HistoryView::ComposeSearch>(
+			this,
+			controller(),
+			_history,
+			query.value_or(QString()));
+
+		update();
+		setInnerFocus();
+		_composeSearch->destroyRequests(
+		) | rpl::take(
+			1
+		) | rpl::start_with_next([=] {
+			_composeSearch = nullptr;
+
+		update();
+		setInnerFocus();
+		}, _composeSearch->lifetime());
+	});
+	if (!preventsClose(search)) {
+		search();
 	}
 }
 
@@ -5964,7 +5968,6 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 	if (e->key() == Qt::Key_Escape) {
 		e->ignore();
 	} else if (e->key() == Qt::Key_Back) {
-		controller()->showBackFromStack();
 		_cancelRequests.fire({});
 	} else if (e->key() == Qt::Key_PageDown) {
 		_scroll->keyPressEvent(e);
