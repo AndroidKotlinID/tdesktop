@@ -77,8 +77,14 @@ slots:
     name: tdesktop
 
 layout:
-  /usr/share:
-    bind: $SNAP/usr/share
+  /usr/share/alsa:
+    bind: $SNAP/usr/share/alsa
+  /usr/share/pipewire:
+    bind: $SNAP/usr/share/pipewire
+  /usr/share/X11:
+    bind: $SNAP/usr/share/X11
+  /usr/lib/$CRAFT_ARCH_TRIPLET/gtk-3.0:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/gtk-3.0
   /usr/lib/$CRAFT_ARCH_TRIPLET/pipewire-0.3:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/pipewire-0.3
   /usr/lib/$CRAFT_ARCH_TRIPLET/spa-0.2:
@@ -160,7 +166,6 @@ parts:
     prime:
       - -./lib/systemd
     after:
-      - desktop-qt
       - ffmpeg
       - libjxl
       - glibmm
@@ -168,6 +173,7 @@ parts:
       - openal
       - openssl
       - protobuf
+      - qt
       - rnnoise
       - webrtc
 
@@ -190,17 +196,29 @@ parts:
     build-packages:
       - build-essential
       - dpkg-dev
+      - gtk-update-icon-cache
+      - libglib2.0-bin
+      - libgtk-3-0
     stage-packages:
       - libxkbcommon0
       - shared-mime-info
       - libgdk-pixbuf-2.0-0
       - locales-all
       - xdg-user-dirs
+    override-prime: |
+      snapcraftctl prime
+      update-mime-database usr/share/mime
+      glib-compile-schemas usr/share/glib-2.0/schemas
+      for theme in usr/share/icons/*; do
+        if [ -f "$theme/index.theme" ] && [ ! -f "$theme/icon-theme.cache" ]; then
+          update-icon-caches "$theme"
+        fi
+      done
+      GTK_PATH=$PWD/usr/lib/$CRAFT_ARCH_TRIPLET/gtk-3.0 /usr/lib/$CRAFT_ARCH_TRIPLET/libgtk-3-0/gtk-query-immodules-3.0 > usr/lib/$CRAFT_ARCH_TRIPLET/gtk-3.0/3.0.0/immodules/immodules.cache
     stage:
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/libjpeg.so.8.2.2
     after:
-      - mozjpeg
-      - qt
+      - telegram
 
   ffmpeg:
     plugin: nil
