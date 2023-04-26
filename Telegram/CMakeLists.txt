@@ -173,6 +173,8 @@ PRIVATE
     boxes/filters/edit_filter_box.h
     boxes/filters/edit_filter_chats_list.cpp
     boxes/filters/edit_filter_chats_list.h
+    boxes/filters/edit_filter_links.cpp
+    boxes/filters/edit_filter_links.h
     boxes/peers/add_bot_to_chat_box.cpp
     boxes/peers/add_bot_to_chat_box.h
     boxes/peers/add_participants_box.cpp
@@ -922,6 +924,8 @@ PRIVATE
     main/main_account.h
     main/main_app_config.cpp
     main/main_app_config.h
+    main/main_app_config_values.cpp
+    main/main_app_config_values.h
     main/main_domain.cpp
     main/main_domain.h
     main/main_session.cpp
