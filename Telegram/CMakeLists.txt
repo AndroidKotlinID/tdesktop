@@ -1082,7 +1082,6 @@ PRIVATE
     platform/linux/integration_linux.h
     platform/linux/main_window_linux.cpp
     platform/linux/main_window_linux.h
-    platform/linux/notifications_manager_linux_dummy.cpp
     platform/linux/notifications_manager_linux.cpp
     platform/linux/notifications_manager_linux.h
     platform/linux/overlay_widget_linux.h
@@ -1401,18 +1400,6 @@ if (NOT build_winstore)
     )
 endif()
 
-if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
-    remove_target_sources(Telegram ${src_loc}
-        platform/linux/linux_xdp_open_with_dialog.cpp
-        platform/linux/linux_xdp_open_with_dialog.h
-        platform/linux/notifications_manager_linux.cpp
-    )
-else()
-    remove_target_sources(Telegram ${src_loc}
-        platform/linux/notifications_manager_linux_dummy.cpp
-    )
-endif()
-
 if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
     remove_target_sources(Telegram ${src_loc}
         platform/linux/linux_wayland_integration.cpp
@@ -1522,12 +1509,13 @@ elseif (APPLE)
         endif()
     endif()
 else()
-    if (NOT DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
-        target_link_libraries(Telegram
-        PRIVATE
-            desktop-app::external_glibmm
-        )
-    endif()
+    target_link_libraries(Telegram
+    PRIVATE
+        desktop-app::external_glibmm
+    )
+
+    include(${cmake_helpers_loc}/external/glib/generate_dbus.cmake)
+    generate_dbus(Telegram org.freedesktop.portal. XdpInhibit ${src_loc}/platform/linux/org.freedesktop.portal.Inhibit.xml)
 
     if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
         target_link_libraries(Telegram

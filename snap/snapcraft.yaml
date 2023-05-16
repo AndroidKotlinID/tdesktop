@@ -38,7 +38,7 @@ apps:
       - wayland
       - x11
     slots:
-      - tdesktop-mpris
+      - mpris
 
 hooks:
   configure:
@@ -65,11 +65,6 @@ plugs:
     interface: content
     target: $SNAP/data-dir/sounds
     default-provider: gtk-common-themes
-
-slots:
-  tdesktop-mpris:
-    interface: mpris
-    name: tdesktop
 
 layout:
   /usr/share/alsa:
@@ -464,7 +459,7 @@ parts:
       QT=6.5.0
 
       git clone -b v${QT} --depth=1 https://code.qt.io/qt/qt5.git .
-      git submodule update --init --recursive --depth=1 qtbase qtdeclarative qtwayland qtimageformats qtsvg qt5compat qtshadertools
+      git submodule update --init --recursive --depth=1 qtbase qtdeclarative qtwayland qtimageformats qtsvg qtshadertools
 
       cd qtbase
       find $CRAFT_STAGE/patches/qtbase_${QT} -type f -print0 | sort -z | xargs -r0 git apply
