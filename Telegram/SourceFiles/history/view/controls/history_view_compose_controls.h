@@ -43,8 +43,8 @@ namespace Data {
 struct MessagePosition;
 struct Draft;
 class DraftKey;
-enum class PreviewState : char;
 class PhotoMedia;
+struct WebPageDraft;
 } // namespace Data
 
 namespace InlineBots {
@@ -79,15 +79,15 @@ namespace Api {
 enum class SendProgressType;
 } // namespace Api
 
-namespace HistoryView {
-
-namespace Controls {
+namespace HistoryView::Controls {
 class VoiceRecordBar;
 class TTLButton;
-} // namespace Controls
+class WebpageProcessor;
+} // namespace HistoryView::Controls
+
+namespace HistoryView {
 
 class FieldHeader;
-class WebpageProcessor;
 
 enum class ComposeControlsMode {
 	Normal,
@@ -135,6 +135,7 @@ public:
 
 	[[nodiscard]] Main::Session &session() const;
 	void setHistory(SetHistoryArgs &&args);
+	void updateTopicRootId(MsgId topicRootId);
 	void setCurrentDialogsEntryState(Dialogs::EntryState state);
 	[[nodiscard]] PeerData *sendAsPeer() const;
 
@@ -185,7 +186,7 @@ public:
 	[[nodiscard]] bool isEditingMessage() const;
 	[[nodiscard]] bool readyToForward() const;
 	[[nodiscard]] const HistoryItemsList &forwardItems() const;
-	[[nodiscard]] FullMsgId replyingToMessage() const;
+	[[nodiscard]] FullReplyTo replyingToMessage() const;
 
 	[[nodiscard]] bool preventsClose(Fn<void()> &&continueCallback) const;
 
@@ -198,7 +199,7 @@ public:
 	void cancelEditMessage();
 	void maybeCancelEditMessage(); // Confirm if changed and cancel.
 
-	void replyToMessage(FullMsgId id);
+	void replyToMessage(FullReplyTo id);
 	void cancelReplyMessage();
 
 	void updateForwarding();
@@ -208,7 +209,7 @@ public:
 	void tryProcessKeyInput(not_null<QKeyEvent*> e);
 
 	[[nodiscard]] TextWithTags getTextWithAppliedMarkdown() const;
-	[[nodiscard]] WebPageId webPageId() const;
+	[[nodiscard]] Data::WebPageDraft webPageDraft() const;
 	void setText(const TextWithTags &text);
 	void clear();
 	void hidePanelsAnimated();
@@ -345,6 +346,7 @@ private:
 	rpl::event_stream<ChatHelpers::FileChosen> _stickerOrEmojiChosen;
 
 	History *_history = nullptr;
+	MsgId _topicRootId = 0;
 	Fn<bool()> _showSlowmodeError;
 	Fn<Api::SendAction()> _sendActionFactory;
 	rpl::variable<int> _slowmodeSecondsLeft;
@@ -356,6 +358,7 @@ private:
 
 	const std::unique_ptr<Ui::RpWidget> _wrap;
 	const std::unique_ptr<Ui::RpWidget> _writeRestricted;
+	rpl::event_stream<FullMsgId> _scrollToItemRequests;
 
 	std::optional<Ui::RoundRect> _backgroundRect;
 
@@ -421,7 +424,7 @@ private:
 	std::shared_ptr<Data::PhotoMedia> _photoEditMedia;
 	bool _canReplaceMedia = false;
 
-	std::unique_ptr<WebpageProcessor> _preview;
+	std::unique_ptr<Controls::WebpageProcessor> _preview;
 
 	Fn<void()> _raiseEmojiSuggestions;
 
