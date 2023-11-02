@@ -3148,6 +3148,16 @@ bool Message::toggleSelectionByHandlerClick(
 	return false;
 }
 
+bool Message::allowTextSelectionByHandler(
+		const ClickHandlerPtr &handler) const {
+	if (const auto media = this->media()) {
+		if (media->allowTextSelectionByHandler(handler)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool Message::hasFromName() const {
 	switch (context()) {
 	case Context::AdminLog:
@@ -4049,7 +4059,7 @@ void Message::refreshInfoSkipBlock() {
 			return false;
 		} else if (item->Has<HistoryMessageLogEntryOriginal>()) {
 			return false;
-		} else if (media && media->isDisplayed()) {
+		} else if (media && media->isDisplayed() && !_invertMedia) {
 			return false;
 		} else if (_reactions) {
 			return false;
