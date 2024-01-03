@@ -276,6 +276,9 @@ QString DateTooltipText(not_null<Element*> view) {
 				msgsigned->postAuthor);
 		}
 	}
+	if (item->isScheduled() && item->isSilent()) {
+		dateText += '\n' + QChar(0xD83D) + QChar(0xDD15);
+	}
 	return dateText;
 }
 
@@ -488,6 +491,10 @@ not_null<History*> Element::history() const {
 
 uint8 Element::colorIndex() const {
 	return data()->colorIndex();
+}
+
+uint8 Element::contentColorIndex() const {
+	return data()->contentColorIndex();
 }
 
 QDateTime Element::dateTime() const {
@@ -1340,6 +1347,10 @@ bool Element::displayForwardedFrom() const {
 
 bool Element::hasOutLayout() const {
 	return false;
+}
+
+bool Element::hasRightLayout() const {
+	return hasOutLayout() && !_delegate->elementIsChatWide();
 }
 
 bool Element::drawBubble() const {

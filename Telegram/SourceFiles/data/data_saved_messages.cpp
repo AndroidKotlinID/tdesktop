@@ -28,7 +28,8 @@ SavedMessages::SavedMessages(not_null<Session*> owner)
 , _chatsList(
 	&owner->session(),
 	FilterId(),
-	owner->maxPinnedChatsLimitValue(this)) {
+	owner->maxPinnedChatsLimitValue(this))
+, _loadMore([=] { sendLoadMoreRequests(); }) {
 }
 
 SavedMessages::~SavedMessages() = default;
@@ -60,6 +61,16 @@ not_null<SavedSublist*> SavedMessages::sublist(not_null<PeerData*> peer) {
 }
 
 void SavedMessages::loadMore() {
+	_loadMoreScheduled = true;
+	_loadMore.call();
+}
+
+void SavedMessages::loadMore(not_null<SavedSublist*> sublist) {
+	_loadMoreSublistsScheduled.emplace(sublist);
+	_loadMore.call();
+}
+
+void SavedMessages::sendLoadMore() {
 	if (_loadMoreRequestId || _chatsList.loaded()) {
 		return;
 	} else if (!_pinnedLoaded) {
@@ -102,7 +113,7 @@ void SavedMessages::loadPinned() {
 	}).send();
 }
 
-void SavedMessages::loadMore(not_null<SavedSublist*> sublist) {
+void SavedMessages::sendLoadMore(not_null<SavedSublist*> sublist) {
 	if (_loadMoreRequests.contains(sublist) || sublist->isFullLoaded()) {
 		return;
 	}
@@ -222,14 +233,25 @@ void SavedMessages::apply(
 		_chatsList.setLoaded();
 	} else if (result.type() == mtpc_messages_savedDialogs) {
 		_chatsList.setLoaded();
-	} else if (offsetDate < _offsetDate
-		|| (offsetDate == _offsetDate && offsetId == _offsetId && offsetPeer == _offsetPeer)) {
+	} else if ((_offsetDate > 0 && offsetDate > _offsetDate)
+		|| (offsetDate == _offsetDate
+			&& offsetId == _offsetId
+			&& offsetPeer == _offsetPeer)) {
 		LOG(("API Error: Bad order in messages.savedDialogs."));
 		_chatsList.setLoaded();
 	} else {
 		_offsetDate = offsetDate;
 		_offsetId = offsetId;
 		_offsetPeer = offsetPeer;
+	}
+}
+
+void SavedMessages::sendLoadMoreRequests() {
+	if (_loadMoreScheduled) {
+		sendLoadMore();
+	}
+	for (const auto sublist : base::take(_loadMoreSublistsScheduled)) {
+		sendLoadMore(sublist);
 	}
 }
 
