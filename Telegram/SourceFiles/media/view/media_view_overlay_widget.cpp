@@ -794,11 +794,9 @@ void OverlayWidget::moveToScreen(bool inMove) {
 		if (!widget) {
 			return nullptr;
 		}
-		if (!Platform::IsWayland()) {
-			if (const auto screen = QGuiApplication::screenAt(
+		if (const auto screen = QGuiApplication::screenAt(
 				widget->geometry().center())) {
-				return screen;
-			}
+			return screen;
 		}
 		return widget->screen();
 	};
@@ -3255,7 +3253,7 @@ not_null<QWidget*> OverlayWidget::widget() const {
 
 void OverlayWidget::hide() {
 	clearBeforeHide();
-	applyHideWindowWorkaround();
+	//applyHideWindowWorkaround();
 	_window->hide();
 }
 
