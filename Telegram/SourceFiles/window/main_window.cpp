@@ -28,7 +28,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "base/options.h"
-#include "base/call_delayed.h"
 #include "base/crc32hash.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/shadow.h"
@@ -352,6 +351,20 @@ MainWindow::MainWindow(not_null<Controller*> controller)
 		Ui::Toast::SetDefaultParent(_body.data());
 	}
 
+	windowActiveValue(
+	) | rpl::skip(1) | rpl::start_with_next([=](bool active) {
+		InvokeQueued(this, [=] {
+			handleActiveChanged(active);
+		});
+	}, lifetime());
+
+	shownValue(
+	) | rpl::skip(1) | rpl::start_with_next([=](bool visible) {
+		InvokeQueued(this, [=] {
+			handleVisibleChanged(visible);
+		});
+	}, lifetime());
+
 	body()->sizeValue(
 	) | rpl::start_with_next([=](QSize size) {
 		updateControlsGeometry();
@@ -442,27 +455,7 @@ QRect MainWindow::desktopRect() const {
 }
 
 void MainWindow::init() {
-	createWinId();
-
 	initHook();
-
-	// Non-queued activeChanged handlers must use QtSignalProducer.
-	connect(
-		windowHandle(),
-		&QWindow::activeChanged,
-		this,
-		[=] { handleActiveChanged(); },
-		Qt::QueuedConnection);
-	connect(
-		windowHandle(),
-		&QWindow::windowStateChanged,
-		this,
-		[=](Qt::WindowState state) { handleStateChanged(state); });
-	connect(
-		windowHandle(),
-		&QWindow::visibleChanged,
-		this,
-		[=](bool visible) { handleVisibleChanged(visible); });
 
 	updatePalette();
 
@@ -496,9 +489,9 @@ void MainWindow::handleStateChanged(Qt::WindowState state) {
 	savePosition(state);
 }
 
-void MainWindow::handleActiveChanged() {
+void MainWindow::handleActiveChanged(bool active) {
 	checkActivation();
-	if (isActiveWindow()) {
+	if (active) {
 		Core::App().windowActivated(&controller());
 	}
 	if (const auto controller = sessionController()) {
@@ -949,28 +942,6 @@ bool MainWindow::minimizeToTray() {
 	controller().updateIsActiveBlur();
 	updateGlobalMenu();
 	return true;
-}
-
-void MainWindow::reActivateWindow() {
-	// X11 is the only platform with unreliable activate requests
-	if (!Platform::IsX11()) {
-		return;
-	}
-	const auto weak = Ui::MakeWeak(this);
-	const auto reActivate = [=] {
-		if (const auto w = weak.data()) {
-			if (auto f = QApplication::focusWidget()) {
-				f->clearFocus();
-			}
-			w->activate();
-			if (auto f = QApplication::focusWidget()) {
-				f->clearFocus();
-			}
-			w->setInnerFocus();
-		}
-	};
-	crl::on_main(this, reActivate);
-	base::call_delayed(200, this, reActivate);
 }
 
 void MainWindow::showRightColumn(object_ptr<TWidget> widget) {
