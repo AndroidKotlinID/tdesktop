@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/cached_round_corners.h"
 #include "ui/gl/gl_window.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/ui_utility.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
 #include "info/statistics/info_statistics_widget.h"
@@ -4916,7 +4917,7 @@ void OverlayWidget::paintThemePreviewContent(
 			+ (_themeShare->y() - _themePreviewRect.y())
 			+ st::themePreviewCancelButton.padding.top()
 			+ st::themePreviewCancelButton.textTop
-			+ st::themePreviewCancelButton.font->ascent;
+			+ st::themePreviewCancelButton.style.font->ascent;
 		p.drawText(
 			left,
 			baseline,

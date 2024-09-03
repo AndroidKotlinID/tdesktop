@@ -1687,7 +1687,11 @@ void Message::paintFromName(
 	}
 	p.setFont(st::msgNameFont);
 	p.setPen(nameFg);
-	nameText->drawElided(p, availableLeft, trect.top(), availableWidth);
+	nameText->draw(p, {
+		.position = { availableLeft, trect.top() },
+		.availableWidth = availableWidth,
+		.elisionLines = 1,
+	});
 	const auto skipWidth = nameText->maxWidth()
 		+ (_fromNameStatus
 			? (st::dialogsPremiumIcon.icon.width()
@@ -1929,6 +1933,7 @@ void Message::paintText(
 		.pausedSpoiler = context.paused || On(PowerSaving::kChatSpoiler),
 		.selection = context.selection,
 		.highlight = highlightRequest ? &*highlightRequest : nullptr,
+		.useFullWidth = true,
 	});
 }
 
