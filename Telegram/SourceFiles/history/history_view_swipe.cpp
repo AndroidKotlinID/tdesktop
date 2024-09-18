@@ -20,6 +20,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 namespace HistoryView {
+namespace {
+
+constexpr auto kSwipeSlow = 0.2;
+
+} // namespace
 
 void SetupSwipeHandler(
 		not_null<Ui::RpWidget*> widget,
@@ -30,6 +35,12 @@ void SetupSwipeHandler(
 	constexpr auto kThresholdWidth = 50;
 	constexpr auto kMaxRatio = 1.5;
 	const auto threshold = style::ConvertFloatScale(kThresholdWidth);
+	struct UpdateArgs {
+		QPoint globalCursor;
+		QPointF position;
+		QPointF delta;
+		bool touch = false;
+	};
 	struct State {
 		base::unique_qptr<QObject> filter;
 		Ui::Animations::Simple animationReach;
@@ -44,6 +55,8 @@ void SetupSwipeHandler(
 		bool started = false;
 		bool reached = false;
 		bool touch = false;
+		bool twoFingerScrollStarted = false;
+		std::optional<UpdateArgs> pendingUpdate;
 
 		rpl::lifetime lifetime;
 	};
@@ -55,10 +68,16 @@ void SetupSwipeHandler(
 	}, state->lifetime);
 
 	const auto updateRatio = [=](float64 ratio) {
-		state->data.ratio = std::clamp(ratio, 0., kMaxRatio),
+		ratio = std::max(ratio, 0.);
+		state->data.ratio = ratio;
+		const auto overscrollRatio = std::max(ratio - 1., 0.);
+		const auto translation = int(
+			base::SafeRound(-std::min(ratio, 1.) * threshold)
+		) + Ui::OverscrollFromAccumulated(int(
+			base::SafeRound(-overscrollRatio * threshold)
+		));
 		state->data.msgBareId = state->finishByTopData.msgBareId;
-		state->data.translation = int(
-			base::SafeRound(-std::clamp(ratio, 0., kMaxRatio) * threshold));
+		state->data.translation = translation;
 		state->data.cursorTop = state->cursorTop;
 		update(state->data);
 	};
@@ -101,13 +120,7 @@ void SetupSwipeHandler(
 		state->data.reachRatio = value;
 		update(state->data);
 	};
-	struct UpdateArgs {
-		QPoint globalCursor;
-		QPointF position;
-		QPointF delta;
-		bool touch = false;
-	};
-	const auto updateWith = [=](UpdateArgs &&args) {
+	const auto updateWith = [=](UpdateArgs args) {
 		if (!state->started || state->touch != args.touch) {
 			state->started = true;
 			state->touch = args.touch;
@@ -178,7 +191,7 @@ void SetupSwipeHandler(
 			const auto t = static_cast<QTouchEvent*>(e.get());
 			const auto touchscreen = t->device()
 				&& (t->device()->type() == base::TouchDevice::TouchScreen);
-			if (!Platform::IsMac() && !touchscreen) {
+			if (/*!Platform::IsMac() && */!touchscreen) {
 				break;
 			} else if (type == QEvent::TouchBegin) {
 				// Reset state in case we lost some TouchEnd.
@@ -191,9 +204,7 @@ void SetupSwipeHandler(
 			};
 			const auto cancel = released(0)
 				|| released(1)
-				|| (touchscreen
-					? (touches.size() != 1)
-					: (touches.size() <= 0 || touches.size() > 2))
+				|| (touches.size() != (touchscreen ? 1 : 2))
 				|| (type == QEvent::TouchEnd)
 				|| (type == QEvent::TouchCancel);
 			if (cancel) {
@@ -201,14 +212,21 @@ void SetupSwipeHandler(
 					? std::optional<QPointF>()
 					: (state->startAt - touches[0].pos()));
 			} else {
-				updateWith({
+				const auto args = UpdateArgs{
 					.globalCursor = (touchscreen
 						? touches[0].screenPos().toPoint()
 						: QCursor::pos()),
 					.position = touches[0].pos(),
 					.delta = state->startAt - touches[0].pos(),
 					.touch = true,
-				});
+				};
+#ifdef Q_OS_MAC
+				if (!state->twoFingerScrollStarted) {
+					state->pendingUpdate = args;
+					return base::EventFilterResult::Cancel;
+				}
+#endif // Q_OS_MAC
+				updateWith(args);
 			}
 			return (touchscreen && state->orientation != Qt::Horizontal)
 				? base::EventFilterResult::Continue
@@ -217,7 +235,20 @@ void SetupSwipeHandler(
 		case QEvent::Wheel: {
 			const auto w = static_cast<QWheelEvent*>(e.get());
 			const auto phase = w->phase();
-			if (Platform::IsMac() || phase == Qt::NoScrollPhase) {
+#if 0
+#ifdef Q_OS_MAC
+			if (phase == Qt::ScrollBegin) {
+				state->twoFingerScrollStarted = true;
+				if (const auto update = base::take(state->pendingUpdate)) {
+					updateWith((*update));
+				}
+			} else if (phase == Qt::ScrollEnd
+				|| phase == Qt::ScrollMomentum) {
+				state->twoFingerScrollStarted = false;
+			}
+#endif // Q_OS_MAC
+#endif
+			if (/*Platform::IsMac() || */phase == Qt::NoScrollPhase) {
 				break;
 			} else if (phase == Qt::ScrollBegin) {
 				// Reset state in case we lost some TouchEnd.
@@ -230,10 +261,11 @@ void SetupSwipeHandler(
 				processEnd();
 			} else {
 				const auto invert = (w->inverted() ? -1 : 1);
+				const auto delta = Ui::ScrollDeltaF(w) * invert;
 				updateWith({
 					.globalCursor = w->globalPosition().toPoint(),
 					.position = QPointF(),
-					.delta = state->delta + Ui::ScrollDelta(w) * invert,
+					.delta = state->delta + delta * kSwipeSlow,
 					.touch = false,
 				});
 			}

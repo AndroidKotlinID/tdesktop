@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rect.h"
 #include "ui/round_rect.h"
 #include "ui/text/text_utilities.h"
+#include "ui/text/text_extended_data.h"
 #include "ui/power_saving.h"
 #include "data/components/factchecks.h"
 #include "data/components/sponsored_messages.h"
@@ -1512,10 +1513,12 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 			+ ((g.height() < size * kMaxHeightRatio)
 				? rightActionSize().value_or(QSize()).width()
 				: 0);
+		const auto shift = std::min(
+			(size * kShiftRatio * context.gestureHorizontal.ratio),
+			-1. * context.gestureHorizontal.translation
+		) + (st::historySwipeIconSkip * ratio * (isLeftSize ? .7 : 1.));
 		const auto rect = QRectF(
-			outerWidth
-				- (size * kShiftRatio * context.gestureHorizontal.ratio)
-				- (st::historySwipeIconSkip * ratio * (isLeftSize ? .7 : 1.)),
+			outerWidth - shift,
 			g.y() + (g.height() - size) / 2,
 			size,
 			size);
@@ -3375,7 +3378,7 @@ void Message::refreshReactions() {
 						item,
 						weak.get(),
 						1,
-						Payments::LookupMyPaidAnonymous(item),
+						std::nullopt,
 						controller->uiShow());
 					return;
 				} else {
@@ -3573,6 +3576,9 @@ bool Message::allowTextSelectionByHandler(
 		if (media->allowTextSelectionByHandler(handler)) {
 			return true;
 		}
+	}
+	if (dynamic_cast<Ui::Text::BlockquoteClickHandler*>(handler.get())) {
+		return true;
 	}
 	return false;
 }
