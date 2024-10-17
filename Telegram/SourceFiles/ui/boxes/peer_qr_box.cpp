@@ -757,7 +757,6 @@ void FillPeerQrBox(
 			tr::lng_qr_box_font_size());
 		Ui::AddSkip(box->verticalLayout());
 		const auto seekSize = st::settingsScale.seekSize.height();
-		const auto &labelSt = st::defaultFlatLabel;
 
 		const auto slider = box->verticalLayout()->add(
 			object_ptr<Ui::MediaSliderWheelless>(
@@ -820,7 +819,9 @@ void FillPeerQrBox(
 				box->verticalLayout(),
 				tr::lng_qr_box_transparent_background(),
 				st::settingsButtonNoIcon));
-		backgroundToggle->toggleOn(state->backgroundToggled.value(), true);
+		backgroundToggle->toggleOn(
+			state->backgroundToggled.value() | rpl::map(!rpl::mappers::_1),
+			true);
 		backgroundToggle->setClickedCallback([=] {
 			state->backgroundToggled = !state->backgroundToggled.current();
 		});
@@ -888,7 +889,9 @@ void FillPeerQrBox(
 			usernameValue()).current().toUpper();
 		const auto link = rpl::variable<QString>(linkValue());
 		const auto textWidth = font->width(username);
-		const auto top = userpicMedia->image(photoSize);
+		const auto top = photoSize
+			? userpicMedia->image(photoSize)
+			: QImage();
 		const auto weak = Ui::MakeWeak(box);
 
 		crl::async([=] {
