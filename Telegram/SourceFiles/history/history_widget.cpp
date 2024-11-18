@@ -869,7 +869,7 @@ HistoryWidget::HistoryWidget(
 		}
 		if (flags & PeerUpdateFlag::FullInfo) {
 			fullInfoUpdated();
-			if (const auto channel = _peer ? _peer->asChannel() : nullptr) {
+			if (const auto channel = _peer->asChannel()) {
 				if (channel->allowedReactions().paidEnabled) {
 					session().credits().load();
 				}
@@ -2582,6 +2582,8 @@ void HistoryWidget::showHistory(
 					}
 				}));
 			checkState();
+		} else {
+			requestSponsoredMessageBar();
 		}
 	} else {
 		_chooseForReport = nullptr;
@@ -3438,7 +3440,7 @@ void HistoryWidget::messagesFailed(const MTP::Error &error, int requestId) {
 		closeCurrent();
 		const auto wasAccount = not_null(&was->account());
 		if (const auto primary = Core::App().windowFor(wasAccount)) {
-			primary->showToast((was && was->isMegagroup())
+			primary->showToast(was->isMegagroup()
 				? tr::lng_group_not_accessible(tr::now)
 				: tr::lng_channel_not_accessible(tr::now));
 		}
@@ -4531,7 +4533,6 @@ void HistoryWidget::showFinished() {
 	_showAnimation = nullptr;
 	doneShow();
 	synteticScrollToY(_scroll->scrollTop());
-	requestSponsoredMessageBar();
 }
 
 void HistoryWidget::doneShow() {
@@ -5110,7 +5111,7 @@ bool HistoryWidget::updateCmdStartShown() {
 	const auto textSmall = _fieldCharsCountManager.count() > kSmallMenuAfter;
 	const auto textChanged = _botMenu.button
 		&& ((_botMenu.text != bot->botInfo->botMenuButtonText)
-		|| (_botMenu.small != textSmall));
+			|| (_botMenu.small != textSmall));
 	if (textChanged) {
 		_botMenu.text = bot->botInfo->botMenuButtonText;
 		if ((_botMenu.small = textSmall)) {
@@ -7700,12 +7701,12 @@ void HistoryWidget::createSponsoredMessageBar() {
 	session().sponsoredMessages().itemRemoved(
 		maybeFullId
 	) | rpl::start_with_next([this] {
+		_sponsoredMessageBar->toggle(false, anim::type::normal);
 		_sponsoredMessageBar->shownValue() | rpl::filter(
 			!rpl::mappers::_1
 		) | rpl::start_with_next([this] {
 			_sponsoredMessageBar = nullptr;
 		}, _sponsoredMessageBar->lifetime());
-		_sponsoredMessageBar->toggle(false, anim::type::normal);
 	}, _sponsoredMessageBar->lifetime());
 
 	if (maybeFullId) {
