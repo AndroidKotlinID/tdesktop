@@ -27,8 +27,12 @@ public:
 		not_null<Ui::RpWidget*> parent,
 		const style::SettingsSlider &st);
 
-	[[nodiscard]] int centerOfSection(int section) const;
-	void fitWidthToSections();
+	bool setSectionsAndCheckChanged(
+		std::vector<TextWithEntities> &&sections,
+		const std::any &context,
+		Fn<bool()> paused);
+
+	void fitWidthToSections() override;
 	void setUnreadCount(int index, int unreadCount, bool muted);
 	void setLockedFrom(int index);
 
@@ -83,6 +87,7 @@ private:
 	std::optional<Ui::RoundRect> _bar;
 	std::optional<Ui::RoundRect> _barActive;
 	std::optional<QImage> _lockCache;
+	Fn<bool()> _emojiPaused;
 
 	int _reordering = 0;
 

@@ -618,7 +618,10 @@ void Filler::addStoryArchive() {
 void Filler::addToggleFolder() {
 	const auto controller = _controller;
 	const auto history = _request.key.history();
-	if (_topic || !history || !history->owner().chatsFilters().has()) {
+	if (_topic
+		|| !history
+		|| !history->owner().chatsFilters().has()
+		|| !history->inChatList()) {
 		return;
 	}
 	_addAction(PeerMenuCallback::Args{
@@ -1452,6 +1455,7 @@ void Filler::fillProfileActions() {
 	addToggleTopicClosed();
 	addViewDiscussion();
 	addExportChat();
+	addToggleFolder();
 	addBlockUser();
 	addReport();
 	addLeaveChat();
@@ -2061,7 +2065,17 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 
 	class ListBox final : public PeerListBox {
 	public:
-		using PeerListBox::PeerListBox;
+		ListBox(
+			QWidget *parent,
+			std::unique_ptr<PeerListController> controller,
+			Fn<void(not_null<ListBox*>)> init)
+		: PeerListBox(
+			parent,
+			std::move(controller),
+			[=](not_null<PeerListBox*> box) {
+				init(static_cast<ListBox*>(box.get()));
+			}) {
+		}
 
 		void setBottomSkip(int bottomSkip) {
 			PeerListBox::setInnerBottomSkip(bottomSkip);
@@ -2086,9 +2100,21 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 			_forwardOptions = forwardOptions;
 		}
 
+		not_null<PeerListContent*> peerListContent() const {
+			return PeerListBox::content();
+		}
+
+		void setFilterId(FilterId filterId) {
+			_filterId = filterId;
+		}
+		[[nodiscard]] FilterId filterId() const {
+			return _filterId;
+		}
+
 	private:
 		rpl::event_stream<> _focusRequests;
 		Ui::ForwardOptions _forwardOptions;
+		FilterId _filterId = 0;
 
 	};
 
@@ -2104,6 +2130,12 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 			},
 			.premiumRequiredError = WritePremiumRequiredError,
 		}) {
+		}
+
+		std::unique_ptr<PeerListRow> createRestoredRow(
+				not_null<PeerData*> peer) override final {
+			return ChooseRecipientBoxController::createRow(
+				peer->owner().history(peer));
 		}
 
 		using PeerListController::setSearchNoResultsText;
@@ -2157,90 +2189,75 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 		not_null<Controller*> controller;
 		base::unique_qptr<Ui::PopupMenu> menu;
 	};
+
+	const auto applyFilter = [=](not_null<ListBox*> box, FilterId id) {
+		box->scrollToY(0);
+		auto &filters = session->data().chatsFilters();
+		const auto &list = filters.list();
+		if (list.size() <= 1) {
+			return;
+		}
+		if (box->filterId() == id) {
+			return;
+		}
+		box->setFilterId(id);
+
+		using SavedState = PeerListController::SavedStateBase;
+		auto state = std::make_unique<PeerListState>();
+		state->controllerState = std::make_unique<SavedState>();
+
+		const auto addList = [&](auto chats) {
+			for (const auto &row : chats->all()) {
+				if (const auto history = row->history()) {
+					state->list.push_back(history->peer);
+				}
+			}
+		};
+
+		if (!id) {
+			state->list.push_back(session->user());
+			addList(session->data().chatsList()->indexed());
+			const auto folderId = Data::Folder::kId;
+			if (const auto folder = session->data().folderLoaded(folderId)) {
+				addList(folder->chatsList()->indexed());
+			}
+			addList(session->data().contactsNoChatsList());
+		} else {
+			addList(session->data().chatsFilters().chatsList(id)->indexed());
+		}
+		box->peerListContent()->restoreState(std::move(state));
+	};
+
 	const auto state = [&] {
 		auto controller = std::make_unique<Controller>(session);
 		const auto controllerRaw = controller.get();
-		auto init = [=](not_null<PeerListBox*> box) {
+		auto init = [=](not_null<ListBox*> box) {
 			controllerRaw->setSearchNoResultsText(
 				tr::lng_bot_chats_not_found(tr::now));
-			box->setSpecialTabMode(true);
-			auto applyFilter = [=](FilterId id) {
-				box->scrollToY(0);
-				auto &filters = session->data().chatsFilters();
-				const auto &list = filters.list();
-				if (list.size() <= 1) {
-					return;
-				}
-				const auto pinned = [&] {
-					const auto &list = id
-						? filters.chatsList(id)
-						: session->data().chatsList(nullptr);
-					const auto pinned = list->pinned()->order();
-					auto peers = std::vector<not_null<PeerData*>>();
-					peers.reserve(pinned.size());
-					auto foundSelf = !!id;
-					for (const auto &pin : pinned) {
-						if (!foundSelf && pin.peer()->isSelf()) {
-							peers.insert(peers.begin(), pin.peer());
-							foundSelf = true;
-						} else {
-							peers.push_back(pin.peer());
-						}
-					}
-					if (!foundSelf) {
-						peers.insert(peers.begin(), session->user());
-					}
-					return peers;
-				}();
-				box->peerListSortRows([&](
-						const PeerListRow &r1,
-						const PeerListRow &r2) {
-					const auto it1 = ranges::find(pinned, r1.peer());
-					const auto it2 = ranges::find(pinned, r2.peer());
-					if (it1 == pinned.end() && it2 != pinned.end()) {
-						return false;
-					} else if (it2 == pinned.end() && it1 != pinned.end()) {
-						return true;
-					} else if (it1 != pinned.end() && it2 != pinned.end()) {
-						return it1 < it2;
-					}
-					const auto history1 = session->data().history(r1.peer());
-					const auto history2 = session->data().history(r2.peer());
-					const auto date1 = history1->lastMessage()
-						? history1->lastMessage()->date()
-						: TimeId(0);
-					const auto date2 = history2->lastMessage()
-						? history2->lastMessage()->date()
-						: TimeId(0);
-					return date1 > date2;
-				});
-				const auto filter = ranges::find(
-					list,
-					id,
-					&Data::ChatFilter::id);
-				if (filter == list.end()) {
-					return;
-				}
-				box->peerListPartitionRows([&](const PeerListRow &row) {
-					const auto rowPtr = const_cast<PeerListRow*>(&row);
-					if (!filter->id()) {
-						box->peerListSetRowHidden(rowPtr, false);
-					} else {
-						const auto result = filter->contains(
-							session->data().history(row.peer()));
-						box->peerListSetRowHidden(rowPtr, !result);
-					}
-					return false;
-				});
-				box->peerListRefreshRows();
-			};
+			const auto lastFilterId = box->lifetime().make_state<FilterId>(0);
 			const auto chatsFilters = Ui::AddChatFiltersTabsStrip(
 				box,
 				session,
-				std::move(applyFilter));
+				[=](FilterId id) {
+					*lastFilterId = id;
+					applyFilter(box, id);
+				},
+				Window::GifPauseReason::Layer);
 			chatsFilters->lower();
-			chatsFilters->heightValue() | rpl::start_with_next([box](int h) {
-				box->setAddedTopScrollSkip(h);
+			rpl::combine(
+				chatsFilters->heightValue(),
+				rpl::producer<bool>([=](auto consumer) {
+					auto lifetime = rpl::lifetime();
+					consumer.put_next(false);
+					box->appendQueryChangedCallback([=](const QString &q) {
+						const auto hasQuery = !q.isEmpty();
+						applyFilter(box, hasQuery ? 0 : (*lastFilterId));
+						consumer.put_next_copy(hasQuery);
+					});
+					return lifetime;
+				})
+			) | rpl::start_with_next([box](int h, bool hasQuery) {
+				box->setAddedTopScrollSkip(hasQuery ? 0 : h);
 			}, box->lifetime());
 			box->multiSelectHeightValue() | rpl::start_with_next([=](int h) {
 				chatsFilters->moveToLeft(0, h);
@@ -2767,10 +2784,10 @@ void UnpinAllMessages(
 }
 
 void MenuAddMarkAsReadAllChatsAction(
-		not_null<Window::SessionController*> controller,
+		not_null<Main::Session*> session,
+		std::shared_ptr<Ui::Show> show,
 		const PeerMenuCallback &addAction) {
-	// There is no async to make weak from controller.
-	auto callback = [=, owner = &controller->session().data()] {
+	auto callback = [=, owner = &session->data()] {
 		auto boxCallback = [=](Fn<void()> &&close) {
 			close();
 
@@ -2779,10 +2796,37 @@ void MenuAddMarkAsReadAllChatsAction(
 				MarkAsReadChatList(folder->chatsList());
 			}
 		};
-		controller->show(
-			Ui::MakeConfirmBox({
-				tr::lng_context_mark_read_all_sure(),
-				std::move(boxCallback)
+		show->show(
+			Box([=](not_null<Ui::GenericBox*> box) {
+				Ui::AddSkip(box->verticalLayout());
+				Ui::AddSkip(box->verticalLayout());
+				const auto userpic = Ui::CreateChild<Ui::UserpicButton>(
+					box->verticalLayout(),
+					session->user(),
+					st::mainMenuUserpic);
+				Ui::IconWithTitle(
+					box->verticalLayout(),
+					userpic,
+					Ui::CreateChild<Ui::FlatLabel>(
+						box->verticalLayout(),
+						Info::Profile::NameValue(session->user()),
+						box->getDelegate()->style().title));
+				auto text = rpl::combine(
+					tr::lng_context_mark_read_all_sure(),
+					tr::lng_context_mark_read_all_sure_2(
+						Ui::Text::RichLangValue)
+				) | rpl::map([](QString t1, TextWithEntities t2) {
+					return TextWithEntities()
+						.append(std::move(t1))
+						.append('\n')
+						.append('\n')
+						.append(std::move(t2));
+				});
+				Ui::ConfirmBox(box, {
+					.text = std::move(text),
+					.confirmed = std::move(boxCallback),
+					.confirmStyle = &st::attentionBoxButton,
+				});
 			}),
 			Ui::LayerOption::CloseOther);
 	};
