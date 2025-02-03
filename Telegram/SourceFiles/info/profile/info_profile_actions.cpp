@@ -740,8 +740,7 @@ auto AddActionButton(
 		ToggleOn &&toggleOn,
 		Callback &&callback,
 		const style::icon *icon,
-		const style::SettingsButton &st
-			= st::infoSharedMediaButton) {
+		const style::SettingsButton &st = st::infoSharedMediaButton) {
 	auto result = parent->add(object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
 		parent,
 		object_ptr<Ui::SettingsButton>(
@@ -1018,6 +1017,7 @@ private:
 	void addEditContactAction(not_null<UserData*> user);
 	void addDeleteContactAction(not_null<UserData*> user);
 	void addBotCommandActions(not_null<UserData*> user);
+	void addFastButtonsMode(not_null<UserData*> user);
 	void addReportAction();
 	void addBlockAction(not_null<UserData*> user);
 	void addLeaveChannelAction(not_null<ChannelData*> channel);
@@ -1657,10 +1657,18 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupPersonalChannel(
 			auto &lifetime = preview->lifetime();
 			using namespace Dialogs::Ui;
 			const auto previewView = lifetime.make_state<MessageView>();
-			const auto previewUpdate = [=] { preview->update(); };
 			preview->resize(0, st::infoLabeled.style.font->height);
+			const auto prepare = [previewView, preview](
+					not_null<HistoryItem*> item) {
+				previewView->prepare(
+					item,
+					nullptr,
+					[=] { preview->update(); },
+					{},
+					[]{});
+			};
 			if (!previewView->dependsOn(item)) {
-				previewView->prepare(item, nullptr, previewUpdate, {});
+				prepare(item);
 			}
 			preview->paintRequest(
 			) | rpl::start_with_next([=, fullId = item->fullId()](
@@ -1690,7 +1698,7 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupPersonalChannel(
 						preview->rect(),
 						tr::lng_contacts_loading(tr::now),
 						style::al_left);
-					previewView->prepare(item, nullptr, previewUpdate, {});
+					prepare(item);
 					preview->update();
 				}
 			}, preview->lifetime());
@@ -2312,7 +2320,36 @@ void ActionsFiller::addDeleteContactAction(not_null<UserData*> user) {
 		&st::infoIconDelete);
 }
 
+void ActionsFiller::addFastButtonsMode(not_null<UserData*> user) {
+	Expects(user->isBot());
+
+	const auto helper = &user->session().supportHelper();
+	const auto button = _wrap->add(object_ptr<Ui::SettingsButton>(
+		_wrap,
+		rpl::single(u"Fast buttons mode"_q),
+		st::infoSharedMediaButton));
+	object_ptr<Info::Profile::FloatingIcon>(
+		button,
+		st::infoIconMediaBot,
+		st::infoSharedMediaButtonIconPosition);
+
+	AddSkip(_wrap);
+	AddDivider(_wrap);
+	AddSkip(_wrap);
+
+	button->toggleOn(helper->fastButtonModeValue(user));
+	button->toggledValue(
+	) | rpl::filter([=](bool value) {
+		return value != helper->fastButtonMode(user);
+	}) | rpl::start_with_next([=](bool value) {
+		helper->setFastButtonMode(user, value);
+	}, button->lifetime());
+}
+
 void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
+	if (user->session().supportMode()) {
+		addFastButtonsMode(user);
+	}
 	const auto window = _controller->parentController();
 	const auto findBotCommand = [user](const QString &command) {
 		if (!user->isBot()) {
@@ -2745,7 +2782,8 @@ Cover *AddCover(
 		: container->add(object_ptr<Cover>(
 			container,
 			controller->parentController(),
-			peer));
+			peer,
+			[=] { return controller->wrapWidget(); }));
 	result->showSection(
 	) | rpl::start_with_next([=](Section section) {
 		controller->showSection(topic

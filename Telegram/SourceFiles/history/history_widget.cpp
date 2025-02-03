@@ -166,6 +166,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "support/support_common.h"
 #include "support/support_autocomplete.h"
+#include "support/support_helper.h"
 #include "support/support_preload.h"
 #include "dialogs/dialogs_key.h"
 #include "calls/calls_instance.h"
@@ -466,6 +467,8 @@ HistoryWidget::HistoryWidget(
 		return false;
 	});
 	InitMessageFieldFade(_field, st::historyComposeField.textBg);
+
+	setupFastButtonMode();
 
 	_fieldCharsCountManager.limitExceeds(
 	) | rpl::start_with_next([=] {
@@ -1930,7 +1933,7 @@ void HistoryWidget::activate() {
 
 void HistoryWidget::setInnerFocus() {
 	if (_list) {
-		if (isSearching()) {
+		if (isSearching() && !_nonEmptySelection) {
 			_composeSearch->setInnerFocus();
 		} else if (isChoosingTheme()) {
 			_chooseTheme->setFocus();
@@ -2004,6 +2007,11 @@ void HistoryWidget::setupShortcuts() {
 		using Command = Shortcuts::Command;
 		request->check(Command::Search, 1) && request->handle([=] {
 			controller()->searchInChat(_history);
+			return true;
+		});
+		request->check(Command::ShowChatMenu, 1) && request->handle([=] {
+			Window::ActivateWindow(controller());
+			_topBar->showPeerMenu();
 			return true;
 		});
 		_canSendMessages
@@ -2884,6 +2892,42 @@ void HistoryWidget::refreshSilentToggle() {
 	}
 }
 
+void HistoryWidget::setupFastButtonMode() {
+	if (!session().supportMode()) {
+		return;
+	}
+	const auto field = _field->rawTextEdit();
+	base::install_event_filter(field, [=](not_null<QEvent*> e) {
+		if (e->type() != QEvent::KeyPress
+			|| !_history
+			|| !session().supportHelper().fastButtonMode(_history->peer)
+			|| !_field->getLastText().isEmpty()) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto k = static_cast<QKeyEvent*>(e.get());
+		const auto key = k->key();
+		if (key < Qt::Key_1 || key > Qt::Key_9 || k->modifiers()) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto item = _history ? _history->lastMessage() : nullptr;
+		const auto markup = item ? item->inlineReplyKeyboard() : nullptr;
+		const auto link = markup
+			? markup->getLinkByIndex(key - Qt::Key_1)
+			: nullptr;
+		if (!link) {
+			return base::EventFilterResult::Continue;
+		}
+		ActivateClickHandler(window(), link, {
+			Qt::LeftButton,
+			QVariant::fromValue(ClickHandlerContext{
+				.itemId = item->fullId(),
+				.sessionWindow = base::make_weak(controller()),
+			}),
+		});
+		return base::EventFilterResult::Cancel;
+	});
+}
+
 void HistoryWidget::setupScheduledToggle() {
 	controller()->activeChatValue(
 	) | rpl::map([=](Dialogs::Key key) -> rpl::producer<> {
@@ -3599,14 +3643,19 @@ void HistoryWidget::historyLoaded() {
 }
 
 bool HistoryWidget::clearMaybeSendStart() {
-	if (!_showAndMaybeSendStart) {
+	if (!_showAndMaybeSendStart || !_history) {
+		return false;
+	} else if (!_history->peer->isFullLoaded()) {
+		_history->peer->updateFull();
 		return false;
 	}
 	_showAndMaybeSendStart = false;
 	if (const auto user = _history ? _history->peer->asUser() : nullptr) {
-		if (const auto info = user->botInfo.get()) {
-			if (!info->startToken.isEmpty()) {
-				return true;
+		if (user->blockStatus() == PeerData::BlockStatus::NotBlocked) {
+			if (const auto info = user->botInfo.get()) {
+				if (!info->startToken.isEmpty()) {
+					return true;
+				}
 			}
 		}
 	}
@@ -3975,10 +4024,8 @@ void HistoryWidget::preloadHistoryIfNeeded() {
 		preloadHistoryByScroll();
 		checkReplyReturns();
 	}
-	if (_history && _history->loadedAtTop() && _history->loadedAtBottom()) {
-		if (clearMaybeSendStart() && !_history->isDisplayedEmpty()) {
-			sendBotStartCommand();
-		}
+	if (clearMaybeSendStart() && !_history->isDisplayedEmpty()) {
+		sendBotStartCommand();
 	}
 }
 
@@ -8307,6 +8354,10 @@ void HistoryWidget::fullInfoUpdated() {
 
 		handlePeerUpdate();
 		checkSuggestToGigagroup();
+
+		if (clearMaybeSendStart() && !_history->isDisplayedEmpty()) {
+			sendBotStartCommand();
+		}
 	}
 	if (updateCmdStartShown()) {
 		refresh = true;
@@ -8422,7 +8473,11 @@ void HistoryWidget::confirmDeleteSelected() {
 
 void HistoryWidget::escape() {
 	if (_composeSearch) {
-		_composeSearch->hideAnimated();
+		if (_nonEmptySelection) {
+			clearSelected();
+		} else {
+			_composeSearch->hideAnimated();
+		}
 	} else if (_chooseForReport) {
 		controller()->clearChooseReportMessages();
 	} else if (_nonEmptySelection && _list) {
@@ -8522,7 +8577,7 @@ void HistoryWidget::updateTopBarSelection() {
 	updateHistoryGeometry();
 	if (!controller()->isLayerShown()
 		&& !Core::App().passcodeLocked()) {
-		if (isSearching()) {
+		if (isSearching() && !_nonEmptySelection) {
 			_composeSearch->setInnerFocus();
 		} else if (_nonEmptySelection
 			|| (_list && _list->wasSelectedText())
