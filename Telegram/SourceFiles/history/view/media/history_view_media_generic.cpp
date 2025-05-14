@@ -236,7 +236,7 @@ MediaGenericTextPart::MediaGenericTextPart(
 	QMargins margins,
 	const style::TextStyle &st,
 	const base::flat_map<uint16, ClickHandlerPtr> &links,
-	const std::any &context)
+	const Ui::Text::MarkedContext &context)
 : _text(st::msgMinWidth)
 , _margins(margins) {
 	_text.setMarkedText(
@@ -304,7 +304,7 @@ QSize MediaGenericTextPart::countCurrentSize(int newWidth) {
 	const auto size = CountOptimalTextSize(
 		_text,
 		st::msgMinWidth,
-		newWidth - skip);
+		std::max(st::msgMinWidth, newWidth - skip));
 	return {
 		size.width() + skip,
 		_margins.top() + size.height() + _margins.bottom(),
@@ -448,7 +448,7 @@ void StickerInBubblePart::ensureCreated(Element *replacing) const {
 		return;
 	} else if (const auto data = _lookup()) {
 		const auto sticker = data.sticker;
-		if (const auto info = sticker->sticker()) {
+		if (sticker->sticker()) {
 			const auto skipPremiumEffect = true;
 			_link = data.link;
 			_skipTop = data.skipTop;

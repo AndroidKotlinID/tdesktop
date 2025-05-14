@@ -24,6 +24,7 @@ struct SubscriptionEntry;
 struct GiftCode;
 struct CreditTopupOption;
 struct SavedStarGift;
+class SavedStarGiftId;
 struct StarGift;
 } // namespace Data
 
@@ -45,6 +46,7 @@ struct Box;
 struct Table;
 struct FlatLabel;
 struct PopupMenu;
+struct IconButton;
 struct PeerListItem;
 } // namespace style
 
@@ -52,6 +54,7 @@ namespace Ui {
 class GenericBox;
 class RpWidget;
 class VerticalLayout;
+class PopupMenu;
 } // namespace Ui
 
 namespace Settings {
@@ -92,6 +95,7 @@ void AddWithdrawalWidget(
 
 struct GiftWearBoxStyleOverride {
 	const style::Box *box = nullptr;
+	const style::IconButton *close = nullptr;
 	const style::FlatLabel *title = nullptr;
 	const style::FlatLabel *subtitle = nullptr;
 	const style::icon *radiantIcon = nullptr;
@@ -112,6 +116,12 @@ struct CreditsEntryBoxStyleOverrides {
 	const style::icon *transfer = nullptr;
 	const style::icon *wear = nullptr;
 	const style::icon *takeoff = nullptr;
+	const style::icon *resell = nullptr;
+	const style::icon *unlist = nullptr;
+	const style::icon *show = nullptr;
+	const style::icon *hide = nullptr;
+	const style::icon *pin = nullptr;
+	const style::icon *unpin = nullptr;
 	std::shared_ptr<ShareBoxStyleOverrides> shareBox;
 	std::shared_ptr<GiftWearBoxStyleOverride> giftWearBox;
 };
@@ -148,12 +158,32 @@ void GlobalStarGiftBox(
 	not_null<Ui::GenericBox*> box,
 	std::shared_ptr<ChatHelpers::Show> show,
 	const Data::StarGift &data,
+	PeerId resaleRecipientId,
 	CreditsEntryBoxStyleOverrides st = {});
+
+[[nodiscard]] Data::CreditsHistoryEntry SavedStarGiftEntry(
+	not_null<PeerData*> owner,
+	const Data::SavedStarGift &data);
+[[nodiscard]] Data::SavedStarGiftId EntryToSavedStarGiftId(
+	not_null<Main::Session*> session,
+	const Data::CreditsHistoryEntry &entry);
 void SavedStarGiftBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> owner,
-	const Data::SavedStarGift &data);
+	const Data::SavedStarGift &data,
+	Fn<std::vector<Data::CreditsHistoryEntry>()> pinned = nullptr);
+enum class SavedStarGiftMenuType {
+	List,
+	View,
+};
+void FillSavedStarGiftMenu(
+	std::shared_ptr<ChatHelpers::Show> show,
+	not_null<Ui::PopupMenu*> menu,
+	const Data::CreditsHistoryEntry &e,
+	SavedStarGiftMenuType type,
+	CreditsEntryBoxStyleOverrides st = {});
+
 void StarGiftViewBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<Window::SessionController*> controller,
@@ -200,12 +230,16 @@ struct SmallBalanceDeepLink {
 struct SmallBalanceStarGift {
 	PeerId recipientId;
 };
+struct SmallBalanceForMessage {
+	PeerId recipientId;
+};
 struct SmallBalanceSource : std::variant<
 	SmallBalanceBot,
 	SmallBalanceReaction,
 	SmallBalanceSubscription,
 	SmallBalanceDeepLink,
-	SmallBalanceStarGift> {
+	SmallBalanceStarGift,
+	SmallBalanceForMessage> {
 	using variant::variant;
 };
 

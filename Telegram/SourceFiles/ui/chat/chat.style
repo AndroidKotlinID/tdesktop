@@ -327,6 +327,11 @@ topicButtonArrowSkip: 8px;
 topicButtonArrowPosition: point(3px, 3px);
 topicButtonArrow: icon{{ "dialogs/dialogs_topic_arrow", historyReplyIconFg }};
 
+textMoreIconEmoji: IconEmoji {
+	icon: topicButtonArrow;
+	padding: margins(-2px, 5px, 0px, 0px);
+}
+
 msgBotKbIconPadding: 4px;
 msgBotKbUrlIcon: icon {{ "inline_button_url", msgBotKbIconFg }};
 msgBotKbSwitchPmIcon: icon {{ "inline_button_switch", msgBotKbIconFg }};
@@ -432,6 +437,10 @@ historyCallCameraInIcon: icon {{ "calls/call_camera_active", msgFileInBg }};
 historyCallCameraInIconSelected: icon {{ "calls/call_camera_active", msgFileInBgSelected }};
 historyCallCameraOutIcon: icon {{ "calls/call_camera_active", msgFileOutBg }};
 historyCallCameraOutIconSelected: icon {{ "calls/call_camera_active", msgFileOutBgSelected }};
+historyCallGroupInIcon: icon {{ "calls/call_group", msgFileInBg }};
+historyCallGroupInIconSelected: icon {{ "calls/call_group", msgFileInBgSelected }};
+historyCallGroupOutIcon: icon {{ "calls/call_group", msgFileOutBg }};
+historyCallGroupOutIconSelected: icon {{ "calls/call_group", msgFileOutBgSelected }};
 historyCallIconPosition: point(12px, 10px);
 historyCallLeft: 16px;
 historyCallTop: 9px;
@@ -686,6 +695,7 @@ historyVideoCancelSelected: icon {{ "player/playlist_cancel", historyFileThumbIc
 historyVideoDownload: icon {{ "player/playlist_download", historyFileThumbIconFg }};
 historyVideoDownloadSelected: icon {{ "player/playlist_download", historyFileThumbIconFgSelected }};
 historyVideoRadialLine: msgFileRadialLine;
+historyVideoTimestampProgressLine: 4px;
 
 historyAudioDownloadSize: 20px;
 historyAudioRadialLine: 2px;
@@ -939,6 +949,7 @@ historyHasCustomEmoji: FlatLabel(defaultFlatLabel) {
 	minWidth: 80px;
 }
 historyHasCustomEmojiPosition: point(12px, 4px);
+historyBankCardMenuMultilinePosition: point(18px, 4px);
 
 historyTranslateLabel: FlatLabel(defaultFlatLabel) {
 	style: semiboldTextStyle;
@@ -1187,6 +1198,7 @@ botEmojiStatusName: FlatLabel(defaultFlatLabel) {
 	maxHeight: 20px;
 }
 botEmojiStatusEmoji: FlatLabel(botEmojiStatusName) {
+	margin: margins(4px, 4px, 4px, 4px);
 	textFg: profileVerifiedCheckBg;
 }
 
@@ -1223,3 +1235,20 @@ chatUniqueRowSkip: 4px;
 chatUniqueButtonPadding: margins(12px, 4px, 12px, 16px);
 
 markupWebview: icon {{ "chat/markup_webview", windowFg }};
+
+newPeerTitleMargin: margins(11px, 16px, 11px, 6px);
+newPeerSubtitleMargin: margins(11px, 0px, 11px, 16px);
+newPeerNonOfficial: IconEmoji {
+	icon: icon{{ "chat/mini_info_alert", windowFg }};
+	padding: margins(0px, 2px, 0px, 0px);
+}
+newPeerUserpics: GroupCallUserpics {
+	size: 16px;
+	shift: 5px;
+	stroke: 1px;
+	align: align(left);
+}
+newPeerUserpicsPadding: margins(0px, 3px, 0px, 0px);
+newPeerWidth: 320px;
+
+swipeBackSize: 150px;
