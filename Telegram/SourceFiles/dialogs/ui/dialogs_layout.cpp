@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer_values.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/data_thread.h"
 #include "data/data_user.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "dialogs/dialogs_list.h"
@@ -44,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "ui/unread_badge.h"
 #include "ui/unread_badge_paint.h"
+#include "ui/unread_counter_format.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
@@ -62,12 +64,12 @@ const auto kPsaBadgePrefix = "cloud_lng_badge_psa_";
 
 [[nodiscard]] bool ShowSendActionInDialogs(Data::Thread *thread) {
 	const auto history = thread ? thread->owningHistory().get() : nullptr;
-	if (!history) {
+	if (!history || thread->asSublist()) {
 		return false;
 	} else if (const auto user = history->peer->asUser()) {
 		return !user->lastseen().isHidden();
 	}
-	return !history->isForum();
+	return !history->isForum() && !history->amMonoforumAdmin();
 }
 
 void PaintRowTopRight(
@@ -180,16 +182,10 @@ int PaintBadges(
 		st.active = context.active;
 		st.selected = context.selected;
 		st.muted = badgesState.unreadMuted;
-		const auto counter = (badgesState.unreadCounter <= 0)
-			? QString()
-			: !narrow
-			? QString::number(badgesState.unreadCounter)
-			: ((badgesState.mention || badgesState.reaction)
-				&& (badgesState.unreadCounter > 999))
-			? (u"99+"_q)
-			: (badgesState.unreadCounter > 999999)
-			? (u"99999+"_q)
-			: QString::number(badgesState.unreadCounter);
+		const auto counter = FormatUnreadCounter(
+			badgesState.unreadCounter,
+			badgesState.mention || badgesState.reaction,
+			narrow);
 		const auto badge = PaintUnreadBadge(p, counter, right, top, st);
 		right -= badge.width() + st.padding;
 	} else if (const auto used = PaintRightButton(p, context)) {
@@ -458,7 +454,9 @@ void PaintRow(
 
 	const auto promoted = (history && history->useTopPromotion())
 		&& !context.search;
-	const auto verifyInfo = (from && !from->isSelf())
+	const auto verifyInfo = (from
+		&& (!from->isSelf()
+			|| (!(flags & Flag::SavedMessages) && !(flags & Flag::MyNotes))))
 		? from->botVerifyDetails()
 		: nullptr;
 	if (promoted) {
@@ -592,13 +590,9 @@ void PaintRow(
 						}),
 						Text::WithEntities);
 				if (draft && draft->reply) {
-					auto &data = thread->owner().customEmojiManager();
 					draftText = Ui::Text::Colorized(
-						Ui::Text::SingleCustomEmoji(
-							data.registerInternalEmoji(
-								st::dialogsMiniReplyIcon,
-								{},
-								true))).append(std::move(draftText));
+						Ui::Text::IconEmoji(&st::dialogsMiniReplyIcon)
+					).append(std::move(draftText));
 				}
 				const auto context = Core::TextContext({
 					.session = &thread->session(),
@@ -748,6 +742,11 @@ void PaintRow(
 				: context.selected
 				? &st::dialogsScamFgOver
 				: &st::dialogsScamFg),
+			.direct = (context.active
+				? &st::dialogsDraftFgActive
+				: context.selected
+				? &st::windowSubTextFgOver
+				: &st::windowSubTextFg),
 			.premiumFg = (context.active
 				? &st::dialogsVerifiedIconBgActive
 				: context.selected
@@ -926,7 +925,7 @@ const style::icon *ChatTypeIcon(
 			st::dialogsForumIcon,
 			context.active,
 			context.selected);
-	} else {
+	} else if (!peer->isMonoforum()) {
 		return &ThreeStateIcon(
 			st::dialogsChatIcon,
 			context.active,
@@ -960,10 +959,12 @@ void RowPainter::Paint(
 		if (!thread) {
 			return nullptr;
 		}
-		if ((!peer || !peer->isForum()) && (!item || !badgesState.unread)) {
+		if ((!peer || (!peer->isForum() && !peer->amMonoforumAdmin()))
+			&& (!item || !badgesState.unread)) {
 			// Draw item, if there are unread messages.
 			const auto draft = thread->owningHistory()->cloudDraft(
-				thread->topicRootId());
+				thread->topicRootId(),
+				thread->monoforumPeerId());
 			if (!Data::DraftIsNull(draft)) {
 				return draft;
 			}
@@ -992,11 +993,11 @@ void RowPainter::Paint(
 			? history->peer->migrateTo()
 			: history->peer.get())
 		: sublist
-		? sublist->peer().get()
+		? sublist->sublistPeer().get()
 		: nullptr;
 	const auto allowUserOnline = true;// !context.narrow || badgesState.empty();
 	const auto flags = (allowUserOnline ? Flag::AllowUserOnline : Flag(0))
-		| ((sublist && from->isSelf())
+		| ((sublist && !sublist->parentChat() && from->isSelf())
 			? Flag::MyNotes
 			: (peer && peer->isSelf())
 			? Flag::SavedMessages
@@ -1044,21 +1045,23 @@ void RowPainter::Paint(
 			? nullptr
 			: thread
 			? &thread->lastItemDialogsView()
-			: sublist
-			? &sublist->lastItemDialogsView()
 			: nullptr;
 		if (view) {
-			const auto forum = context.st->topicsHeight
-				? row->history()->peer->forum()
+			const auto forum = (peer && context.st->topicsHeight)
+				? peer->forum()
 				: nullptr;
-			if (!view->prepared(item, forum)) {
+			const auto monoforum = (peer && context.st->topicsHeight)
+				? peer->monoforum()
+				: nullptr;
+			if (!view->prepared(item, forum, monoforum)) {
 				view->prepare(
 					item,
 					forum,
+					monoforum,
 					[=] { entry->updateChatListEntry(); },
 					{});
 			}
-			if (forum) {
+			if (forum || monoforum) {
 				rect.setHeight(context.st->topicsHeight + rect.height());
 			}
 			view->paint(p, rect, context);
@@ -1130,6 +1133,7 @@ void RowPainter::Paint(
 		return {};
 	}();
 	previewOptions.ignoreGroup = true;
+	previewOptions.searchLowerText = context.searchLowerText;
 
 	const auto badgesState = context.displayUnreadInfo
 		? entry->chatListBadgesState()
@@ -1152,8 +1156,13 @@ void RowPainter::Paint(
 			availableWidth,
 			st::dialogsTextFont->height);
 		auto &view = row->itemView();
-		if (!view.prepared(item, nullptr)) {
-			view.prepare(item, nullptr, row->repaint(), previewOptions);
+		if (!view.prepared(item, nullptr, nullptr)) {
+			view.prepare(
+				item,
+				nullptr,
+				nullptr,
+				row->repaint(),
+				previewOptions);
 		}
 		view.paint(p, itemRect, context);
 	};
@@ -1190,20 +1199,20 @@ void RowPainter::Paint(
 }
 
 QRect RowPainter::SendActionAnimationRect(
-		not_null<const style::DialogRow*> st,
-		int animationLeft,
-		int animationWidth,
-		int animationHeight,
+		not_null<const Data::Thread*> thread,
+		FilterId filterId,
+		QRect rect,
 		int fullWidth,
 		bool textUpdated) {
-	const auto nameleft = st->nameLeft;
-	const auto namewidth = fullWidth - nameleft - st->padding.right();
-	const auto texttop = st->textTop;
+	const auto &st = Row::ComputeSt(thread, filterId);
+	const auto nameleft = st.nameLeft;
+	const auto namewidth = fullWidth - nameleft - st.padding.right();
+	const auto texttop = st.textTop;
 	return QRect(
-		nameleft + (textUpdated ? 0 : animationLeft),
-		texttop,
-		textUpdated ? namewidth : animationWidth,
-		animationHeight);
+		nameleft + (textUpdated ? 0 : rect.x()),
+		texttop + rect.y(),
+		textUpdated ? namewidth : rect.width(),
+		rect.height());
 }
 
 void PaintCollapsedRow(
@@ -1229,7 +1238,8 @@ void PaintCollapsedRow(
 			+ st::dialogsUnreadFont->ascent;
 		const auto left = context.narrow
 			? ((context.width - st::semiboldFont->width(text)) / 2)
-			: context.st->padding.left();
+			: st::dialogsTopBarLeftPadding;
+			// : context.st->padding.left();
 		p.drawText(left, textBaseline, text);
 	} else {
 		folder->paintUserpic(

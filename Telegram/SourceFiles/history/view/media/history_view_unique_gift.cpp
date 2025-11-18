@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/stickers_lottie.h"
 #include "core/click_handler_types.h"
 #include "data/stickers/data_custom_emoji.h"
+#include "data/data_birthday.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
 #include "data/data_star_gift.h"
@@ -32,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "ui/power_saving.h"
 #include "ui/rect.h"
+#include "ui/top_background_gradient.h"
 #include "window/window_session_controller.h"
 #include "styles/style_chat.h"
 #include "styles/style_credits.h"
@@ -81,6 +83,96 @@ private:
 
 };
 
+class TextBubblePart final : public MediaGenericTextPart {
+public:
+	TextBubblePart(
+		TextWithEntities text,
+		QMargins margins,
+		Data::UniqueGiftBackdrop backdrop,
+		ClickHandlerPtr link);
+
+	void draw(
+		Painter &p,
+		not_null<const MediaGeneric*> owner,
+		const PaintContext &context,
+		int outerWidth) const override;
+	TextState textState(
+		QPoint point,
+		StateRequest request,
+		int outerWidth) const override;
+
+private:
+	void setupPen(
+		Painter &p,
+		not_null<const MediaGeneric*> owner,
+		const PaintContext &context) const override;
+	int elisionLines() const override;
+
+	Data::UniqueGiftBackdrop _backdrop;
+	ClickHandlerPtr _link;
+
+};
+
+TextBubblePart::TextBubblePart(
+	TextWithEntities text,
+	QMargins margins,
+	Data::UniqueGiftBackdrop backdrop,
+	ClickHandlerPtr link)
+: MediaGenericTextPart(
+	std::move(text),
+	margins,
+	st::uniqueGiftReleasedBy.style,
+	{},
+	{},
+	style::al_top)
+, _backdrop(backdrop)
+, _link(std::move(link)) {
+}
+
+void TextBubblePart::draw(
+		Painter &p,
+		not_null<const MediaGeneric*> owner,
+		const PaintContext &context,
+		int outerWidth) const {
+	auto hq = PainterHighQualityEnabler(p);
+	p.setPen(Qt::NoPen);
+	p.setOpacity(0.5);
+	p.setBrush(_backdrop.patternColor);
+	const auto radius = height() / 2.;
+	const auto left = (outerWidth - width()) / 2;
+	const auto r = QRect(left, 0, width(), height());
+	p.drawRoundedRect(r, radius, radius);
+	p.setOpacity(1.);
+
+	MediaGenericTextPart::draw(p, owner, context, outerWidth);
+}
+
+TextState TextBubblePart::textState(
+		QPoint point,
+		StateRequest request,
+		int outerWidth) const {
+	auto result = TextState();
+	const auto left = (outerWidth - width()) / 2;
+	if (point.x() >= left
+		&& point.y() >= 0
+		&& point.x() < left + width()
+		&& point.y() < height()) {
+		result.link = _link;
+	}
+	return result;
+}
+
+void TextBubblePart::setupPen(
+		Painter &p,
+		not_null<const MediaGeneric*> owner,
+		const PaintContext &context) const {
+	p.setPen(_backdrop.textColor);
+}
+
+int TextBubblePart::elisionLines() const {
+	return 1;
+}
+
 ButtonPart::ButtonPart(
 	const QString &text,
 	QMargins margins,
@@ -99,7 +191,7 @@ ButtonPart::ButtonPart(
 , _link(std::move(link))
 , _stars([=](const QRect &) {
 	repaint();
-}, Ui::Premium::MiniStars::Type::SlowStars)
+}, Ui::Premium::MiniStarsType::SlowStars)
 , _repaint(std::move(repaint)) {
 }
 
@@ -280,9 +372,24 @@ auto GenerateUniqueGiftMedia(
 			st::chatUniqueTitlePadding);
 		pushText(
 			Ui::Text::Bold(Data::UniqueGiftName(*gift)),
-			st::defaultTextStyle,
+			st::chatUniqueTextStyle,
 			gift->backdrop.textColor,
 			st::chatUniqueTextPadding);
+
+		if (const auto by = gift->releasedBy) {
+			const auto handler = std::make_shared<LambdaClickHandler>([=] {
+				Ui::GiftReleasedByHandler(by);
+			});
+			push(std::make_unique<TextBubblePart>(
+				tr::lng_gift_released_by(
+					tr::now,
+					lt_name,
+					Ui::Text::Link('@' + by->username()),
+					Ui::Text::WithEntities),
+				st::giftBoxReleasedByMargin,
+				gift->backdrop,
+				handler));
+		}
 
 		const auto name = [](const Data::UniqueGiftAttribute &value) {
 			return Ui::Text::Bold(value.name);
@@ -292,9 +399,12 @@ auto GenerateUniqueGiftMedia(
 			{ tr::lng_gift_unique_backdrop(tr::now), name(gift->backdrop) },
 			{ tr::lng_gift_unique_symbol(tr::now), name(gift->pattern) },
 		};
+		const auto tableAddedMargins = gift->releasedBy
+			? QMargins(0, st::chatUniqueAuthorSkip, 0, 0)
+			: QMargins();
 		push(std::make_unique<AttributeTable>(
 			std::move(attributes),
-			st::chatUniqueTextPadding,
+			st::chatUniqueTextPadding + tableAddedMargins,
 			[c = gift->backdrop.textColor](const auto&) { return c; },
 			[](const auto&) { return QColor(255, 255, 255); }));
 
@@ -336,13 +446,15 @@ auto UniqueGiftBg(
 		auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
 		const auto webpreview = (media.get() != view->media());
+		const auto sub = webpreview ? 0 : (st::chatUniqueGiftBorder / 2);
 		const auto thickness = webpreview ? 0 : st::chatUniqueGiftBorder * 2;
+		const auto removed = thickness + sub;
 		const auto radius = webpreview
 			? st::roundRadiusLarge
-			: (st::msgServiceGiftBoxRadius - thickness);
+			: (st::msgServiceGiftBoxRadius - thickness + sub);
 		const auto full = QRect(0, 0, media->width(), media->height());
 		const auto inner = full.marginsRemoved(
-			{ thickness, thickness, thickness, thickness });
+			{ removed, removed, removed, removed });
 		if (!webpreview) {
 			auto pen = context.st->msgServiceBg()->p;
 			pen.setWidthF(thickness);
@@ -365,21 +477,19 @@ auto UniqueGiftBg(
 		const auto top = (webpreview ? 2 : 1) * (-shift);
 		const auto outer = QRect(-shift, top, doubled, doubled);
 		p.setClipRect(inner);
-		Ui::PaintPoints(
+		Ui::PaintBgPoints(
 			p,
-			Ui::PatternPoints(),
+			Ui::PatternBgPoints(),
 			state->cache,
 			state->pattern.get(),
 			*gift,
 			outer);
 		p.setClipping(false);
 
-		const auto add = webpreview ? 0 : style::ConvertScale(2);
-		p.setClipRect(
-			inner.x() - add,
-			inner.y() - add,
-			inner.width() + 2 * add,
-			inner.height() + 2 * add);
+		const auto padding = webpreview
+			? QMargins()
+			: st::chatUniqueGiftBadgePadding;
+		p.setClipRect(inner.marginsAdded(padding));
 		auto badge = Info::PeerGifts::GiftBadge{
 			.text = tr::lng_gift_collectible_tag(tr::now),
 			.bg1 = gift->backdrop.edgeColor,
@@ -388,13 +498,13 @@ auto UniqueGiftBg(
 		};
 		if (state->badgeCache.isNull() || state->badgeKey != badge) {
 			state->badgeKey = badge;
-			state->badgeCache = ValidateRotatedBadge(badge, add);
+			state->badgeCache = ValidateRotatedBadge(badge, padding);
 		}
 		const auto badgeRatio = state->badgeCache.devicePixelRatio();
 		const auto badgeWidth = state->badgeCache.width() / badgeRatio;
 		p.drawImage(
-			inner.x() + inner.width() + add - badgeWidth,
-			inner.y() - add,
+			inner.x() + inner.width() - badgeWidth,
+			inner.y(),
 			state->badgeCache);
 		p.setClipping(false);
 	};
@@ -465,9 +575,9 @@ AttributeTable::AttributeTable(
 	for (const auto &entry : entries) {
 		_parts.emplace_back();
 		auto &part = _parts.back();
-		part.label.setText(st::defaultTextStyle, entry.label);
+		part.label.setText(st::chatUniqueTextStyle, entry.label);
 		part.value.setMarkedText(
-			st::defaultTextStyle,
+			st::chatUniqueTextStyle,
 			entry.value,
 			kMarkupTextOptions,
 			context);

@@ -127,6 +127,20 @@ private:
 
 };
 
+class CallThumbnail final : public DynamicImage {
+public:
+	CallThumbnail();
+
+	std::shared_ptr<DynamicImage> clone() override;
+
+	QImage image(int size) override;
+	void subscribeToUpdates(Fn<void()> callback) override;
+
+private:
+	QImage _prepared;
+
+};
+
 class EmptyThumbnail final : public DynamicImage {
 public:
 	std::shared_ptr<DynamicImage> clone() override;
@@ -196,7 +210,11 @@ private:
 
 class EmojiThumbnail final : public DynamicImage {
 public:
-	EmojiThumbnail(not_null<Data::Session*> owner, const QString &data);
+	EmojiThumbnail(
+		not_null<Data::Session*> owner,
+		const QString &data,
+		Fn<bool()> paused,
+		Fn<QColor()> textColor);
 
 	std::shared_ptr<DynamicImage> clone() override;
 
@@ -207,6 +225,8 @@ private:
 	const not_null<Data::Session*> _owner;
 	const QString _data;
 	std::unique_ptr<Ui::Text::CustomEmoji> _emoji;
+	Fn<bool()> _paused;
+	Fn<QColor()> _textColor;
 	QImage _frame;
 
 };
@@ -244,22 +264,13 @@ QImage PeerUserpic::image(int size) {
 
 		auto p = Painter(&_frame);
 		auto &view = _subscribed->view;
-		if (!_forceRound) {
-			_peer->paintUserpic(p, view, 0, 0, size);
-		} else if (const auto cloud = _peer->userpicCloudImage(view)) {
-			const auto full = size * style::DevicePixelRatio();
-			Ui::ValidateUserpicCache(view, cloud, nullptr, full, false);
-			p.drawImage(QRect(0, 0, size, size), view.cached);
-		} else {
-			const auto full = size * style::DevicePixelRatio();
-			const auto r = full / 2.;
-			const auto empty = PeerData::GenerateUserpicImage(
-				_peer,
-				view,
-				full,
-				r);
-			p.drawImage(QRect(0, 0, size, size), empty);
-		}
+		_peer->paintUserpic(p, view, {
+			.position = QPoint(),
+			.size = size,
+			.shape = (_forceRound
+				? Ui::PeerUserpicShape::Circle
+				: Ui::PeerUserpicShape::Auto),
+		});
 	}
 	return _frame;
 }
@@ -433,6 +444,28 @@ void VideoThumbnail::clear() {
 	_media = nullptr;
 }
 
+CallThumbnail::CallThumbnail() = default;
+
+std::shared_ptr<DynamicImage> CallThumbnail::clone() {
+	return std::make_shared<CallThumbnail>();
+}
+
+QImage CallThumbnail::image(int size) {
+	const auto ratio = style::DevicePixelRatio();
+	const auto full = QSize(size, size) * ratio;
+	if (_prepared.size() != full) {
+		_prepared = QImage(full, QImage::Format_ARGB32_Premultiplied);
+		_prepared.fill(Qt::black);
+		_prepared.setDevicePixelRatio(ratio);
+
+		_prepared = Images::Circle(std::move(_prepared));
+	}
+	return _prepared;
+}
+
+void CallThumbnail::subscribeToUpdates(Fn<void()> callback) {
+}
+
 std::shared_ptr<DynamicImage> EmptyThumbnail::clone() {
 	return std::make_shared<EmptyThumbnail>();
 }
@@ -581,9 +614,13 @@ void IconThumbnail::subscribeToUpdates(Fn<void()> callback) {
 
 EmojiThumbnail::EmojiThumbnail(
 	not_null<Data::Session*> owner,
-	const QString &data)
+	const QString &data,
+	Fn<bool()> paused,
+	Fn<QColor()> textColor)
 : _owner(owner)
-, _data(data) {
+, _data(data)
+, _paused(std::move(paused))
+, _textColor(std::move(textColor)) {
 }
 
 void EmojiThumbnail::subscribeToUpdates(Fn<void()> callback) {
@@ -598,7 +635,11 @@ void EmojiThumbnail::subscribeToUpdates(Fn<void()> callback) {
 }
 
 std::shared_ptr<DynamicImage> EmojiThumbnail::clone() {
-	return std::make_shared<EmojiThumbnail>(_owner, _data);
+	return std::make_shared<EmojiThumbnail>(
+		_owner,
+		_data,
+		_paused,
+		_textColor);
 }
 
 QImage EmojiThumbnail::image(int size) {
@@ -614,12 +655,16 @@ QImage EmojiThumbnail::image(int size) {
 	}
 	_frame.fill(Qt::transparent);
 
+	const auto esize = Text::AdjustCustomEmojiSize(
+		Emoji::GetSizeLarge() / style::DevicePixelRatio());
+	const auto eskip = (size - esize) / 2;
+
 	auto p = Painter(&_frame);
 	_emoji->paint(p, {
-		.textColor = st::windowBoldFg->c,
+		.textColor = _textColor ? _textColor() : st::windowBoldFg->c,
 		.now = crl::now(),
-		.position = QPoint(0, 0),
-		.paused = false,
+		.position = QPoint(eskip, eskip),
+		.paused = _paused && _paused(),
 	});
 	p.end();
 
@@ -652,6 +697,8 @@ std::shared_ptr<DynamicImage> MakeStoryThumbnail(
 	const auto id = story->fullId();
 	return v::match(story->media().data, [](v::null_t) -> Result {
 		return std::make_shared<EmptyThumbnail>();
+	}, [](const std::shared_ptr<Data::GroupCall> &call) -> Result {
+		return std::make_shared<CallThumbnail>();
 	}, [&](not_null<PhotoData*> photo) -> Result {
 		return std::make_shared<PhotoThumbnail>(photo, id, true);
 	}, [&](not_null<DocumentData*> video) -> Result {
@@ -665,8 +712,14 @@ std::shared_ptr<DynamicImage> MakeIconThumbnail(const style::icon &icon) {
 
 std::shared_ptr<DynamicImage> MakeEmojiThumbnail(
 		not_null<Data::Session*> owner,
-		const QString &data) {
-	return std::make_shared<EmojiThumbnail>(owner, data);
+		const QString &data,
+		Fn<bool()> paused,
+		Fn<QColor()> textColor) {
+	return std::make_shared<EmojiThumbnail>(
+		owner,
+		data,
+		std::move(paused),
+		std::move(textColor));
 }
 
 std::shared_ptr<DynamicImage> MakePhotoThumbnail(

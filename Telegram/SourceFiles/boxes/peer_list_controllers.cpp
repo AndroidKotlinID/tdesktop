@@ -23,6 +23,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 #include "main/main_session.h"
 #include "data/data_peer_values.h"
+#include "data/data_saved_messages.h"
+#include "data/data_saved_sublist.h"
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "data/data_channel.h"
@@ -130,27 +132,36 @@ QBrush PeerListStoriesGradient(const style::PeerList &st) {
 }
 
 std::vector<Ui::OutlineSegment> PeerListStoriesSegments(
-		int count,
-		int unread,
+		PeerListStoriesCounts counts,
 		const QBrush &unreadBrush) {
-	Expects(unread <= count);
-	Expects(count > 0);
+	Expects(counts.unread <= counts.count);
+	Expects(counts.count > 0);
 
 	auto result = std::vector<Ui::OutlineSegment>();
 	const auto add = [&](bool unread) {
 		result.push_back({
-			.brush = unread ? unreadBrush : st::dialogsUnreadBgMuted->b,
+			.brush = (counts.videoStream
+				? st::attentionButtonFg->b
+				: unread
+				? unreadBrush
+				: st::dialogsUnreadBgMuted->b),
 			.width = (unread
 				? st::dialogsStoriesFull.lineTwice / 2.
 				: st::dialogsStoriesFull.lineReadTwice / 2.),
 		});
 	};
-	result.reserve(count);
-	for (auto i = 0, till = count - unread; i != till; ++i) {
-		add(false);
-	}
-	for (auto i = 0; i != unread; ++i) {
+	if (counts.videoStream) {
 		add(true);
+	} else {
+		const auto count = counts.count;
+		const auto unread = counts.unread;
+		result.reserve(count);
+		for (auto i = 0, till = count - unread; i != till; ++i) {
+			add(false);
+		}
+		for (auto i = 0; i != unread; ++i) {
+			add(true);
+		}
 	}
 	return result;
 }
@@ -519,18 +530,15 @@ void PeerListStories::updateColors() {
 	for (auto i = begin(_counts); i != end(_counts); ++i) {
 		if (const auto row = _delegate->peerListFindRow(i->first)) {
 			if (i->second.count >= 0 && i->second.unread >= 0) {
-				applyForRow(row, i->second.count, i->second.unread, true);
+				applyForRow(row, i->second, true);
 			}
 		}
 	}
 }
 
-void PeerListStories::updateFor(
-		uint64 id,
-		int count,
-		int unread) {
+void PeerListStories::updateFor(uint64 id, Counts counts) {
 	if (const auto row = _delegate->peerListFindRow(id)) {
-		applyForRow(row, count, unread);
+		applyForRow(row, counts);
 		_delegate->peerListUpdateRow(row);
 	}
 }
@@ -548,11 +556,14 @@ void PeerListStories::process(not_null<PeerListRow*> row) {
 		? 1
 		: 0;
 	const auto unread = source
-		? source->info().unreadCount
+		? int(source->info().unreadCount)
 		: user->hasUnreadStories()
 		? 1
 		: 0;
-	applyForRow(row, count, unread, true);
+	const auto videoStream = source
+		? bool(source->info().hasVideoStream)
+		: user->hasActiveVideoStream();
+	applyForRow(row, { count, unread, videoStream }, true);
 }
 
 bool PeerListStories::handleClick(not_null<PeerData*> peer) {
@@ -595,25 +606,28 @@ void PeerListStories::prepare(not_null<PeerListDelegate*> delegate) {
 		const auto info = source
 			? source->info()
 			: Data::StoriesSourceInfo();
-		updateFor(id.value, info.count, info.unreadCount);
+		updateFor(id.value, {
+			int(info.count),
+			int(info.unreadCount),
+			bool(info.hasVideoStream),
+		});
 	}, _lifetime);
 }
 
 void PeerListStories::applyForRow(
 		not_null<PeerListRow*> row,
-		int count,
-		int unread,
+		Counts counts,
 		bool force) {
-	auto &counts = _counts[row->id()];
-	if (!force && counts.count == count && counts.unread == unread) {
+	auto &existing = _counts[row->id()];
+	if (!force && existing == counts) {
 		return;
 	}
-	counts.count = count;
-	counts.unread = unread;
-	_delegate->peerListSetRowChecked(row, count > 0);
-	if (count > 0) {
+	existing = counts;
+	_delegate->peerListSetRowChecked(row, counts.count > 0);
+	if (counts.count > 0) {
 		row->setCustomizedCheckSegments(
-			PeerListStoriesSegments(count, unread, _unreadBrush));
+			PeerListStoriesSegments(counts, _unreadBrush),
+			counts.videoStream);
 	}
 }
 
@@ -829,7 +843,7 @@ void ChooseRecipientBoxController::rowClicked(not_null<PeerListRow*> row) {
 	auto guard = base::make_weak(this);
 	const auto peer = row->peer();
 	if (const auto forum = peer->forum()) {
-		const auto weak = std::make_shared<QPointer<Ui::BoxContent>>();
+		const auto weak = std::make_shared<base::weak_qptr<Ui::BoxContent>>();
 		auto callback = [=](not_null<Data::ForumTopic*> topic) {
 			const auto exists = guard.get();
 			if (!exists) {
@@ -860,6 +874,45 @@ void ChooseRecipientBoxController::rowClicked(not_null<PeerListRow*> row) {
 				});
 
 				forum->destroyed(
+				) | rpl::start_with_next([=] {
+					box->closeBox();
+				}, box->lifetime());
+			});
+		*weak = owned.data();
+		delegate()->peerListUiShow()->showBox(std::move(owned));
+		return;
+	} else if (const auto monoforum = peer->monoforum()) {
+		const auto weak = std::make_shared<base::weak_qptr<Ui::BoxContent>>();
+		auto callback = [=](not_null<Data::SavedSublist*> sublist) {
+			const auto exists = guard.get();
+			if (!exists) {
+				if (*weak) {
+					(*weak)->closeBox();
+				}
+				return;
+			}
+			auto onstack = std::move(_callback);
+			onstack(sublist);
+			if (guard) {
+				_callback = std::move(onstack);
+			} else if (*weak) {
+				(*weak)->closeBox();
+			}
+		};
+		const auto filter = [=](not_null<Data::SavedSublist*> sublist) {
+			return guard && (!_filter || _filter(sublist));
+		};
+		auto owned = Box<PeerListBox>(
+			std::make_unique<ChooseSublistBoxController>(
+				monoforum,
+				std::move(callback),
+				filter),
+			[=](not_null<PeerListBox*> box) {
+				box->addButton(tr::lng_cancel(), [=] {
+					box->closeBox();
+				});
+
+				monoforum->destroyed(
 				) | rpl::start_with_next([=] {
 					box->closeBox();
 				}, box->lifetime());
@@ -940,9 +993,9 @@ void ChooseTopicSearchController::searchQuery(const QString &query) {
 }
 
 void ChooseTopicSearchController::searchOnServer() {
-	_requestId = _api.request(MTPchannels_GetForumTopics(
-		MTP_flags(MTPchannels_GetForumTopics::Flag::f_q),
-		_forum->channel()->inputChannel,
+	_requestId = _api.request(MTPmessages_GetForumTopics(
+		MTP_flags(MTPmessages_GetForumTopics::Flag::f_q),
+		_forum->peer()->input,
 		MTP_string(_query),
 		MTP_int(_offsetDate),
 		MTP_int(_offsetId),
@@ -1135,6 +1188,111 @@ auto ChooseTopicBoxController::createRow(not_null<Data::ForumTopic*> topic)
 -> std::unique_ptr<Row> {
 	const auto skip = _filter && !_filter(topic);
 	return skip ? nullptr : std::make_unique<Row>(topic);
+};
+
+ChooseSublistBoxController::ChooseSublistBoxController(
+	not_null<Data::SavedMessages*> monoforum,
+	FnMut<void(not_null<Data::SavedSublist*>)> callback,
+	Fn<bool(not_null<Data::SavedSublist*>)> filter)
+: _monoforum(monoforum)
+, _callback(std::move(callback))
+, _filter(std::move(filter)) {
+	setStyleOverrides(&st::chooseTopicList);
+
+	_monoforum->chatsListChanges(
+	) | rpl::start_with_next([=] {
+		refreshRows();
+	}, lifetime());
+
+	_monoforum->sublistDestroyed(
+	) | rpl::start_with_next([=](not_null<Data::SavedSublist*> sublist) {
+		const auto id = sublist->sublistPeer()->id.value;
+		if (const auto row = delegate()->peerListFindRow(id)) {
+			delegate()->peerListRemoveRow(row);
+			delegate()->peerListRefreshRows();
+		}
+	}, lifetime());
+}
+
+Main::Session &ChooseSublistBoxController::session() const {
+	return _monoforum->session();
+}
+
+void ChooseSublistBoxController::rowClicked(not_null<PeerListRow*> row) {
+	const auto weak = base::make_weak(this);
+	auto onstack = base::take(_callback);
+	onstack(_monoforum->sublist(row->peer()));
+	if (weak) {
+		_callback = std::move(onstack);
+	}
+}
+
+void ChooseSublistBoxController::prepare() {
+	delegate()->peerListSetTitle(tr::lng_forward_choose());
+	setSearchNoResultsText(tr::lng_topics_not_found(tr::now));
+	delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
+	refreshRows(true);
+
+	session().changes().entryUpdates(
+		Data::EntryUpdate::Flag::Repaint
+	) | rpl::start_with_next([=](const Data::EntryUpdate &update) {
+		if (const auto sublist = update.entry->asSublist()) {
+			if (sublist->parent() == _monoforum) {
+				const auto id = sublist->sublistPeer()->id.value;
+				if (const auto row = delegate()->peerListFindRow(id)) {
+					delegate()->peerListUpdateRow(row);
+				}
+			}
+		}
+	}, lifetime());
+}
+
+void ChooseSublistBoxController::refreshRows(bool initial) {
+	auto added = false;
+	for (const auto &row : _monoforum->chatsList()->indexed()->all()) {
+		if (const auto sublist = row->sublist()) {
+			const auto id = sublist->sublistPeer()->id.value;
+			auto already = delegate()->peerListFindRow(id);
+			if (initial || !already) {
+				if (auto created = createRow(sublist)) {
+					delegate()->peerListAppendRow(std::move(created));
+					added = true;
+				}
+			} else if (already->isSearchResult()) {
+				delegate()->peerListAppendFoundRow(already);
+				added = true;
+			}
+		}
+	}
+	if (added) {
+		delegate()->peerListRefreshRows();
+	}
+}
+
+void ChooseSublistBoxController::loadMoreRows() {
+	_monoforum->loadMore();
+}
+
+std::unique_ptr<PeerListRow> ChooseSublistBoxController::createSearchRow(
+		PeerListRowId id) {
+	const auto peer = session().data().peer(PeerId(id));
+	if (const auto sublist = _monoforum->sublistLoaded(peer)) {
+		auto result = std::make_unique<PeerListRow>(sublist->sublistPeer());
+		result->setCustomStatus(QString());
+		return result;
+	}
+	return nullptr;
+}
+
+auto ChooseSublistBoxController::createRow(
+	not_null<Data::SavedSublist*> sublist)
+-> std::unique_ptr<PeerListRow> {
+	if (_filter && !_filter(sublist)) {
+		return nullptr;
+	}
+	auto result = std::make_unique<PeerListRow>(sublist->sublistPeer());
+	result->setCustomStatus(QString());
+	return result;
 };
 
 void PaintRestrictionBadge(

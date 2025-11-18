@@ -50,9 +50,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
-constexpr auto kSlowmodeValues = 7;
+constexpr auto kSlowmodeValues = 8;
 constexpr auto kBoostsUnrestrictValues = 5;
 constexpr auto kForceDisableTooltipDuration = 3 * crl::time(1000);
+constexpr auto kDefaultChargeStars = 10;
 
 [[nodiscard]] auto Dependencies(PowerSaving::Flags)
 -> std::vector<std::pair<PowerSaving::Flag, PowerSaving::Flag>> {
@@ -163,11 +164,15 @@ constexpr auto kForceDisableTooltipDuration = 3 * crl::time(1000);
 	auto stories = std::vector<AdminRightLabel>{
 		{ Flag::PostStories, tr::lng_rights_channel_post_stories(tr::now) },
 		{ Flag::EditStories, tr::lng_rights_channel_edit_stories(tr::now) },
-		{ Flag::DeleteStories, tr::lng_rights_channel_delete_stories(tr::now) },
+		{
+			Flag::DeleteStories,
+			tr::lng_rights_channel_delete_stories(tr::now),
+		},
 	};
 	auto second = std::vector<AdminRightLabel>{
 		{ Flag::InviteByLinkOrAdd, tr::lng_rights_group_invite(tr::now) },
 		{ Flag::ManageCall, tr::lng_rights_channel_manage_calls(tr::now) },
+		{ Flag::ManageDirect, tr::lng_rights_channel_manage_direct(tr::now) },
 		{ Flag::AddAdmins, tr::lng_rights_add_admins(tr::now) },
 	};
 	return {
@@ -183,12 +188,13 @@ int SlowmodeDelayByIndex(int index) {
 
 	switch (index) {
 	case 0: return 0;
-	case 1: return 10;
-	case 2: return 30;
-	case 3: return 60;
-	case 4: return 5 * 60;
-	case 5: return 15 * 60;
-	case 6: return 60 * 60;
+	case 1: return 5;
+	case 2: return 10;
+	case 3: return 30;
+	case 4: return 60;
+	case 5: return 5 * 60;
+	case 6: return 15 * 60;
+	case 7: return 60 * 60;
 	}
 	Unexpected("Index in SlowmodeDelayByIndex.");
 }
@@ -881,32 +887,18 @@ rpl::producer<int> AddSlowmodeSlider(
 	return secondsCount->value();
 }
 
-void AddBoostsUnrestrictLabels(
-		not_null<Ui::VerticalLayout*> container,
-		not_null<Main::Session*> session) {
+void AddBoostsUnrestrictLabels(not_null<Ui::VerticalLayout*> container) {
 	const auto labels = container->add(
 		object_ptr<Ui::FixedHeightWidget>(container, st::normalFont->height),
 		st::slowmodeLabelsMargin);
-	const auto manager = &session->data().customEmojiManager();
-	const auto one = Ui::Text::SingleCustomEmoji(
-		manager->registerInternalEmoji(
-			st::boostMessageIcon,
-			st::boostMessageIconPadding));
-	const auto many = Ui::Text::SingleCustomEmoji(
-		manager->registerInternalEmoji(
-			st::boostsMessageIcon,
-			st::boostsMessageIconPadding));
-	const auto context = Core::TextContext({
-		.session = session,
-		.customEmojiLoopLimit = 1,
-	});
+	const auto one = Ui::Text::IconEmoji(&st::boostMessageIcon);
+	const auto many = Ui::Text::IconEmoji(&st::boostsMessageIcon);
 	for (auto i = 0; i != kBoostsUnrestrictValues; ++i) {
 		const auto label = Ui::CreateChild<Ui::FlatLabel>(
 			labels,
 			st::boostsUnrestrictLabel);
 		label->setMarkedText(
-			TextWithEntities(i ? many : one).append(QString::number(i + 1)),
-			context);
+			TextWithEntities(i ? many : one).append(QString::number(i + 1)));
 		rpl::combine(
 			labels->widthValue(),
 			label->widthValue()
@@ -972,7 +964,7 @@ rpl::producer<int> AddBoostsUnrestrictSlider(
 
 	const auto inner = outer->entity();
 
-	AddBoostsUnrestrictLabels(inner, &peer->session());
+	AddBoostsUnrestrictLabels(inner);
 
 	const auto slider = inner->add(
 		object_ptr<Ui::MediaSlider>(inner, st::localStorageLimitSlider),
@@ -1174,7 +1166,7 @@ void ShowEditPeerPermissionsBox(
 	if (available) {
 		Ui::AddSkip(inner);
 		const auto starsPerMessage = peer->isChannel()
-			? peer->asChannel()->starsPerMessage()
+			? peer->asChannel()->commonStarsPerMessage()
 			: 0;
 		charging = inner->add(object_ptr<Ui::SettingsButton>(
 			inner,
@@ -1196,7 +1188,8 @@ void ShowEditPeerPermissionsBox(
 		state->starsPerMessage = SetupChargeSlider(
 			chargeInner,
 			peer,
-			starsPerMessage);
+			(starsPerMessage > 0) ? starsPerMessage : std::optional<int>(),
+			kDefaultChargeStars);
 	}
 
 	static constexpr auto kSendRestrictions = Flag::EmbedLinks

@@ -32,7 +32,9 @@ class FastButtonsBots;
 namespace Data {
 class Session;
 class Changes;
+class GiftAuctions;
 class RecentPeers;
+class RecentSharedMediaGifts;
 class ScheduledMessages;
 class SponsoredMessages;
 class TopPeers;
@@ -132,6 +134,12 @@ public:
 	}
 	[[nodiscard]] Data::RecentPeers &recentPeers() const {
 		return *_recentPeers;
+	}
+	[[nodiscard]] Data::RecentSharedMediaGifts &recentSharedGifts() const {
+		return *_recentSharedGifts;
+	}
+	[[nodiscard]] Data::GiftAuctions &giftAuctions() const {
+		return *_giftAuctions;
 	}
 	[[nodiscard]] Data::SponsoredMessages &sponsoredMessages() const {
 		return *_sponsoredMessages;
@@ -287,6 +295,8 @@ private:
 	const std::unique_ptr<SendAsPeers> _sendAsPeers;
 	const std::unique_ptr<InlineBots::AttachWebView> _attachWebView;
 	const std::unique_ptr<Data::RecentPeers> _recentPeers;
+	const std::unique_ptr<Data::RecentSharedMediaGifts> _recentSharedGifts;
+	const std::unique_ptr<Data::GiftAuctions> _giftAuctions;
 	const std::unique_ptr<Data::ScheduledMessages> _scheduledMessages;
 	const std::unique_ptr<Data::SponsoredMessages> _sponsoredMessages;
 	const std::unique_ptr<Data::TopPeers> _topPeers;

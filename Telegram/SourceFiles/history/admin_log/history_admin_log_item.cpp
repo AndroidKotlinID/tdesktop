@@ -111,7 +111,8 @@ std::optional<MTPMessageReplyHeader> PrepareLogReply(
 					MTP_int(topId),
 					MTPstring(), // quote_text
 					MTPVector<MTPMessageEntity>(), // quote_entities
-					MTPint()); // quote_offset
+					MTPint(), // quote_offset
+					MTPint()); // todo_item_id
 			}
 		}
 		return {};
@@ -131,6 +132,7 @@ MTPMessage PrepareLogMessage(const MTPMessage &message, TimeId newDate) {
 		const auto reply = PrepareLogReply(data.vreply_to());
 		const auto removeFlags = Flag::f_out
 			| Flag::f_post
+			| Flag::f_saved_peer_id
 			| Flag::f_reactions_are_possible
 			| Flag::f_reactions
 			| Flag::f_ttl_period
@@ -140,6 +142,7 @@ MTPMessage PrepareLogMessage(const MTPMessage &message, TimeId newDate) {
 			data.vid(),
 			data.vfrom_id() ? *data.vfrom_id() : MTPPeer(),
 			data.vpeer_id(),
+			MTPPeer(), // saved_peer_id
 			reply.value_or(MTPMessageReplyHeader()),
 			MTP_int(newDate),
 			data.vaction(),
@@ -150,6 +153,7 @@ MTPMessage PrepareLogMessage(const MTPMessage &message, TimeId newDate) {
 		const auto reply = PrepareLogReply(data.vreply_to());
 		const auto removeFlags = Flag::f_out
 			| Flag::f_post
+			| Flag::f_saved_peer_id
 			| (reply ? Flag() : Flag::f_reply_to)
 			| Flag::f_replies
 			| Flag::f_edit_date
@@ -160,7 +164,8 @@ MTPMessage PrepareLogMessage(const MTPMessage &message, TimeId newDate) {
 			| Flag::f_restriction_reason
 			| Flag::f_ttl_period
 			| Flag::f_factcheck
-			| Flag::f_report_delivery_until_date;
+			| Flag::f_report_delivery_until_date
+			| Flag::f_suggested_post;
 		return MTP_message(
 			MTP_flags(data.vflags().v & ~removeFlags),
 			data.vid(),
@@ -192,7 +197,9 @@ MTPMessage PrepareLogMessage(const MTPMessage &message, TimeId newDate) {
 			MTP_long(data.veffect().value_or_empty()),
 			MTPFactCheck(),
 			MTPint(), // report_delivery_until_date
-			MTP_long(data.vpaid_message_stars().value_or_empty()));
+			MTP_long(data.vpaid_message_stars().value_or_empty()),
+			MTPSuggestedPost(),
+			MTPint()); // schedule_repeat_period
 	});
 }
 
@@ -282,6 +289,7 @@ TextWithEntities GenerateAdminChangeText(
 		{ Flag::ManageTopics, tr::lng_admin_log_admin_manage_topics },
 		{ Flag::PinMessages, tr::lng_admin_log_admin_pin_messages },
 		{ Flag::ManageCall, tr::lng_admin_log_admin_manage_calls },
+		{ Flag::ManageDirect, tr::lng_admin_log_admin_manage_direct },
 		{ Flag::AddAdmins, tr::lng_admin_log_admin_add_admins },
 		{ Flag::Anonymous, tr::lng_admin_log_admin_remain_anonymous },
 	};
@@ -1908,8 +1916,12 @@ void GenerateItems(
 			const auto &setEmoji,
 			const auto &removeEmoji,
 			const auto &changeEmoji) {
-		const auto prevColor = was.data().vcolor();
-		const auto nextColor = now.data().vcolor();
+		const auto prevColor = (was.type() == mtpc_peerColor)
+			? was.c_peerColor().vcolor()
+			: tl::conditional<MTPint>();
+		const auto nextColor = (now.type() == mtpc_peerColor)
+			? now.c_peerColor().vcolor()
+			: tl::conditional<MTPint>();
 		if (prevColor != nextColor) {
 			const auto wrap = [&](tl::conditional<MTPint> value) {
 				return value
@@ -1927,8 +1939,12 @@ void GenerateItems(
 				Ui::Text::WithEntities);
 			addSimpleServiceMessage(text);
 		}
-		const auto prevEmoji = was.data().vbackground_emoji_id().value_or_empty();
-		const auto nextEmoji = now.data().vbackground_emoji_id().value_or_empty();
+		const auto prevEmoji = (was.type() == mtpc_peerColor)
+			? was.c_peerColor().vbackground_emoji_id().value_or_empty()
+			: uint64();
+		const auto nextEmoji = (now.type() == mtpc_peerColor)
+			? now.c_peerColor().vbackground_emoji_id().value_or_empty()
+			: uint64();
 		if (prevEmoji != nextEmoji) {
 			const auto text = !prevEmoji
 				? setEmoji(

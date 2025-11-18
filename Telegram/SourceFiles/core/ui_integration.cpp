@@ -254,11 +254,11 @@ std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
 	case EntityType::Pre:
 		return std::make_shared<MonospaceClickHandler>(data.text, data.type);
 	case EntityType::Phone:
-		return my->session
+		return (my && my->session)
 			? std::make_shared<PhoneClickHandler>(my->session, data.text)
 			: nullptr;
 	case EntityType::BankCard:
-		return my->session
+		return (my && my->session)
 			? std::make_shared<BankCardClickHandler>(my->session, data.text)
 			: nullptr;
 	}
@@ -438,6 +438,18 @@ QString UiIntegration::phraseBotAllowWriteConfirm() {
 
 QString UiIntegration::phraseQuoteHeaderCopy() {
 	return tr::lng_code_block_header_copy(tr::now);
+}
+
+QString UiIntegration::phraseMinimize() {
+	return tr::lng_minimize_window(tr::now);
+}
+
+QString UiIntegration::phraseMaximize() {
+	return tr::lng_maximize_window(tr::now);
+}
+
+QString UiIntegration::phraseRestore() {
+	return tr::lng_restore_window(tr::now);
 }
 
 bool OpenGLLastCheckFailed() {

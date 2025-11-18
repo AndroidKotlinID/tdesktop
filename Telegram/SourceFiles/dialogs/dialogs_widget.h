@@ -111,6 +111,8 @@ public:
 	void setInnerFocus(bool unfocusSearch = false);
 	[[nodiscard]] bool searchHasFocus() const;
 
+	[[nodiscard]] Data::Forum *openedForum() const;
+
 	void jumpToTop(bool belowPinned = false);
 	void raiseWithTooltip();
 
@@ -285,6 +287,7 @@ private:
 	void updateLockUnlockPosition();
 	void updateSuggestions(anim::type animated);
 	void processSearchFocusChange();
+	void closeSuggestions();
 
 	[[nodiscard]] bool redirectToSearchPossible() const;
 	[[nodiscard]] bool redirectKeyToSearch(QKeyEvent *e) const;
@@ -329,7 +332,7 @@ private:
 
 	base::unique_qptr<Ui::RpWidget> _chatFilters;
 
-	Ui::SlideWrap<Ui::RpWidget> *_topBarSuggestion = nullptr;
+	QPointer<Ui::SlideWrap<Ui::RpWidget>> _topBarSuggestion;
 	rpl::event_stream<int> _topBarSuggestionHeightChanged;
 	rpl::event_stream<bool> _searchStateForTopBarSuggestion;
 	rpl::event_stream<bool> _openedFolderOrForumChanges;

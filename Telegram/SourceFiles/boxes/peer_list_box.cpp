@@ -714,7 +714,7 @@ void PeerListRow::elementsPaint(
 }
 
 QString PeerListRow::generateName() {
-	return peer()->name();
+	return peer()->userpicPaintingPeer()->name();
 }
 
 QString PeerListRow::generateShortName() {
@@ -724,7 +724,7 @@ QString PeerListRow::generateShortName() {
 		? tr::lng_replies_messages(tr::now)
 		: _isVerifyCodesChat
 		? tr::lng_verification_codes(tr::now)
-		: peer()->shortName();
+		: peer()->userpicPaintingPeer()->shortName();
 }
 
 Ui::PeerUserpicView &PeerListRow::ensureUserpicView() {
@@ -740,7 +740,7 @@ PaintRoundImageCallback PeerListRow::generatePaintUserpicCallback(
 	const auto replies = _isRepliesMessagesChat;
 	const auto peer = this->peer();
 	auto userpic = saved ? Ui::PeerUserpicView() : ensureUserpicView();
-	if (forceRound && peer->isForum()) {
+	if (forceRound && (peer->isForum() || peer->isMonoforum())) {
 		return ForceRoundUserpicCallback(peer);
 	}
 	return [=](Painter &p, int x, int y, int outerWidth, int size) mutable {
@@ -810,6 +810,9 @@ int PeerListRow::paintNameIconGetWidth(
 			? st::dialogsPremiumIcon.over
 			: st::dialogsPremiumIcon.icon),
 		.scam = &(selected ? st::dialogsScamFgOver : st::dialogsScamFg),
+		.direct = &(selected
+			? st::windowSubTextFgOver
+			: st::windowSubTextFg),
 		.premiumFg = &(selected
 			? st::dialogsVerifiedIconBgOver
 			: st::dialogsVerifiedIconBg),
@@ -980,10 +983,11 @@ void PeerListRow::setCheckedInternal(bool checked, anim::type animated) {
 }
 
 void PeerListRow::setCustomizedCheckSegments(
-		std::vector<Ui::OutlineSegment> segments) {
+		std::vector<Ui::OutlineSegment> segments,
+		bool liveBadge) {
 	Expects(_checkbox != nullptr);
 
-	_checkbox->setCustomizedSegments(std::move(segments));
+	_checkbox->setCustomizedSegments(std::move(segments), liveBadge);
 }
 
 void PeerListRow::finishCheckedAnimation() {
@@ -1457,7 +1461,8 @@ void PeerListContent::setSearchMode(PeerListSearchMode mode) {
 					_loadingAnimation = Ui::CreateLoadingPeerListItemWidget(
 						this,
 						_st.item,
-						2);
+						2,
+						_controller->computeListSt().bg->c);
 				}
 			}
 		} else {

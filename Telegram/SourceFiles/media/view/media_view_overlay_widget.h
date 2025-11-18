@@ -27,7 +27,12 @@ namespace anim {
 enum class activation : uchar;
 } // namespace anim
 
+namespace Calls {
+class GroupCall;
+} // namespace Calls
+
 namespace Data {
+class GroupCall;
 class PhotoMedia;
 class DocumentMedia;
 struct StoriesContext;
@@ -78,6 +83,8 @@ struct ContentLayout;
 
 namespace Media::View {
 
+class VideoStream;
+class PlaybackSponsored;
 class GroupThumbs;
 class Pip;
 
@@ -107,15 +114,6 @@ public:
 	void activate();
 
 	void show(OpenRequest request);
-
-	//void leaveToChildEvent(QEvent *e, QWidget *child) override {
-	//	// e -- from enterEvent() of child TWidget
-	//	updateOverState(Over::None);
-	//}
-	//void enterFromChildEvent(QEvent *e, QWidget *child) override {
-	//	// e -- from leaveEvent() of child TWidget
-	//	updateOver(mapFromGlobal(QCursor::pos()));
-	//}
 
 	void activateControls();
 	void close();
@@ -170,6 +168,7 @@ private:
 			not_null<DocumentData*>> data;
 		HistoryItem *item = nullptr;
 		MsgId topicRootId = 0;
+		PeerId monoforumPeerId = 0;
 	};
 	enum class SavePhotoVideo {
 		None,
@@ -306,6 +305,7 @@ private:
 
 	void assignMediaPointer(DocumentData *document);
 	void assignMediaPointer(not_null<PhotoData*> photo);
+	void assignMediaPointer(std::shared_ptr<Data::GroupCall> call);
 
 	void updateOver(QPoint mpos);
 	void initFullScreen();
@@ -392,6 +392,9 @@ private:
 		anim::activation activation = anim::activation::normal,
 		const Data::CloudTheme &cloud = Data::CloudTheme(),
 		const StartStreaming &startStreaming = StartStreaming());
+	void displayVideoStream(
+		const std::shared_ptr<Data::GroupCall> &call,
+		anim::activation activation = anim::activation::normal);
 	void displayFinished(anim::activation activation);
 	void redisplayContent();
 	void findCurrent();
@@ -411,6 +414,7 @@ private:
 		const StartStreaming &startStreaming = StartStreaming());
 	void startStreamingPlayer(const StartStreaming &startStreaming);
 	void initStreamingThumbnail();
+	void markStreamedReady();
 	void streamingReady(Streaming::Information &&info);
 	[[nodiscard]] bool createStreamingObjects();
 	void handleStreamingUpdate(Streaming::Update &&update);
@@ -653,6 +657,10 @@ private:
 	rpl::event_stream<ChatHelpers::FileChosen> _storiesStickerOrEmojiChosen;
 	std::unique_ptr<Ui::LayerManager> _layerBg;
 
+	std::unique_ptr<VideoStream> _videoStream;
+	QString _callLinkSlug;
+	MsgId _callJoinMessageId;
+
 	const style::icon *_docIcon = nullptr;
 	style::color _docIconColor;
 	QString _docName, _docSize, _docExt;
@@ -674,6 +682,7 @@ private:
 	History *_migrated = nullptr;
 	History *_history = nullptr; // if conversation photos or files overview
 	MsgId _topicRootId = 0;
+	PeerId _monoforumPeerId = 0;
 	PeerData *_peer = nullptr;
 	UserData *_user = nullptr; // if user profile photos overview
 

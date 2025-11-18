@@ -48,7 +48,7 @@ auto GenerateGiveawayStart(
 			return Data{
 				.sticker = packs.lookup(months),
 				.size = st::msgServiceGiftBoxStickerSize,
-				.singleTimePlayback = true,
+				.stopOnLastFrame = true,
 			};
 		};
 		push(std::make_unique<StickerWithBadgePart>(
@@ -128,7 +128,7 @@ auto GenerateGiveawayStart(
 				lt_count,
 				quantity,
 				lt_duration,
-				Ui::Text::Bold(GiftDuration(months)),
+				Ui::Text::Bold(GiftDuration(months * 30)),
 				Ui::Text::RichLangValue),
 			st::chatGiveawayPrizesMargin);
 		pushText(
@@ -222,7 +222,7 @@ auto GenerateGiveawayResults(
 				.sticker = packs.lookup(emoji, 0),
 				.skipTop = st::chatGiveawayWinnersTopSkip,
 				.size = st::maxAnimatedEmojiSize,
-				.singleTimePlayback = true,
+				.stopOnLastFrame = true,
 			};
 		};
 		push(std::make_unique<StickerWithBadgePart>(

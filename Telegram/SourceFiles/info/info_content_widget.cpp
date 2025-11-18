@@ -17,6 +17,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_widget.h"
 #include "info/media/info_media_widget.h"
 #include "info/common_groups/info_common_groups_widget.h"
+#include "info/peer_gifts/info_peer_gifts_common.h"
+#include "info/saved/info_saved_music_common.h"
+#include "info/stories/info_stories_common.h"
 #include "info/info_layer_widget.h"
 #include "info/info_section_widget.h"
 #include "info/info_controller.h"
@@ -37,6 +40,36 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QCoreApplication>
 
 namespace Info {
+namespace {
+
+class FlexibleFiller final : public Ui::RpWidget {
+public:
+	using RpWidget::RpWidget;
+
+	void setTargetWidget(base::unique_qptr<RpWidget> widget);
+
+private:
+	void visibleTopBottomUpdated(int visibleTop, int visibleBottom) override;
+
+	base::unique_qptr<RpWidget> _target;
+
+};
+
+void FlexibleFiller::setTargetWidget(base::unique_qptr<RpWidget> widget) {
+	Expects(!_target);
+
+	_target = std::move(widget);
+}
+
+void FlexibleFiller::visibleTopBottomUpdated(
+		int visibleTop,
+		int visibleBottom) {
+	if (const auto raw = _target.get()) {
+		raw->setVisibleTopBottom(visibleTop, visibleBottom);
+	}
+}
+
+} // namespace
 
 ContentWidget::ContentWidget(
 	QWidget *parent,
@@ -200,6 +233,36 @@ Ui::RpWidget *ContentWidget::doSetInnerWidget(
 	return _innerWrap->entity();
 }
 
+Ui::RpWidget *ContentWidget::doSetupFlexibleInnerWidget(
+		object_ptr<Ui::RpWidget> inner,
+		FlexibleScrollData &flexibleScroll,
+		Fn<void(Ui::RpWidget*)> customSetup) {
+	const auto filler = setInnerWidget(object_ptr<FlexibleFiller>(this));
+	filler->resize(1, 1);
+
+	flexibleScroll.contentHeightValue.events(
+	) | rpl::start_with_next([=](int h) {
+		filler->resize(filler->width(), h);
+	}, filler->lifetime());
+
+	filler->widthValue(
+	) | rpl::start_to_stream(
+		flexibleScroll.fillerWidthValue,
+		filler->lifetime());
+
+	if (customSetup) {
+		customSetup(filler);
+	}
+
+	// ScrollArea -> PaddingWrap -> RpWidget.
+	const auto result = inner.release();
+	result->setParent(filler->parentWidget()->parentWidget());
+	result->raise();
+	filler->setTargetWidget(base::unique_qptr<Ui::RpWidget>(result));
+
+	return result;
+}
+
 int ContentWidget::scrollTillBottom(int forHeight) const {
 	const auto scrollHeight = forHeight
 		- _scrollTopSkip.current()
@@ -307,6 +370,7 @@ QRect ContentWidget::floatPlayerAvailableRect() const {
 void ContentWidget::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 	const auto peer = _controller->key().peer();
 	const auto topic = _controller->key().topic();
+	const auto sublist = _controller->key().sublist();
 	if (!peer && !topic) {
 		return;
 	}
@@ -316,6 +380,8 @@ void ContentWidget::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 		Dialogs::EntryState{
 			.key = (topic
 				? Dialogs::Key{ topic }
+				: sublist
+				? Dialogs::Key{ sublist }
 				: Dialogs::Key{ peer->owner().history(peer) }),
 			.section = Dialogs::EntryState::Section::Profile,
 		},
@@ -378,7 +444,7 @@ void ContentWidget::refreshSearchField(bool shown) {
 		view->show();
 		_searchField->setFocus();
 		setScrollTopSkip(view->heightNoMargins() - st::lineWidth);
-	} else {
+	} else if (_searchWrap) {
 		if (Ui::InFocusChain(this)) {
 			setFocus();
 		}
@@ -465,14 +531,27 @@ void ContentWidget::setupSwipeHandler(not_null<Ui::RpWidget*> widget) {
 Key ContentMemento::key() const {
 	if (const auto topic = this->topic()) {
 		return Key(topic);
+	} else if (const auto sublist = this->sublist()) {
+		return Key(sublist);
 	} else if (const auto peer = this->peer()) {
 		return Key(peer);
 	} else if (const auto poll = this->poll()) {
 		return Key(poll, pollContextId());
 	} else if (const auto self = settingsSelf()) {
 		return Settings::Tag{ self };
+	} else if (const auto gifts = giftsPeer()) {
+		return PeerGifts::Tag{
+			gifts,
+			giftsCollectionId(),
+		};
 	} else if (const auto stories = storiesPeer()) {
-		return Stories::Tag{ stories, storiesTab() };
+		return Stories::Tag{
+			stories,
+			storiesAlbumId(),
+			storiesAddToAlbumId(),
+		};
+	} else if (const auto music = musicPeer()) {
+		return Saved::MusicTag{ music };
 	} else if (statisticsTag().peer) {
 		return statisticsTag();
 	} else if (const auto starref = starrefPeer()) {
@@ -489,12 +568,14 @@ Key ContentMemento::key() const {
 ContentMemento::ContentMemento(
 	not_null<PeerData*> peer,
 	Data::ForumTopic *topic,
+	Data::SavedSublist *sublist,
 	PeerId migratedPeerId)
 : _peer(peer)
-, _migratedPeerId((!topic && peer->migrateFrom())
+, _migratedPeerId((!topic && !sublist && peer->migrateFrom())
 	? peer->migrateFrom()->id
 	: 0)
-, _topic(topic) {
+, _topic(topic)
+, _sublist(sublist) {
 	if (_topic) {
 		_peer->owner().itemIdChanged(
 		) | rpl::start_with_next([=](const Data::Session::IdChange &change) {
@@ -514,7 +595,17 @@ ContentMemento::ContentMemento(Downloads::Tag downloads) {
 
 ContentMemento::ContentMemento(Stories::Tag stories)
 : _storiesPeer(stories.peer)
-, _storiesTab(stories.tab) {
+, _storiesAlbumId(stories.albumId)
+, _storiesAddToAlbumId(stories.addingToAlbumId) {
+}
+
+ContentMemento::ContentMemento(Saved::MusicTag music)
+: _musicPeer(music.peer) {
+}
+
+ContentMemento::ContentMemento(PeerGifts::Tag gifts)
+: _giftsPeer(gifts.peer)
+, _giftsCollectionId(gifts.collectionId) {
 }
 
 ContentMemento::ContentMemento(Statistics::Tag statistics)

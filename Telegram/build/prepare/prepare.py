@@ -456,7 +456,7 @@ if customRunCommand:
 stage('patches', """
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 7119a74e3f
+    git checkout c91bf24dcdf814cc3a3a37e2cb980ccb95f0f39f
 """)
 
 stage('msys64', """
@@ -467,7 +467,7 @@ win:
     SET CHERE_INVOKING=enabled_from_arguments
     SET MSYS2_PATH_TYPE=inherit
 
-    powershell -Command "iwr -OutFile ./msys64.exe https://github.com/msys2/msys2-installer/releases/download/2025-02-21/msys2-base-x86_64-20250221.sfx.exe"
+    powershell -Command "iwr -OutFile ./msys64.exe https://github.com/msys2/msys2-installer/releases/download/2025-08-30/msys2-base-x86_64-20250830.sfx.exe"
     msys64.exe
     del msys64.exe
 
@@ -518,7 +518,7 @@ if not mac or 'build-stackwalk' in options:
 win:
     git clone https://github.com/desktop-app/gyp.git
     cd gyp
-    git checkout 618958fdbe
+    git checkout 5e2425c47b
 mac:
     python3 -m pip install \\
         --ignore-installed \\
@@ -749,7 +749,7 @@ win:
 
 # Somehow in x86 Debug build dav1d crashes on AV1 10bpc videos.
 stage('dav1d', """
-    git clone -b 1.4.1 https://code.videolan.org/videolan/dav1d.git
+    git clone -b 1.5.1 https://code.videolan.org/videolan/dav1d.git
     cd dav1d
 win32:
     SET "TARGET=x86"
@@ -817,7 +817,7 @@ mac:
 """)
 
 stage('openh264', """
-    git clone -b v2.4.1 https://github.com/cisco/openh264.git
+    git clone -b v2.6.0 https://github.com/cisco/openh264.git
     cd openh264
 win32:
     SET "TARGET=x86"
@@ -878,7 +878,7 @@ mac:
 """)
 
 stage('libavif', """
-    git clone -b v1.0.4 https://github.com/AOMediaCodec/libavif.git
+    git clone -b v1.3.0 https://github.com/AOMediaCodec/libavif.git
     cd libavif
 win:
     cmake . ^
@@ -888,7 +888,8 @@ win:
         -DCMAKE_POLICY_DEFAULT_CMP0091=NEW ^
         -DBUILD_SHARED_LIBS=OFF ^
         -DAVIF_ENABLE_WERROR=OFF ^
-        -DAVIF_CODEC_DAV1D=ON
+        -DAVIF_CODEC_DAV1D=SYSTEM ^
+        -DAVIF_LIBYUV=OFF
     cmake --build . --config Debug --parallel
     cmake --install . --config Debug
 release:
@@ -901,16 +902,15 @@ mac:
         -D CMAKE_INSTALL_PREFIX:STRING=$USED_PREFIX \\
         -D BUILD_SHARED_LIBS=OFF \\
         -D AVIF_ENABLE_WERROR=OFF \\
-        -D AVIF_CODEC_DAV1D=ON \\
-        -D CMAKE_DISABLE_FIND_PACKAGE_libsharpyuv=ON
+        -D AVIF_CODEC_DAV1D=SYSTEM \\
+        -D AVIF_LIBYUV=OFF
     cmake --build . --config MinSizeRel $MAKE_THREADS_CNT
     cmake --install . --config MinSizeRel
 """)
 
 stage('libde265', """
-    git clone -b v1.0.15 https://github.com/strukturag/libde265.git
+    git clone -b v1.0.16 https://github.com/strukturag/libde265.git
     cd libde265
-    git cherry-pick 5c5af1e
 win:
     cmake . ^
         -A %WIN32X64% ^
@@ -943,7 +943,7 @@ mac:
 """)
 
 stage('libwebp', """
-    git clone -b v1.4.0 https://github.com/webmproject/libwebp.git
+    git clone -b v1.5.0 https://github.com/webmproject/libwebp.git
     cd libwebp
 win:
     nmake /f Makefile.vc CFG=debug-static OBJDIR=out RTLIBCFG=static all
@@ -983,23 +983,31 @@ mac:
 """)
 
 stage('libheif', """
-    git clone -b v1.18.2 https://github.com/strukturag/libheif.git
+    git clone -b v1.19.8 https://github.com/strukturag/libheif.git
     cd libheif
 win:
     %THIRDPARTY_DIR%\\msys64\\usr\\bin\\sed.exe -i 's/LIBHEIF_EXPORTS/LIBDE265_STATIC_BUILD/g' libheif/CMakeLists.txt
     %THIRDPARTY_DIR%\\msys64\\usr\\bin\\sed.exe -i 's/HAVE_VISIBILITY/LIBHEIF_STATIC_BUILD/g' libheif/CMakeLists.txt
+    %THIRDPARTY_DIR%\\msys64\\usr\\bin\\sed.exe -i 's/LIBHEIF_EXPORTS/LIBDE265_STATIC_BUILD/g' heifio/CMakeLists.txt
+    %THIRDPARTY_DIR%\\msys64\\usr\\bin\\sed.exe -i 's/HAVE_VISIBILITY/LIBHEIF_STATIC_BUILD/g' heifio/CMakeLists.txt
     cmake . ^
         -A %WIN32X64% ^
         -DCMAKE_INSTALL_PREFIX=%LIBS_DIR%/local ^
         -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" ^
         -DBUILD_SHARED_LIBS=OFF ^
+        -DCMAKE_DISABLE_FIND_PACKAGE_Doxygen=ON ^
         -DBUILD_TESTING=OFF ^
         -DENABLE_PLUGIN_LOADING=OFF ^
         -DWITH_LIBDE265=ON ^
+        -DWITH_OpenH264_DECODER=OFF ^
         -DWITH_SvtEnc=OFF ^
         -DWITH_SvtEnc_PLUGIN=OFF ^
         -DWITH_RAV1E=OFF ^
         -DWITH_RAV1E_PLUGIN=OFF ^
+        -DWITH_LIBSHARPYUV=OFF ^
+        -DCMAKE_DISABLE_FIND_PACKAGE_TIFF=TRUE ^
+        -DCMAKE_DISABLE_FIND_PACKAGE_JPEG=TRUE ^
+        -DCMAKE_DISABLE_FIND_PACKAGE_PNG=TRUE ^
         -DWITH_EXAMPLES=OFF
     cmake --build . --config Debug --parallel
     cmake --install . --config Debug
@@ -1012,19 +1020,23 @@ mac:
         -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
         -D CMAKE_INSTALL_PREFIX:STRING=$USED_PREFIX \\
         -D BUILD_SHARED_LIBS=OFF \\
+        -D CMAKE_DISABLE_FIND_PACKAGE_Doxygen=ON \\
         -D BUILD_TESTING=OFF \\
         -D ENABLE_PLUGIN_LOADING=OFF \\
         -D WITH_AOM_ENCODER=OFF \\
         -D WITH_AOM_DECODER=OFF \\
         -D WITH_X265=OFF \\
+        -D WITH_OpenH264_DECODER=OFF \\
         -D WITH_SvtEnc=OFF \\
         -D WITH_RAV1E=OFF \\
         -D WITH_DAV1D=ON \\
         -D WITH_LIBDE265=ON \\
         -D LIBDE265_INCLUDE_DIR=$USED_PREFIX/include/ \\
         -D LIBDE265_LIBRARY=$USED_PREFIX/lib/libde265.a \\
-        -D LIBSHARPYUV_INCLUDE_DIR=$USED_PREFIX/include/webp/ \\
-        -D LIBSHARPYUV_LIBRARY=$USED_PREFIX/lib/libsharpyuv.a \\
+        -D WITH_LIBSHARPYUV=OFF \\
+        -D CMAKE_DISABLE_FIND_PACKAGE_TIFF=TRUE \\
+        -D CMAKE_DISABLE_FIND_PACKAGE_JPEG=TRUE \\
+        -D CMAKE_DISABLE_FIND_PACKAGE_PNG=TRUE \\
         -D WITH_EXAMPLES=OFF
     cmake --build . --config MinSizeRel $MAKE_THREADS_CNT
     cmake --install . --config MinSizeRel
@@ -1557,7 +1569,6 @@ release:
 depends:patches/qtbase_""" + qt + """/*.patch
     cd qtbase
 win:
-    git revert --no-edit 6ad56dce34
     setlocal enabledelayedexpansion
     for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do (
         git apply %%i -v
@@ -1643,7 +1654,7 @@ mac:
     make install
 """)
 else: # qt > '6'
-    branch = 'v$QT' + ('-lts-lgpl' if qt < '6.3' else '')
+    branch = 'v$QT' + ('-lts-lgpl' if qt.startswith('6.2.') else '')
     stage('qt_' + qt, """
     git clone -b """ + branch + """ https://github.com/qt/qt5.git qt_$QT
     cd qt_$QT
@@ -1672,8 +1683,6 @@ mac:
         -I "$USED_PREFIX/include" \
         -no-feature-futimens \
         -no-feature-brotli \
-        -nomake examples \
-        -nomake tests \
         -platform macx-clang -- \
         -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
         -DCMAKE_PREFIX_PATH="$USED_PREFIX"
@@ -1703,13 +1712,10 @@ win:
         -static ^
         -static-runtime ^
         -feature-c++20 ^
-        -no-sbom ^
         -openssl linked ^
         -system-webp ^
         -system-zlib ^
         -system-libjpeg ^
-        -nomake examples ^
-        -nomake tests ^
         -platform win32-msvc ^
         -D ZLIB_WINAPI ^
         -- ^
@@ -1746,7 +1752,7 @@ win:
 stage('tg_owt', """
     git clone https://github.com/desktop-app/tg_owt.git
     cd tg_owt
-    git checkout c4192e8
+    git checkout 5c5c71258777d0196dbb3a09cc37d2f56ead28ab
     git submodule update --init --recursive
 win:
     SET MOZJPEG_PATH=$LIBS_DIR/mozjpeg
@@ -1865,7 +1871,7 @@ release:
 """)
 
 stage('ada', """
-    git clone -b v3.2.2 https://github.com/ada-url/ada.git
+    git clone -b v3.2.4 https://github.com/ada-url/ada.git
     cd ada
 win:
     cmake -B out . ^

@@ -101,6 +101,9 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 	if (action.options.scheduled) {
 		flags |= MessageFlag::IsOrWasScheduled;
 		sendFlags |= MTPmessages_SendMedia::Flag::f_schedule_date;
+		if (action.options.scheduleRepeatPeriod) {
+			sendFlags |= MTPmessages_SendMedia::Flag::f_schedule_repeat_period;
+		}
 	}
 	if (action.options.shortcutId) {
 		flags |= MessageFlag::ShortcutMessage;
@@ -108,6 +111,9 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 	}
 	if (action.options.effectId) {
 		sendFlags |= MTPmessages_SendMedia::Flag::f_effect;
+	}
+	if (action.options.suggest) {
+		sendFlags |= MTPmessages_SendMedia::Flag::f_suggested_post;
 	}
 	if (action.options.invertCaption) {
 		flags |= MessageFlag::InvertMedia;
@@ -133,10 +139,12 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 			MTPReplyMarkup(),
 			MTPvector<MTPMessageEntity>(),
 			MTP_int(action.options.scheduled),
+			MTP_int(action.options.scheduleRepeatPeriod),
 			(sendAs ? sendAs->input : MTP_inputPeerEmpty()),
 			Data::ShortcutIdToMTP(session, action.options.shortcutId),
 			MTP_long(action.options.effectId),
-			MTP_long(starsPaid)
+			MTP_long(starsPaid),
+			SuggestToMTP(action.options.suggest)
 		), [=](const MTPUpdates &result, const MTP::Response &response) {
 	}, [=](const MTP::Error &error, const MTP::Response &response) {
 		api->sendMessageFail(error, peer, randomId);
@@ -203,6 +211,9 @@ void SendExistingMedia(
 	if (action.options.scheduled) {
 		flags |= MessageFlag::IsOrWasScheduled;
 		sendFlags |= MTPmessages_SendMedia::Flag::f_schedule_date;
+		if (action.options.scheduleRepeatPeriod) {
+			sendFlags |= MTPmessages_SendMedia::Flag::f_schedule_repeat_period;
+		}
 	}
 	if (action.options.shortcutId) {
 		flags |= MessageFlag::ShortcutMessage;
@@ -210,6 +221,9 @@ void SendExistingMedia(
 	}
 	if (action.options.effectId) {
 		sendFlags |= MTPmessages_SendMedia::Flag::f_effect;
+	}
+	if (action.options.suggest) {
+		sendFlags |= MTPmessages_SendMedia::Flag::f_suggested_post;
 	}
 	if (action.options.invertCaption) {
 		flags |= MessageFlag::InvertMedia;
@@ -232,6 +246,7 @@ void SendExistingMedia(
 		.starsPaid = starsPaid,
 		.postAuthor = NewMessagePostAuthor(action),
 		.effectId = action.options.effectId,
+		.suggest = HistoryMessageSuggestInfo(action.options),
 	}, media, caption);
 
 	const auto performRequest = [=](const auto &repeatRequest) -> void {
@@ -252,10 +267,12 @@ void SendExistingMedia(
 				MTPReplyMarkup(),
 				sentEntities,
 				MTP_int(action.options.scheduled),
+				MTP_int(action.options.scheduleRepeatPeriod),
 				(sendAs ? sendAs->input : MTP_inputPeerEmpty()),
 				Data::ShortcutIdToMTP(session, action.options.shortcutId),
 				MTP_long(action.options.effectId),
-				MTP_long(starsPaid)
+				MTP_long(starsPaid),
+				SuggestToMTP(action.options.suggest)
 			), [=](const MTPUpdates &result, const MTP::Response &response) {
 		}, [=](const MTP::Error &error, const MTP::Response &response) {
 			if (error.code() == 400
@@ -383,6 +400,9 @@ bool SendDice(MessageToSend &message) {
 	if (action.options.scheduled) {
 		flags |= MessageFlag::IsOrWasScheduled;
 		sendFlags |= MTPmessages_SendMedia::Flag::f_schedule_date;
+		if (action.options.scheduleRepeatPeriod) {
+			sendFlags |= MTPmessages_SendMedia::Flag::f_schedule_repeat_period;
+		}
 	}
 	if (action.options.shortcutId) {
 		flags |= MessageFlag::ShortcutMessage;
@@ -390,6 +410,9 @@ bool SendDice(MessageToSend &message) {
 	}
 	if (action.options.effectId) {
 		sendFlags |= MTPmessages_SendMedia::Flag::f_effect;
+	}
+	if (action.options.suggest) {
+		sendFlags |= MTPmessages_SendMedia::Flag::f_suggested_post;
 	}
 	if (action.options.invertCaption) {
 		flags |= MessageFlag::InvertMedia;
@@ -415,6 +438,7 @@ bool SendDice(MessageToSend &message) {
 		.starsPaid = starsPaid,
 		.postAuthor = NewMessagePostAuthor(action),
 		.effectId = action.options.effectId,
+		.suggest = HistoryMessageSuggestInfo(action.options),
 	}, TextWithEntities(), MTP_messageMediaDice(
 		MTP_int(0),
 		MTP_string(emoji)));
@@ -432,10 +456,12 @@ bool SendDice(MessageToSend &message) {
 			MTPReplyMarkup(),
 			MTP_vector<MTPMessageEntity>(),
 			MTP_int(action.options.scheduled),
+			MTP_int(action.options.scheduleRepeatPeriod),
 			(sendAs ? sendAs->input : MTP_inputPeerEmpty()),
 			Data::ShortcutIdToMTP(session, action.options.shortcutId),
 			MTP_long(action.options.effectId),
-			MTP_long(starsPaid)
+			MTP_long(starsPaid),
+			SuggestToMTP(action.options.suggest)
 		), [=](const MTPUpdates &result, const MTP::Response &response) {
 	}, [=](const MTP::Error &error, const MTP::Response &response) {
 		api->sendMessageFail(error, peer, randomId, newId);
@@ -624,6 +650,7 @@ void SendConfirmedFile(
 		edition.useSameMarkup = true;
 		edition.useSameReplies = true;
 		edition.useSameReactions = true;
+		edition.useSameSuggest = true;
 		edition.savePreviousMedia = true;
 		itemToEdit->applyEdition(std::move(edition));
 	} else {
@@ -640,6 +667,7 @@ void SendConfirmedFile(
 			.postAuthor = NewMessagePostAuthor(action),
 			.groupedId = groupId,
 			.effectId = file->to.options.effectId,
+			.suggest = HistoryMessageSuggestInfo(file->to.options),
 		}, caption, media);
 	}
 

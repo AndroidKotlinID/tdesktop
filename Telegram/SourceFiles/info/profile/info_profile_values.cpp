@@ -93,6 +93,9 @@ void StripExternalLinks(TextWithEntities &text) {
 } // namespace
 
 rpl::producer<QString> NameValue(not_null<PeerData*> peer) {
+	if (const auto broadcast = peer->monoforumBroadcast()) {
+		return NameValue(broadcast);
+	}
 	return peer->session().changes().peerFlagsValue(
 		peer,
 		UpdateFlag::Name
@@ -240,11 +243,42 @@ rpl::producer<TextWithEntities> AboutValue(not_null<PeerData*> peer) {
 	});
 }
 
-rpl::producer<LinkWithUrl> LinkValue(not_null<PeerData*> peer, bool primary) {
+QString TopicLink(not_null<Data::ForumTopic*> topic, bool full) {
+	const auto channel = topic->channel();
+	const auto id = topic->rootId();
+	const auto base = channel->hasUsername()
+		? channel->username()
+		: "c/" + QString::number(peerToChannel(channel->id).bare);
+	return channel->session().createInternalLinkFull(full
+		? base + '/' + QString::number(id.bare)
+		: base);
+}
+
+rpl::producer<LinkWithUrl> LinkValue(
+		not_null<PeerData*> peer,
+		bool primary,
+		MsgId rootId) {
 	return (primary
 		? PlainPrimaryUsernameValue(peer)
 		: PlainUsernameValue(peer) | rpl::type_erased()
 	) | rpl::map([=](QString &&username) {
+		if (username.isEmpty()) {
+			if (const auto topic
+				= rootId ? peer->forumTopicFor(rootId) : nullptr) {
+				const auto link = TopicLink(topic, false);
+				return LinkWithUrl{
+					.text = link,
+					.url = link,
+				};
+			} else {
+				return LinkWithUrl{};
+			}
+		} else {
+			return LinkWithUrl{
+				.text = peer->session().createInternalLinkFull(username),
+				.url = UsernameUrl(peer, username, true),
+			};
+		}
 		return LinkWithUrl{
 			.text = (username.isEmpty()
 				? QString()
@@ -278,10 +312,10 @@ rpl::producer<bool> NotificationsEnabledValue(
 			Data::TopicUpdate::Flag::Notifications
 		) | rpl::to_empty,
 		topic->session().changes().peerUpdates(
-			topic->channel(),
+			topic->peer(),
 			UpdateFlag::Notifications
 		) | rpl::to_empty,
-		topic->owner().notifySettings().defaultUpdates(topic->channel())
+		topic->owner().notifySettings().defaultUpdates(topic->peer())
 	) | rpl::map([=] {
 		return !topic->owner().notifySettings().isMuted(topic);
 	}) | rpl::distinct_until_changed();
@@ -540,6 +574,7 @@ rpl::producer<int> KickedCountValue(not_null<ChannelData*> channel) {
 rpl::producer<int> SharedMediaCountValue(
 		not_null<PeerData*> peer,
 		MsgId topicRootId,
+		PeerId monoforumPeerId,
 		PeerData *migrated,
 		Storage::SharedMediaType type) {
 	auto aroundId = 0;
@@ -550,6 +585,7 @@ rpl::producer<int> SharedMediaCountValue(
 			SparseIdsMergedSlice::Key(
 				peer->id,
 				topicRootId,
+				monoforumPeerId,
 				migrated ? migrated->id : 0,
 				aroundId),
 			type),
@@ -588,8 +624,8 @@ rpl::producer<int> SavedSublistCountValue(
 		not_null<PeerData*> peer) {
 	const auto saved = &peer->owner().savedMessages();
 	const auto sublist = saved->sublist(peer);
-	if (!sublist->fullCount()) {
-		saved->loadMore(sublist);
+	if (!sublist->fullCount().has_value()) {
+		sublist->loadFullCount();
 		return rpl::single(0) | rpl::then(sublist->fullCountValue());
 	}
 	return sublist->fullCountValue();
@@ -659,6 +695,8 @@ rpl::producer<BadgeType> BadgeValueFromFlags(Peer peer) {
 			? BadgeType::Scam
 			: (value & Flag::Fake)
 			? BadgeType::Fake
+			: peer->isMonoforum()
+			? BadgeType::Direct
 			: (value & Flag::Verified)
 			? BadgeType::Verified
 			: premium
