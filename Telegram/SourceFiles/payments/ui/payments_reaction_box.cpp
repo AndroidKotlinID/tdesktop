@@ -396,9 +396,10 @@ void FillTopReactors(
 		not_null<RpWidget*> parent,
 		rpl::producer<TextWithEntities> title,
 		rpl::producer<QString> subtext,
+		Fn<void()> click,
 		Text::MarkedContext context,
 		bool dark) {
-	const auto result = CreateChild<RpWidget>(parent);
+	const auto result = CreateChild<AbstractButton>(parent);
 
 	const auto titleHeight = st::starSelectInfoTitle.style.font->height;
 	const auto subtextHeight = st::starSelectInfoSubtext.style.font->height;
@@ -427,6 +428,14 @@ void FillTopReactors(
 		result,
 		std::move(subtext),
 		dark ? st::videoStreamInfoSubtext : st::starSelectInfoSubtext);
+
+	if (click) {
+		result->setClickedCallback(std::move(click));
+		titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+		subtextLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+	} else {
+		result->setAttribute(Qt::WA_TransparentForMouseEvents);
+	}
 
 	rpl::combine(
 		result->widthValue(),
@@ -484,6 +493,7 @@ void PaidReactionsBox(
 	const auto colorings = args.colorings;
 	const auto videoStreamChoosing = args.videoStreamChoosing;
 	const auto videoStreamSending = args.videoStreamSending;
+	const auto videoStreamAdmin = args.videoStreamAdmin;
 	const auto videoStream = videoStreamChoosing || videoStreamSending;
 	const auto initialShownPeer = ranges::find(
 		args.top,
@@ -506,7 +516,8 @@ void PaidReactionsBox(
 		return Ui::ColorFromSerialized(coloring.bgLight);
 	};
 	AddStarSelectBubble(
-		box,
+		content,
+		BoxShowFinishes(box),
 		state->chosen.value(),
 		args.max,
 		videoStream ? activeFgOverride : Fn<QColor(int)>());
@@ -520,7 +531,7 @@ void PaidReactionsBox(
 		(dark ? st::darkEditStarsSlider : st::paidReactSlider),
 		args.min,
 		args.explicitlyAllowed,
-		args.chosen,
+		rpl::single(args.chosen),
 		args.max,
 		changed,
 		videoStream ? activeFgOverride : Fn<QColor(int)>());
@@ -534,8 +545,12 @@ void PaidReactionsBox(
 			content,
 			std::move(args.top),
 			colorings,
-			state->chosen.value(),
-			state->shownPeer.value(),
+			(videoStreamAdmin
+				? rpl::single(state->chosen.current())
+				: state->chosen.value() | rpl::type_erased()),
+			(videoStreamAdmin
+				? rpl::single(state->shownPeer.current())
+				: state->shownPeer.value() | rpl::type_erased()),
 			[=](uint64 barePeerId) {
 				state->shownPeer = state->savedShownPeer = barePeerId;
 			},
@@ -554,7 +569,9 @@ void PaidReactionsBox(
 	box->addRow(
 		object_ptr<FlatLabel>(
 			box,
-			(videoStreamChoosing
+			(videoStreamAdmin
+				? tr::lng_paid_admin_title()
+				: videoStreamChoosing
 				? tr::lng_paid_comment_title()
 				: videoStreamSending
 				? tr::lng_paid_reaction_title()
@@ -569,22 +586,24 @@ void PaidReactionsBox(
 			+ QMargins(0, st::lineWidth, 0, st::boostBottomSkip)));
 	const auto label = CreateChild<FlatLabel>(
 		labelWrap,
-		(videoStream
+		(videoStreamAdmin
+			? tr::lng_paid_admin_about(tr::marked)
+			: videoStream
 			? (videoStreamChoosing
 				? tr::lng_paid_comment_about
 				: tr::lng_paid_reaction_about)(
 					lt_name,
-					rpl::single(Text::Bold(args.name)),
-					Text::RichLangValue)
+					rpl::single(tr::bold(args.name)),
+					tr::rich)
 			: already
 			? tr::lng_paid_react_already(
 				lt_count,
 				rpl::single(already) | tr::to_count(),
-				Text::RichLangValue)
+				tr::rich)
 			: tr::lng_paid_react_about(
 				lt_channel,
-				rpl::single(Text::Bold(args.name)),
-				Text::RichLangValue)),
+				rpl::single(tr::bold(args.name)),
+				tr::rich)),
 		dark ? st::darkEditStarsText : st::boostText);
 	label->setTryMakeSimilarLines(true);
 	labelWrap->widthValue() | rpl::start_with_next([=](int width) {
@@ -620,15 +639,17 @@ void PaidReactionsBox(
 
 	AddDividerText(
 		content,
-		tr::lng_paid_react_agree(
-			lt_link,
-			rpl::combine(
-				tr::lng_paid_react_agree_link(),
-				tr::lng_group_invite_subscription_about_url()
-			) | rpl::map([](const QString &text, const QString &url) {
-				return Ui::Text::Link(text, url);
-			}),
-			Ui::Text::RichLangValue),
+		(videoStreamAdmin
+			? tr::lng_paid_react_admin_cant(tr::marked)
+			: tr::lng_paid_react_agree(
+				lt_link,
+				rpl::combine(
+					tr::lng_paid_react_agree_link(),
+					tr::lng_group_invite_subscription_about_url()
+				) | rpl::map([](const QString &text, const QString &url) {
+					return tr::link(text, url);
+				}),
+				tr::rich)),
 		st::defaultBoxDividerLabelPadding,
 		dark ? st::groupCallDividerLabel : st::defaultDividerLabel);
 
@@ -787,11 +808,10 @@ void PaidReactionSlider(
 		const style::MediaSlider &st,
 		int min,
 		int explicitlyAllowed,
-		int current,
+		rpl::producer<int> current,
 		int max,
 		Fn<void(int)> changed,
 		Fn<QColor(int)> activeFgOverride) {
-	Expects(current >= 1 && current <= max);
 	Expects(explicitlyAllowed <= max);
 
 	if (!explicitlyAllowed) {
@@ -818,13 +838,22 @@ void PaidReactionSlider(
 	const auto discreter = StarSelectDiscreterForMax(max);
 	slider->setAlwaysDisplayMarker(true);
 	slider->setDirection(ContinuousSlider::Direction::Horizontal);
-	slider->setValue(discreter.valueToRatio(current));
+
 	const auto ratioToValue = [=](float64 ratio) {
 		const auto value = discreter.ratioToValue(ratio);
 		return (value <= explicitlyAllowed && explicitlyAllowed < min)
 			? explicitlyAllowed
 			: std::max(value, min);
 	};
+
+	std::move(current) | rpl::start_with_next([=](int value) {
+		value = std::clamp(value, 1, max);
+		if (discreter.ratioToValue(slider->value()) != value) {
+			slider->setValue(discreter.valueToRatio(value));
+			update(value);
+		}
+	}, slider->lifetime());
+
 	slider->setAdjustCallback([=](float64 ratio) {
 		return discreter.valueToRatio(ratioToValue(ratio));
 	});
@@ -835,7 +864,8 @@ void PaidReactionSlider(
 	};
 	slider->setChangeProgressCallback(callback);
 	slider->setChangeFinishedCallback(callback);
-	update(current);
+
+
 
 	struct State {
 		StarParticles particles = StarParticles(
@@ -919,8 +949,9 @@ void AddStarSelectBalance(
 	}, balance->lifetime());
 }
 
-void AddStarSelectBubble(
-		not_null<GenericBox*> box,
+not_null<Premium::BubbleWidget*> AddStarSelectBubble(
+		not_null<VerticalLayout*> container,
+		rpl::producer<> showFinishes,
 		rpl::producer<int> value,
 		int max,
 		Fn<QColor(int)> activeFgOverride) {
@@ -940,19 +971,21 @@ void AddStarSelectBubble(
 	});
 
 	const auto bubble = Premium::AddBubbleRow(
-		box->verticalLayout(),
+		container,
 		st::boostBubble,
-		BoxShowFinishes(box),
+		std::move(showFinishes),
 		std::move(bubbleRowState),
 		Premium::BubbleType::Credits,
 		nullptr,
 		&st::paidReactBubbleIcon,
 		st::boxRowPadding);
+	bubble->show();
 	if (activeFgOverride) {
 		std::move(value) | rpl::start_with_next([=](int count) {
 			bubble->setBrushOverride(activeFgOverride(count));
 		}, bubble->lifetime());
 	}
+	return bubble;
 }
 
 object_ptr<RpWidget> MakeStarSelectInfoBlocks(
@@ -975,6 +1008,7 @@ object_ptr<RpWidget> MakeStarSelectInfoBlocks(
 			raw,
 			std::move(info.title),
 			std::move(info.subtext),
+			std::move(info.click),
 			context,
 			dark));
 	}

@@ -127,7 +127,7 @@ namespace {
 		.autocompleteMentions = false,
 		.autocompleteCommands = false,
 		.recordMediaMessage = !videoStream,
-		.editMessageStars = videoStream && !videoStreamManager,
+		.editMessageStars = videoStream,
 		.emojiOnlyPanel = videoStream,
 	};
 }
@@ -896,9 +896,9 @@ void ReplyArea::show(
 			_controls->commentsShownToggles());
 	}
 	using Controls = HistoryView::ComposeControls;
-	_controls->setStarsReactionCounter(stream
-		? _controller->starsReactionsValue()
-		: nullptr);
+	_controls->setStarsReactionCounter(
+		stream ? _controller->starsReactionsValue() : nullptr,
+		stream ? _controller->starsReactionsEffects() : nullptr);
 	_controller->setStarsReactionIncrements(
 		_controls->starsReactionIncrements(
 		) | rpl::map([](Controls::StarReactionIncrement increment) {

@@ -65,7 +65,7 @@ auto TopVideoStreamDonors(not_null<Calls::GroupCall*> call)
 -> rpl::producer<std::vector<Data::MessageReactionsTopPaid>> {
 	const auto messages = call->messages();
 	return rpl::single(rpl::empty) | rpl::then(
-		messages->starsValueChanges()
+		messages->starsValueChanges() | rpl::to_empty
 	) | rpl::map([=] {
 		const auto &list = messages->starsTop().topDonors;
 		auto still = Ui::MaxTopPaidDonorsShown();
@@ -237,10 +237,7 @@ VideoStream::VideoStream(
 		TopDonorPlaces(_call.get()),
 		_call->messages()->idUpdates(),
 		_call->canManageValue(),
-		rpl::combine(
-			_call->messagesEnabledValue(),
-			_commentsShown.value(),
-			rpl::mappers::_1 && rpl::mappers::_2))) {
+		_commentsShown.value())) {
 	Core::App().calls().registerVideoStream(_call.get());
 	setupMembers();
 	setupVideo();
@@ -275,12 +272,12 @@ void VideoStream::ensureBorrowedRenderer(QOpenGLFunctions &f) {
 	_viewport->ensureBorrowedRenderer(f);
 }
 
-void VideoStream::ensureBorrowedCleared(QOpenGLFunctions *f) {
-	_viewport->ensureBorrowedCleared(f);
-}
-
 void VideoStream::borrowedPaint(QOpenGLFunctions &f) {
 	_viewport->borrowedPaint(f);
+}
+
+void VideoStream::ensureBorrowedRenderer() {
+	_viewport->ensureBorrowedRenderer();
 }
 
 void VideoStream::borrowedPaint(Painter &p, const QRegion &clip) {

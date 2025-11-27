@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/event_filter.h"
 #include "base/platform/base_platform_info.h"
 #include "base/qt_signal_producer.h"
+#include "base/random.h"
 #include "base/timer_rpl.h"
 #include "base/unixtime.h"
 #include "boxes/edit_caption_box.h"
@@ -30,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/notify/data_notify_settings.h"
 #include "data/data_changes.h"
 #include "data/data_drafts.h"
+#include "data/data_group_call.h"
 #include "data/data_messages.h"
 #include "data/data_message_reactions.h"
 #include "data/data_saved_sublist.h"
@@ -49,6 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "api/api_chat_participants.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/color_int_conversion.h"
 #include "ui/painter.h"
 #include "ui/power_saving.h"
 #include "history/history.h"
@@ -88,13 +91,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/silent_toggle.h"
 #include "ui/chat/choose_send_as.h"
 #include "ui/effects/spoiler_mess.h"
+#include "ui/effects/reaction_fly_animation.h"
 #include "webrtc/webrtc_environment.h"
 #include "window/window_adaptive.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
 #include "mainwindow.h"
+#include "styles/style_calls.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_credits.h"
 #include "styles/style_menu_icons.h"
 
 namespace HistoryView {
@@ -109,6 +115,12 @@ constexpr auto kMouseEvents = {
 	QEvent::MouseButtonRelease
 };
 constexpr auto kRefreshSlowmodeLabelTimeout = crl::time(200);
+constexpr auto kMaxStarSendEffects = 4;
+constexpr auto kMaxStarEffects = 4;
+constexpr auto kStarEffectDuration = 2 * crl::time(1000);
+constexpr auto kStarEffectRotationMax = 12;
+constexpr auto kStarEffectScaleMin = 0.3;
+constexpr auto kStarEffectScaleMax = 0.7;
 
 constexpr auto kCommonModifiers = 0
 	| Qt::ShiftModifier
@@ -879,6 +891,87 @@ SendMenu::Details FieldHeader::saveMenuDetails(bool hasSendText) const {
 		: SendMenu::Details();
 }
 
+struct ComposeControls::StarEffect {
+	StarEffect(
+		not_null<Ui::RpWidget*> canvas,
+		SendStarButtonEffect effect);
+
+	Ui::ReactionFlyAnimation around;
+	Ui::PeerUserpicView userpic;
+	QImage badge;
+	not_null<PeerData*> from;
+	crl::time start = 0;
+	float64 shift = 0.;
+	float64 progress = 0.;
+	int stars = 0;
+};
+
+ComposeControls::StarEffect::StarEffect(
+	not_null<Ui::RpWidget*> canvas,
+	SendStarButtonEffect effect)
+: around(
+	&effect.from->owner().reactions(),
+	Ui::ReactionFlyAnimationArgs{
+		.id = Data::ReactionId::Paid(),
+		.effectOnly = true,
+	},
+	[canvas] { canvas->update(); },
+	st::reactionInlineImage)
+, from(effect.from)
+, start(crl::now())
+, stars(effect.stars) {
+	auto price = Ui::Text::String(
+		st::whoReadDateStyle,
+		Ui::Text::IconEmoji(
+			&st::starIconEmojiSmall
+		).append(Lang::FormatCountDecimal(stars)),
+		kMarkupTextOptions);
+	const auto padding = st::groupCallEffectPadding;
+	const auto priceHeight = st::whoReadDateStyle.font->height;
+	const auto priceTop = padding.top();
+	const auto height = priceTop + priceHeight + padding.bottom();
+
+	const auto userpicPadding = st::groupCallEffectUserpicPadding;
+	const auto userpicSize = height
+		- userpicPadding.top()
+		- userpicPadding.bottom();
+
+	const auto leftSkip = userpicPadding.left()
+		+ userpicSize
+		+ userpicPadding.right();
+	const auto widthSkip = leftSkip + padding.right();
+
+	const auto width = widthSkip + price.maxWidth();
+	const auto priceLeft = leftSkip;
+
+	const auto ratio = style::DevicePixelRatio();
+	badge = QImage(
+		QSize(width, height) * ratio,
+		QImage::Format_ARGB32_Premultiplied);
+	badge.fill(Qt::transparent);
+	badge.setDevicePixelRatio(ratio);
+
+	auto p = QPainter(&badge);
+	auto hq = PainterHighQualityEnabler(p);
+	const auto bg = Ui::ColorFromSerialized(StarsColoringForCount(
+		from->session().appConfig().groupCallColorings(),
+		stars).bgLight);
+	p.setPen(Qt::NoPen);
+	p.setBrush(bg);
+	p.drawRoundedRect(0, 0, width, height, height / 2., height / 2.);
+	from->paintUserpic(p, userpic, PaintUserpicContext{
+		.position = QPoint(userpicPadding.left(), userpicPadding.top()),
+		.size = userpicSize,
+		.shape = Ui::PeerUserpicShape::Circle,
+	});
+	p.setPen(st::white);
+	price.draw(p, {
+		.position = QPoint(priceLeft, priceTop),
+		.availableWidth = price.maxWidth(),
+	});
+	shift = base::RandomIndex(360) / 360.;
+}
+
 ComposeControls::ComposeControls(
 	not_null<Ui::RpWidget*> parent,
 	ComposeControlsDescriptor descriptor)
@@ -910,7 +1003,7 @@ ComposeControls::ComposeControls(
 	? _regularWindow->tabbedSelector()
 	: not_null(_ownedSelector.get()))
 , _mode(descriptor.mode)
-, _wrap(std::make_unique<Ui::RpWidget>(parent))
+, _wrap(std::make_unique<Ui::RpWidget>(_parent))
 , _send(std::make_shared<Ui::SendButton>(_wrap.get(), _st.send))
 , _like(_features.likes
 	? Ui::CreateChild<Ui::IconButton>(_wrap.get(), _st.like)
@@ -943,7 +1036,7 @@ ComposeControls::ComposeControls(
 , _voiceRecordBar(std::make_unique<VoiceRecordBar>(
 	_wrap.get(),
 	Controls::VoiceRecordBarDescriptor{
-		.outerContainer = parent,
+		.outerContainer = _parent,
 		.show = _show,
 		.send = _send,
 		.customCancelText = descriptor.voiceCustomCancelText,
@@ -1090,9 +1183,12 @@ void ComposeControls::initLikeButton() {
 }
 
 void ComposeControls::initEditStarsButton() {
-	if (!_features.editMessageStars) {
+	if (!editStarsButtonShown()) {
 		delete base::take(_editStars);
-		_chosenStarsCount = std::nullopt;
+		if (_chosenStarsCount) {
+			_chosenStarsCount = std::nullopt;
+			updateSendButtonType();
+		}
 		return;
 	}
 	if (_chosenStarsCount.value_or(0) < _minStarsCount.current()) {
@@ -1128,22 +1224,27 @@ void ComposeControls::editStarsFrom(int selected) {
 	}));
 }
 
-void ComposeControls::updateLikeParent() {
-	if (_like) {
-		using namespace Controls;
-		const auto hidden = _like->isHidden();
-		const auto &restriction = _writeRestriction.current();
-		if (_writeRestricted
-			&& restriction.type == WriteRestrictionType::PremiumRequired) {
-			_like->setParent(_writeRestricted.get());
+void ComposeControls::updateControlsParents() {
+	const auto toggle = [&](auto &&control, bool inRestriction) {
+		if (!control) {
+			return;
+		}
+		const auto hidden = control->isHidden();
+		if (_writeRestricted && inRestriction) {
+			control->setParent(_writeRestricted.get());
 		} else {
-			_like->setParent(_wrap.get());
+			control->setParent(_wrap.get());
 		}
 		if (!hidden) {
-			_like->show();
+			control->show();
 			updateControlsGeometry(_wrap->size());
 		}
-	}
+	};
+	using Type = Controls::WriteRestrictionType;
+	const auto &restriction = _writeRestriction.current();
+	toggle(_like, restriction.type == Type::PremiumRequired);
+	toggle(_commentsShown, restriction.type != Type::None);
+	toggle(_starsReaction, restriction.type != Type::None);
 }
 
 void ComposeControls::updateFeatures(ChatHelpers::ComposeFeatures features) {
@@ -1156,7 +1257,7 @@ void ComposeControls::updateFeatures(ChatHelpers::ComposeFeatures features) {
 		} else {
 			_like = Ui::CreateChild<Ui::IconButton>(_wrap.get(), _st.like);
 			initLikeButton();
-			updateLikeParent();
+			updateControlsParents();
 			if (updateLikeShown()) {
 				updateControlsVisibility();
 			}
@@ -1285,19 +1386,26 @@ void ComposeControls::setToggleCommentsButton(
 		_commentsShown->setClickedCallback([=] {
 			_commentsShownToggles.fire({});
 		});
+		updateControlsParents();
+		_commentsShownHidden.value(
+		) | rpl::start_with_next([=](bool hidden) {
+			if (_commentsShown->isHidden() != hidden) {
+				if (hidden) {
+					_commentsShown->hide();
+				} else {
+					_commentsShown->show();
+					updateControlsGeometry(_wrap->size());
+				}
+			}
+		}, _commentsShown->lifetime());
 		std::move(
 			state
 		) | rpl::start_with_next([=](ToggleCommentsState value) {
 			if (value == ToggleCommentsState::Empty) {
-				if (!_commentsShown->isHidden()) {
-					_commentsShown->hide();
-					updateControlsGeometry(_wrap->size());
-				}
+				_commentsShownHidden = true;
 				return;
-			} else if (_commentsShown->isHidden()) {
-				_commentsShown->show();
-				updateControlsGeometry(_wrap->size());
 			}
+			_commentsShownHidden = false;
 			const auto icon = (value == ToggleCommentsState::Shown)
 				? &_st.commentsShown
 				: nullptr;
@@ -1318,7 +1426,8 @@ rpl::producer<> ComposeControls::commentsShownToggles() const {
 }
 
 void ComposeControls::setStarsReactionCounter(
-		rpl::producer<Ui::SendStarButtonState> count) {
+		rpl::producer<Ui::SendStarButtonState> count,
+		rpl::producer<SendStarButtonEffect> effects) {
 	if (!count) {
 		delete base::take(_starsReaction);
 		updateControlsGeometry(_wrap->size());
@@ -1328,6 +1437,7 @@ void ComposeControls::setStarsReactionCounter(
 			_st.attach,
 			_st.starsReactionCounter,
 			std::move(count));
+		updateControlsParents();
 		updateControlsVisibility();
 
 		_starsReaction->widthValue(
@@ -1338,14 +1448,16 @@ void ComposeControls::setStarsReactionCounter(
 		_starsReaction->setAcceptBoth();
 		_starsReaction->clicks(
 		) | rpl::start_with_next([=](Qt::MouseButton button) {
-			if (button == Qt::LeftButton) {
+			if (_chosenStarsCount && button == Qt::LeftButton) {
 				_starsReactionIncrements.fire({ .count = 1 });
+				startStarsSendEffect();
 			} else {
 				_show->show(Calls::Group::MakeVideoStreamStarsBox({
 					.show = _show,
 					.top = _starsReactionTop.current(),
 					.current = 0,
 					.sending = true,
+					.admin = !_chosenStarsCount,
 					.save = crl::guard(_starsReaction, [=](int count) {
 						_starsReactionIncrements.fire({
 							.count = count,
@@ -1354,10 +1466,201 @@ void ComposeControls::setStarsReactionCounter(
 					}),
 					.name = _history ? _history->peer->shortName() : QString(),
 				}));
-
 			}
 		}, _starsReaction->lifetime());
+
+		std::move(
+			effects
+		) | rpl::start_with_next([=](const SendStarButtonEffect &event) {
+			startStarsEffect(event);
+		}, _starsReaction->lifetime());
 	}
+}
+
+void ComposeControls::startStarsSendEffect() {
+	if (!_starSendEffectsCanvas) {
+		setupStarsSendEffectsCanvas();
+	}
+	while (_starSendEffects.size() >= kMaxStarSendEffects) {
+		_starSendEffects.erase(begin(_starSendEffects));
+	}
+	_starSendEffects.push_back(std::make_unique<Ui::ReactionFlyAnimation>(
+		&_show->session().data().reactions(),
+		Ui::ReactionFlyAnimationArgs{
+			.id = Data::ReactionId::Paid(),
+			.effectOnly = true,
+		},
+		[raw = _starSendEffectsCanvas.get()] { raw->update(); },
+		st::reactionInlineImage));
+}
+
+void ComposeControls::setupStarsSendEffectsCanvas() {
+	_starSendEffectsCanvas = std::make_unique<Ui::RpWidget>(_parent);
+
+	const auto raw = _starSendEffectsCanvas.get();
+	raw->show();
+	raw->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+	const auto effectSize = st::reactionInlineImage * 2;
+
+	rpl::combine(
+		_wrap->geometryValue(),
+		_writeRestricted->geometryValue(),
+		_starsReaction->geometryValue()
+	) | rpl::start_with_next([=](QRect wrap, QRect restriction, QRect star) {
+		const auto parent = (_starsReaction->parentWidget() == _wrap.get())
+			? wrap
+			: restriction;
+		const auto adjusted = star.translated(parent.topLeft());
+
+		raw->setGeometry(
+			adjusted.x() + (adjusted.width() - effectSize) / 2,
+			adjusted.y() + (adjusted.height() - effectSize) / 2,
+			effectSize,
+			effectSize);
+	}, raw->lifetime());
+
+	raw->paintRequest() | rpl::start_with_next([=] {
+		for (auto i = begin(_starSendEffects); i != end(_starSendEffects);) {
+			if ((*i)->finished()) {
+				i = _starSendEffects.erase(i);
+			} else {
+				++i;
+			}
+		}
+		if (_starSendEffects.empty()) {
+			crl::on_main(raw, [=] {
+				if (_starSendEffectsCanvas.get() == raw
+					&& _starSendEffects.empty()) {
+					_starSendEffectsCanvas = nullptr;
+				}
+			});
+			return;
+		}
+		auto p = QPainter(raw);
+		const auto now = crl::now();
+		const auto size = raw->width();
+		const auto color = st::radialFg->c;
+		const auto skip = (size - st::reactionInlineImage) / 2;
+		const auto target = QRect(
+			QPoint(skip, skip),
+			QSize(st::reactionInlineImage, st::reactionInlineImage));
+		for (const auto &animation : _starSendEffects) {
+			animation->paintGetArea(p, {}, target, color, {}, now);
+		}
+	}, raw->lifetime());
+}
+
+void ComposeControls::startStarsEffect(SendStarButtonEffect event) {
+	if (!_starEffectsCanvas) {
+		setupStarsEffectsCanvas();
+	}
+	while (_starEffects.size() >= kMaxStarEffects) {
+		_starEffects.erase(begin(_starEffects));
+	}
+	_starEffects.push_back(std::make_unique<StarEffect>(
+		_starEffectsCanvas.get(),
+		event));
+}
+
+void ComposeControls::setupStarsEffectsCanvas() {
+	_starEffectsCanvas = std::make_unique<Ui::RpWidget>(_parent);
+
+	const auto raw = _starEffectsCanvas.get();
+	raw->show();
+	raw->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+	raw->lifetime().make_state<Ui::Animations::Basic>([=] {
+		raw->update();
+	})->start();
+
+	const auto effectSize = st::reactionInlineImage * 2;
+	const auto width = effectSize * 2;
+	const auto height = effectSize * 4;
+
+	rpl::combine(
+		_wrap->geometryValue(),
+		_writeRestricted->geometryValue(),
+		_starsReaction->geometryValue()
+	) | rpl::start_with_next([=](QRect wrap, QRect restriction, QRect star) {
+		const auto parent = (_starsReaction->parentWidget() == _wrap.get())
+			? wrap
+			: restriction;
+		const auto adjusted = star.translated(parent.topLeft());
+
+		raw->setGeometry(
+			adjusted.x() + (adjusted.width() - width) / 2,
+			adjusted.y() + adjusted.height() - height,
+			width,
+			height);
+	}, raw->lifetime());
+
+	raw->paintRequest() | rpl::start_with_next([=] {
+		const auto now = crl::now();
+		for (auto i = begin(_starEffects); i != end(_starEffects);) {
+			const auto progress = float64(now - (*i)->start)
+				/ kStarEffectDuration;
+			if (progress >= 1.) {
+				i = _starEffects.erase(i);
+			} else {
+				(*i)->progress = progress;
+				++i;
+			}
+		}
+		if (_starEffects.empty()) {
+			crl::on_main(raw, [=] {
+				if (_starEffectsCanvas.get() == raw
+					&& _starEffects.empty()) {
+					_starEffectsCanvas = nullptr;
+				}
+			});
+			return;
+		}
+		auto p = QPainter(raw);
+		auto hq = PainterHighQualityEnabler(p);
+		const auto color = st::radialFg->c;
+		const auto skip = (effectSize - st::reactionInlineImage) / 2;
+		for (const auto &animation : _starEffects) {
+			const auto progress = animation->progress;
+			const auto left = anim::interpolate(
+				0,
+				width - effectSize,
+				animation->shift);
+			const auto top = anim::interpolate(
+				height - effectSize,
+				0,
+				progress);
+			const auto opacity = (progress < 0.125) ?
+				(progress / 0.125) :
+				(progress > 0.875) ?
+				(1. - progress) / 0.125
+				: 1.;
+			const auto scale = kStarEffectScaleMin
+				+ (kStarEffectScaleMax - kStarEffectScaleMin) * opacity;
+
+			const auto rotation = qSin(-M_PI_2
+				+ M_PI * (animation->shift + animation->progress)
+			) * kStarEffectRotationMax;
+			const auto target = QRect(
+				QPoint(left + skip, top + skip),
+				QSize(st::reactionInlineImage, st::reactionInlineImage));
+			const auto size = animation->badge.size()
+				/ animation->badge.devicePixelRatio();
+			const auto dx = (target.width() - size.width()) / 2;
+			const auto dy = (target.height() - size.height()) / 2;
+
+			p.save();
+			p.translate(target.center());
+			p.rotate(rotation);
+			p.scale(scale, scale);
+			p.translate(-target.center());
+			p.setOpacity(opacity);
+			p.drawImage(target.topLeft() + QPoint(dx, dy), animation->badge);
+			p.restore();
+
+			animation->around.paintGetArea(p, {}, target, color, {}, now);
+		}
+	}, raw->lifetime());
 }
 
 void ComposeControls::setStarsReactionTop(
@@ -1895,7 +2198,7 @@ bool ComposeControls::showRecordButton() const {
 }
 
 bool ComposeControls::showEditStarsButton() const {
-	return _features.editMessageStars
+	return editStarsButtonShown()
 		&& !HasSendText(_field)
 		&& !readyToForward()
 		&& !isEditingMessage()
@@ -1912,13 +2215,17 @@ void ComposeControls::clearListenState() {
 }
 
 void ComposeControls::clearChosenStarsForMessage() {
-	const auto empty = _features.editMessageStars
+	const auto empty = editStarsButtonShown()
 		? _minStarsCount.current()
 		: std::optional<int>();
 	if (_chosenStarsCount != empty) {
 		_chosenStarsCount = empty;
 		updateSendButtonType();
 	}
+}
+
+bool ComposeControls::editStarsButtonShown() const {
+	return _features.editMessageStars && !_videoStreamAdmin.current();
 }
 
 int ComposeControls::chosenStarsForMessage() const {
@@ -2817,7 +3124,7 @@ void ComposeControls::initWriteRestriction() {
 	}, _writeRestricted->lifetime());
 	_writeRestricted->resize(
 		_writeRestricted->width(),
-		st::historyUnblock.height);
+		_st.send.inner.height);
 	const auto background = [=](QPainter &p, QRect clip) {
 		paintBackground(p, _writeRestricted->rect(), clip);
 	};
@@ -2949,7 +3256,7 @@ void ComposeControls::updateWrappingVisibility() {
 		_writeRestricted->setVisible(!hidden && restricted);
 	}
 	_wrap->setVisible(!hidden && !restricted);
-	updateLikeParent();
+	updateControlsParents();
 	if (!hidden && !restricted) {
 		updateControlsGeometry(_wrap->size());
 		_wrap->raise();
@@ -3004,9 +3311,9 @@ void ComposeControls::updateSendButtonType() {
 	_send->setState({
 		.type = type,
 		.fillBgOverride = (_chosenStarsCount.value_or(0)
-			? StarsColoringForCount(
+			? Ui::ColorFromSerialized(StarsColoringForCount(
 				appConfig.groupCallColorings(),
-				*_chosenStarsCount).bgLight
+				*_chosenStarsCount).bgLight)
 			: QColor()),
 		.slowmodeDelay = delay,
 		.starsToSend = shownStarsPerMessage(),
@@ -3159,6 +3466,9 @@ void ComposeControls::updateControlsVisibility() {
 	if (_scheduled) {
 		_scheduled->setVisible(!isEditingMessage());
 	}
+	if (_commentsShown) {
+		_commentsShown->setVisible(!_commentsShownHidden.current());
+	}
 	if (_starsReaction) {
 		_starsReaction->show();
 	}
@@ -3238,6 +3548,7 @@ bool ComposeControls::updateSendAsButton(
 		if (!_sendAs) {
 			return false;
 		}
+		_videoStreamAdmin = false;
 		_sendAs = nullptr;
 		return true;
 	} else if (_sendAs) {
@@ -3247,8 +3558,12 @@ bool ComposeControls::updateSendAsButton(
 	_sendAs = std::make_unique<Ui::SendAsButton>(_wrap.get(), st.button);
 	if (videoStream) {
 		Ui::SetupSendAsButton(_sendAs.get(), st, videoStream, _show);
+		_videoStreamAdmin = videoStream->creator();
+		initEditStarsButton();
+		updateControlsGeometry(_wrap->size());
 	} else {
 		Ui::SetupSendAsButton(_sendAs.get(), st, rpl::single(peer), _show);
+		_videoStreamAdmin = false;
 	}
 	return true;
 }
@@ -3286,15 +3601,13 @@ void ComposeControls::paintBackground(QPainter &p, QRect full, QRect clip) {
 		p.setBrush(_st.bg);
 		p.setPen(Qt::NoPen);
 		const auto r = _st.radius;
-		if (_commentsShown
-			&& !_commentsShown->isHidden()
-			&& !_wrap->isHidden()) {
+		if (_commentsShown && !_commentsShown->isHidden()) {
 			p.drawRoundedRect(_commentsShown->geometry(), r, r);
 			full.setLeft(full.left()
 				+ _commentsShown->width()
 				+ _st.commentsSkip);
 		}
-		if (_starsReaction && !_wrap->isHidden()) {
+		if (_starsReaction) {
 			full.setWidth(full.width()
 				- _starsReaction->width()
 				- _st.starsSkip);

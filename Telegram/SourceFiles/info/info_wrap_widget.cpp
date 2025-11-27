@@ -421,8 +421,7 @@ void WrapWidget::setupTopBarMenuToggle() {
 				const auto button = _topBar->addButton(
 					base::make_unique_q<Ui::IconButton>(_topBar, st));
 				button->addClickHandler([show, self] {
-					show->show(
-						Box(Ui::FillPeerQrBox, self, std::nullopt, nullptr));
+					Ui::DefaultShowFillPeerQrBoxCallback(show, self);
 				});
 			}
 		}
@@ -946,7 +945,11 @@ void WrapWidget::showNewContent(
 void WrapWidget::showNewContent(not_null<ContentMemento*> memento) {
 	// Validates contentGeometry().
 	setupTop();
-	showContent(createContent(memento, _controller.get()));
+	auto newContent = createContent(memento, _controller.get());
+	if (!_topBar && hasBackButton()) {
+		newContent->enableBackButton();
+	}
+	showContent(std::move(newContent));
 }
 
 void WrapWidget::resizeEvent(QResizeEvent *e) {
