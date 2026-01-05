@@ -407,6 +407,8 @@ PRIVATE
     calls/calls_instance.h
     calls/calls_panel.cpp
     calls/calls_panel.h
+    calls/calls_panel_background.cpp
+    calls/calls_panel_background.h
     calls/calls_signal_bars.cpp
     calls/calls_signal_bars.h
     calls/calls_top_bar.cpp
@@ -922,6 +924,8 @@ PRIVATE
     history/view/history_view_pinned_tracker.h
     history/view/history_view_quick_action.cpp
     history/view/history_view_quick_action.h
+    history/view/history_view_reaction_preview.cpp
+    history/view/history_view_reaction_preview.h
     history/view/history_view_reply.cpp
     history/view/history_view_reply.h
     history/view/history_view_requests_bar.cpp
@@ -942,6 +946,8 @@ PRIVATE
     history/view/history_view_sticker_toast.h
     history/view/history_view_subsection_tabs.cpp
     history/view/history_view_subsection_tabs.h
+    history/view/history_view_summary_header.cpp
+    history/view/history_view_summary_header.h
     history/view/history_view_text_helper.cpp
     history/view/history_view_text_helper.h
     history/view/history_view_transcribe_button.cpp
@@ -1481,8 +1487,6 @@ PRIVATE
     platform/platform_tray.h
     platform/platform_webauthn.h
     platform/platform_window_title.h
-    profile/profile_back_button.cpp
-    profile/profile_back_button.h
     profile/profile_block_widget.cpp
     profile/profile_block_widget.h
     profile/profile_cover_drop_area.cpp
@@ -1638,6 +1642,8 @@ PRIVATE
     tde2e/tde2e_integration.h
     ui/boxes/edit_invite_link_session.cpp
     ui/boxes/edit_invite_link_session.h
+    ui/boxes/emoji_stake_box.cpp
+    ui/boxes/emoji_stake_box.h
     ui/boxes/peer_qr_box.cpp
     ui/boxes/peer_qr_box.h
     ui/chat/attach/attach_item_single_file_preview.cpp

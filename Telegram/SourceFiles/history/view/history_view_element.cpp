@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_element.h"
 
+#include "apiwrap.h"
+#include "api/api_transcribes.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_message.h"
 #include "history/view/media/history_view_media_generic.h"
@@ -607,6 +609,17 @@ QString DateTooltipText(not_null<Element*> view) {
 				dateText = tr::lng_forwarded_imported(tr::now)
 					+ "\n\n" + dateText;
 			}
+			if (forwarded->savedFromDate
+				&& forwarded->savedFromDate != forwarded->originalDate) {
+				const auto parsed = base::unixtime::parse(
+					forwarded->savedFromDate);
+				if (parsed != view->dateTime()) {
+					dateText += '\n' + tr::lng_forwarded_saved_date(
+						tr::now,
+						lt_date,
+						locale.toString(parsed, format));
+				}
+			}
 		}
 	}
 	if (view->isSignedAuthorElided()) {
@@ -723,7 +736,10 @@ void ForumThreadBar::init(
 			st::semiboldTextStyle,
 			topic->titleWithIconOrLogo(),
 			kMarkupTextOptions,
-			Core::TextContext({ .session = &topic->session() }));
+			Core::TextContext({
+				.session = &topic->session(),
+				.customEmojiLoopLimit = -1, // First frame only
+			}));
 	}
 	const auto skip = st::monoforumBarUserpicSkip;
 	const auto userpic = sublist
@@ -797,7 +813,10 @@ int ForumThreadBar::PaintForGetWidth(
 			st::semiboldTextStyle,
 			topic->titleWithIconOrLogo(),
 			kMarkupTextOptions,
-			Core::TextContext({ .session = &topic->session() }));
+			Core::TextContext({
+				.session = &topic->session(),
+				.customEmojiLoopLimit = -1, // First frame only
+			}));
 	} else {
 		text.setText(st::semiboldTextStyle, sublist->sublistPeer()->name());
 	}
@@ -889,6 +908,7 @@ void ForumThreadBar::Paint(
 	text.draw(p, {
 		.position = { textLeft, textTop },
 		.availableWidth = available,
+		.paused = true,
 		.elisionLines = 1,
 	});
 
@@ -904,7 +924,9 @@ void ServicePreMessage::init(
 		not_null<Element*> view,
 		PreparedServiceText string,
 		ClickHandlerPtr fullClickHandler,
-		std::unique_ptr<Media> media) {
+		std::unique_ptr<Media> media,
+		bool below) {
+	this->below = below;
 	text = Ui::Text::String(
 		st::serviceTextStyle,
 		string.text,
@@ -970,7 +992,9 @@ void ServicePreMessage::paint(
 		ElementChatMode mode) const {
 	if (media && media->hideServiceText()) {
 		const auto left = (width - media->width()) / 2;
-		const auto top = g.top() - height - st::msgMargin.bottom();
+		const auto top = below
+			? (g.top() + g.height() - st::msgServiceMargin.top() + st::msgServiceMargin.bottom())
+			: (g.top() - height - st::msgMargin.bottom());
 		const auto position = QPoint(left, top);
 		p.translate(position);
 		media->draw(p, context.selected()
@@ -978,7 +1002,9 @@ void ServicePreMessage::paint(
 			: context.translated(-position).withSelection({}));
 		p.translate(-position);
 	} else {
-		const auto top = g.top() - height - st::msgMargin.top();
+		const auto top = below
+			? (g.top() + g.height() - st::msgServiceMargin.top() + st::msgServiceMargin.bottom())
+			: (g.top() - height - st::msgMargin.top());
 		p.translate(0, top);
 
 		const auto rect = QRect(0, 0, width, height)
@@ -1016,11 +1042,15 @@ ClickHandlerPtr ServicePreMessage::textState(
 		QRect g) const {
 	if (media && media->hideServiceText()) {
 		const auto left = (width - media->width()) / 2;
-		const auto top = g.top() - height - st::msgMargin.bottom();
+		const auto top = below
+			? (g.top() + g.height() - st::msgServiceMargin.top() + st::msgServiceMargin.bottom())
+			: (g.top() - height - st::msgMargin.bottom());
 		const auto position = QPoint(left, top);
 		return media->textState(point - position, request).link;
 	}
-	const auto top = g.top() - height - st::msgMargin.top();
+	const auto top = below
+		? (g.top() + g.height() - st::msgServiceMargin.top() + st::msgServiceMargin.bottom())
+		: (g.top() - height - st::msgMargin.top());
 	const auto rect = QRect(0, top, width, height)
 		- st::msgServiceMargin;
 	const auto trect = rect - st::msgServicePadding;
@@ -1512,18 +1542,18 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 		.arg(peerToChannel(peerId).bare)
 		.arg(topicRootId.bare);
 	const auto fromLink = [&](int index) {
-		return Ui::Text::Link(from->name(), index);
+		return tr::link(from->name(), index);
 	};
 	const auto placeholderLink = [&] {
 		const auto linkText = history()->peer->isBot()
 			? tr::lng_action_topic_bot_thread(tr::now)
 			: tr::lng_action_topic_placeholder(tr::now);
-		return Ui::Text::Link(linkText, topicUrl);
+		return tr::link(linkText, topicUrl);
 	};
 	const auto wrapTopic = [&](
 			const QString &title,
 			std::optional<DocumentId> iconId) {
-		return Ui::Text::Link(
+		return tr::link(
 			Data::ForumTopicIconWithTitle(
 				topicRootId,
 				iconId.value_or(0),
@@ -1555,7 +1585,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 				tr::now,
 				lt_topic,
 				wrapParentTopic(),
-				Ui::Text::WithEntities),
+				tr::marked),
 		};
 	} else if (info->reopened) {
 		return {
@@ -1563,7 +1593,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 				tr::now,
 				lt_topic,
 				wrapParentTopic(),
-				Ui::Text::WithEntities),
+				tr::marked),
 		};
 	} else if (info->hidden) {
 		return {
@@ -1571,7 +1601,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 				tr::now,
 				lt_topic,
 				wrapParentTopic(),
-				Ui::Text::WithEntities),
+				tr::marked),
 		};
 	} else if (info->unhidden) {
 		return {
@@ -1579,7 +1609,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 				tr::now,
 				lt_topic,
 				wrapParentTopic(),
-				Ui::Text::WithEntities),
+				tr::marked),
 		};
 	} else if (info->renamed) {
 		return {
@@ -1595,7 +1625,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 					(info->reiconed
 						? info->iconId
 						: std::optional<DocumentId>())),
-				Ui::Text::WithEntities),
+				tr::marked),
 			{ from->createOpenLink() },
 		};
 	} else if (info->reiconed) {
@@ -1609,7 +1639,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 					placeholderLink(),
 					lt_emoji,
 					Data::SingleCustomEmoji(iconId),
-					Ui::Text::WithEntities),
+					tr::marked),
 				{ from->createOpenLink() },
 			};
 		} else {
@@ -1620,7 +1650,7 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 					fromLink(1),
 					lt_link,
 					placeholderLink(),
-					Ui::Text::WithEntities),
+					tr::marked),
 				{ from->createOpenLink() },
 			};
 		}
@@ -1640,12 +1670,26 @@ void Element::validateText() {
 		_textItem = item;
 		if (!storyMention) {
 			if (_text.isEmpty()) {
-				setTextWithLinks(Ui::Text::Italic(storyUnsupported
+				setTextWithLinks(tr::italic(storyUnsupported
 					? tr::lng_stories_unsupported(tr::now)
 					: tr::lng_forwarded_story_expired(tr::now)));
 			}
 			return;
 		}
+	}
+	const auto &summary = item->summaryEntry();
+	const auto summaryShownWas = (_flags & Flag::SummaryShown) != 0;
+	const auto summaryShownNow = !summary.result.empty() && summary.shown;
+	const auto summaryShownChanged = (summaryShownWas != summaryShownNow);
+	if (summaryShownNow) {
+		_flags |= Flag::SummaryShown;
+		if (summaryShownChanged) {
+			_textItem = item;
+			setTextWithLinks(summary.result);
+		}
+		return;
+	} else {
+		_flags &= ~Flag::SummaryShown;
 	}
 
 	// Albums may show text of a different item than the parent one.
@@ -1657,7 +1701,7 @@ void Element::validateText() {
 		return;
 	}
 	const auto &text = _textItem->_text;
-	if (_text.isEmpty() == text.empty()) {
+	if (!summaryShownChanged && _text.isEmpty() == text.empty()) {
 	} else if (_flags & Flag::ServiceMessage) {
 		const auto contextDependentText = contextDependentServiceText();
 		const auto &markedText = contextDependentText.text.empty()
@@ -1689,7 +1733,7 @@ void Element::validateText() {
 	} else {
 		const auto unavailable = item->computeUnavailableReason();
 		if (!unavailable.isEmpty()) {
-			setTextWithLinks(Ui::Text::Italic(unavailable));
+			setTextWithLinks(tr::italic(unavailable));
 		} else {
 			setTextWithLinks(_textItem->translatedTextWithLocalEntities());
 		}
@@ -1878,7 +1922,7 @@ void Element::createUnreadBar(rpl::producer<QString> text) {
 	const auto bar = Get<UnreadBar>();
 	std::move(
 		text
-	) | rpl::start_with_next([=](const QString &text) {
+	) | rpl::on_next([=](const QString &text) {
 		if (const auto bar = Get<UnreadBar>()) {
 			bar->init(text);
 		}
@@ -2054,7 +2098,28 @@ void Element::setServicePreMessage(
 			this,
 			std::move(text),
 			std::move(fullClickHandler),
-			std::move(media));
+			std::move(media),
+			false);
+		setPendingResize();
+	} else if (Has<ServicePreMessage>()) {
+		RemoveComponents(ServicePreMessage::Bit());
+		setPendingResize();
+	}
+}
+
+void Element::setServicePostMessage(
+		PreparedServiceText text,
+		ClickHandlerPtr fullClickHandler,
+		std::unique_ptr<Media> media) {
+	if (!text.text.empty() || media) {
+		AddComponents(ServicePreMessage::Bit());
+		const auto service = Get<ServicePreMessage>();
+		service->init(
+			this,
+			std::move(text),
+			std::move(fullClickHandler),
+			std::move(media),
+			true);
 		setPendingResize();
 	} else if (Has<ServicePreMessage>()) {
 		RemoveComponents(ServicePreMessage::Bit());
@@ -2352,6 +2417,7 @@ void Element::itemTextUpdated() {
 	if (const auto media = _media.get()) {
 		media->parentTextUpdated();
 	}
+	_flags &= ~Flag::SummaryShown;
 	clearSpecialOnlyEmoji();
 	_text = Ui::Text::String(st::msgMinWidth);
 	_textWidth = -1;

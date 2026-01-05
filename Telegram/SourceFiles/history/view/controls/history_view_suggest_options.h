@@ -20,6 +20,10 @@ class NumberInput;
 class InputField;
 } // namespace Ui
 
+namespace Ui::Text {
+class CustomEmojiHelper;
+} // namespace Ui::Text
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -47,21 +51,6 @@ void ChooseSuggestTimeBox(
 	not_null<Ui::GenericBox*> box,
 	SuggestTimeBoxArgs &&args);
 
-struct StarsInputFieldArgs {
-	std::optional<int64> value;
-	int64 max = 0;
-};
-[[nodiscard]] not_null<Ui::NumberInput*> AddStarsInputField(
-	not_null<Ui::VerticalLayout*> container,
-	StarsInputFieldArgs &&args);
-
-struct TonInputFieldArgs {
-	int64 value = 0;
-};
-[[nodiscard]] not_null<Ui::InputField*> AddTonInputField(
-	not_null<Ui::VerticalLayout*> container,
-	TonInputFieldArgs &&args);
-
 struct StarsTonPriceInput {
 	Fn<void()> focusCallback;
 	Fn<std::optional<CreditsAmount>()> computeResult;
@@ -78,6 +67,8 @@ struct StarsTonPriceArgs {
 	int starsMax = 0;
 	int64 nanoTonMin = 0;
 	int64 nanoTonMax = 0;
+	bool allowEmpty = false;
+	Fn<void(CreditsAmount)> errorHook;
 	rpl::producer<TextWithEntities> starsAbout;
 	rpl::producer<TextWithEntities> tonAbout;
 };
@@ -109,11 +100,6 @@ void ChooseSuggestPriceBox(
 	not_null<Main::Session*> session,
 	CreditsAmount price);
 
-void InsufficientTonBox(
-	not_null<Ui::GenericBox*> box,
-	not_null<PeerData*> peer,
-	CreditsAmount required);
-
 class SuggestOptionsBar final {
 public:
 	SuggestOptionsBar(
@@ -138,7 +124,8 @@ public:
 private:
 	void updateTexts();
 
-	[[nodiscard]] TextWithEntities composeText() const;
+	[[nodiscard]] TextWithEntities composeText(
+		Ui::Text::CustomEmojiHelper &helper) const;
 
 	const std::shared_ptr<ChatHelpers::Show> _show;
 	const not_null<PeerData*> _peer;

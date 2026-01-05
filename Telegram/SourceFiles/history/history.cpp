@@ -189,7 +189,9 @@ void History::checkChatListMessageRemoved(not_null<HistoryItem*> item) {
 }
 
 void History::itemVanished(not_null<HistoryItem*> item) {
-	item->notificationThread()->removeNotification(item);
+	if (const auto thread = item->maybeNotificationThread()) {
+		thread->removeNotification(item);
+	}
 	if (lastKeyboardId == item->id) {
 		clearLastKeyboard();
 	}
@@ -499,6 +501,7 @@ not_null<HistoryItem*> History::createItem(
 		MessageFlags localFlags,
 		bool detachExistingItem,
 		bool newMessage) {
+	owner().fillMessagePeers(peer->id, message);
 	if (const auto result = owner().message(peer, id)) {
 		if (detachExistingItem) {
 			result->removeMainView();
@@ -1297,8 +1300,8 @@ void History::applyServiceChanges(
 							payment->amount,
 							EntityType::Bold),
 						lt_title,
-						Ui::Text::Bold(paid->title),
-						Ui::Text::WithEntities),
+						tr::bold(paid->title),
+						tr::marked),
 					.textContext = Core::TextContext({
 						.session = &session(),
 					}),
@@ -3429,12 +3432,12 @@ void History::forumChanged(Data::Forum *old) {
 			return (_flags & Flag::IsForum) && inChatList();
 		}) | rpl::map(
 			AdjustedForumUnreadState
-		) | rpl::start_with_next([=](const Dialogs::UnreadState &old) {
+		) | rpl::on_next([=](const Dialogs::UnreadState &old) {
 			notifyUnreadStateChange(old);
 		}, forum->lifetime());
 
 		forum->chatsListChanges(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			updateChatListEntry();
 		}, forum->lifetime());
 	} else {
@@ -3466,12 +3469,12 @@ void History::monoforumChanged(Data::SavedMessages *old) {
 			return (_flags & Flag::IsMonoforumAdmin) && inChatList();
 		}) | rpl::map([=](const Dialogs::UnreadState &was) {
 			return AdjustedForumUnreadState(withMyMuted(was));
-		}) | rpl::start_with_next([=](const Dialogs::UnreadState &old) {
+		}) | rpl::on_next([=](const Dialogs::UnreadState &old) {
 			notifyUnreadStateChange(old);
 		}, monoforum->lifetime());
 
 		monoforum->chatsListChanges(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			updateChatListEntry();
 		}, monoforum->lifetime());
 	} else {

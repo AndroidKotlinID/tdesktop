@@ -70,6 +70,7 @@ struct UniqueGiftCoverArgs {
 	rpl::producer<TextWithEntities> subtitle;
 	Fn<void()> subtitleClick;
 	bool subtitleLinkColored = false;
+	bool subtitleOutlined = false;
 	rpl::producer<CreditsAmount> resalePrice;
 	Fn<void()> resaleClick;
 	bool attributesInfo = false;
@@ -77,9 +78,11 @@ struct UniqueGiftCoverArgs {
 		std::optional<Data::UniqueGift> now,
 		std::optional<Data::UniqueGift> next,
 		float64 progress)> repaintedHook;
+	std::shared_ptr<Data::GiftUpgradeSpinner> upgradeSpinner;
 };
 struct UniqueGiftCover {
 	Data::UniqueGift values;
+	bool spinner = false;
 	bool force = false;
 };
 
@@ -91,6 +94,12 @@ void AddWearGiftCover(
 	not_null<VerticalLayout*> container,
 	const Data::UniqueGift &data,
 	not_null<PeerData*> peer);
+
+void AttachGiftSenderBadge(
+	not_null<GenericBox*> box,
+	std::shared_ptr<ChatHelpers::Show> show,
+	not_null<PeerData*> from,
+	const QDateTime &date);
 
 void ShowUniqueGiftWearBox(
 	std::shared_ptr<ChatHelpers::Show> show,
@@ -119,8 +128,9 @@ void GiftReleasedByHandler(not_null<PeerData*> peer);
 
 struct StarGiftUpgradeArgs {
 	not_null<Window::SessionController*> controller;
-	base::required<uint64> stargiftId;
+	Data::StarGift stargift;
 	Fn<void(bool)> ready;
+	Fn<void()> upgraded;
 	not_null<PeerData*> peer;
 	Data::SavedStarGiftId savedId;
 	QString giftPrepayUpgradeHash;
@@ -131,11 +141,6 @@ struct StarGiftUpgradeArgs {
 	bool addDetailsDefault = false;
 };
 void ShowStarGiftUpgradeBox(StarGiftUpgradeArgs &&args);
-
-void AddUniqueCloseButton(
-	not_null<GenericBox*> box,
-	Settings::CreditsEntryBoxStyleOverrides st,
-	Fn<void(not_null<PopupMenu*>)> fillMenu = nullptr);
 
 void SubmitStarsForm(
 	std::shared_ptr<Main::SessionShow> show,

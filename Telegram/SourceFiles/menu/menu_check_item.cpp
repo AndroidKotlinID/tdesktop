@@ -19,17 +19,14 @@ void ItemWithCheck::init(bool checked) {
 
 	_checkView = std::make_unique<Ui::CheckView>(st::defaultCheck, false);
 	_checkView->checkedChanges(
-	) | rpl::start_with_next([=](bool checked) {
+	) | rpl::on_next([=](bool checked) {
 		setIcon(checked ? &st::mediaPlayerMenuCheck : nullptr);
 	}, lifetime());
 
 	_checkView->setChecked(checked, anim::type::normal);
-	AbstractButton::clicks(
-	) | rpl::start_with_next([=] {
-		_checkView->setChecked(
-			!_checkView->checked(),
-			anim::type::normal);
-	}, lifetime());
+	ItemBase::setClickedCallback([=] {
+		_checkView->setChecked(!_checkView->checked(), anim::type::normal);
+	});
 }
 
 not_null<Ui::CheckView*> ItemWithCheck::checkView() const {

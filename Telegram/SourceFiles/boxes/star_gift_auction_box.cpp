@@ -40,6 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_credits_graphics.h"
 #include "storage/storage_account.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/boxes/emoji_stake_box.h" // AddStarsInputField
 #include "ui/controls/button_labels.h"
 #include "ui/controls/feature_list.h"
 #include "ui/controls/table_rows.h"
@@ -248,7 +249,7 @@ struct BidSliderValues {
 	const auto kHuge = u"99999"_q;
 	const auto userpicLeft = st::auctionBidPlace.style.font->width(kHuge);
 
-	std::move(data) | rpl::start_with_next([=](BidRowData bid) {
+	std::move(data) | rpl::on_next([=](BidRowData bid) {
 		state->place->setTextColorOverride(
 			BidColorOverride(bid.position, bid.winners));
 		if (state->user != bid.user) {
@@ -274,7 +275,7 @@ struct BidSliderValues {
 	rpl::combine(
 		raw->widthValue(),
 		state->stars->widthValue()
-	) | rpl::start_with_next([=](int outer, int stars) {
+	) | rpl::on_next([=](int outer, int stars) {
 		const auto userpicSize = st::auctionBidUserpic.size;
 		const auto top = (userpicSize.height() - st::normalFont->height) / 2;
 		state->place->moveToLeft(0, top, outer);
@@ -352,7 +353,7 @@ void PlaceAuctionBid(
 			| (passDetails ? Flag::f_peer : Flag())
 			| (passDetails ? Flag::f_message : Flag())
 			| (hideName ? Flag::f_hide_name : Flag())),
-		passDetails ? to->input : MTP_inputPeerEmpty(),
+		passDetails ? to->input() : MTP_inputPeerEmpty(),
 		MTP_long(state.gift->id),
 		MTP_long(amount),
 		MTP_textWithEntities(
@@ -478,7 +479,7 @@ void AddBidPlaces(
 
 	rpl::duplicate(
 		value
-	) | rpl::start_with_next([=](const Data::GiftAuctionState &value) {
+	) | rpl::on_next([=](const Data::GiftAuctionState &value) {
 		auto cache = std::vector<Ui::PeerUserpicView>();
 		cache.reserve(value.topBidders.size());
 		for (const auto &user : value.topBidders) {
@@ -557,7 +558,7 @@ void AddBidPlaces(
 	const auto myLabel = AddSubsectionTitle(
 		box->verticalLayout(),
 		std::move(myLabelText));
-	state->my.value() | rpl::start_with_next([=](My my) {
+	state->my.value() | rpl::on_next([=](My my) {
 		myLabel->setTextColorOverride(
 			BidColorOverride(my.position, state->winners));
 	}, myLabel->lifetime());
@@ -603,7 +604,7 @@ void EditCustomBid(
 
 	box->addTopButton(st::boxTitleClose, [=] { box->closeBox(); });
 
-	const auto starsField = HistoryView::AddStarsInputField(container, {
+	const auto starsField = AddStarsInputField(container, {
 		.value = current,
 	});
 
@@ -707,7 +708,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 	});
 
 	args.peer->owner().giftAuctionGots(
-	) | rpl::start_with_next([=](const Data::GiftAuctionGot &update) {
+	) | rpl::on_next([=](const Data::GiftAuctionGot &update) {
 		if (update.giftId == giftId) {
 			box->closeBox();
 
@@ -741,7 +742,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 	const auto sliderWrap = content->add(
 		object_ptr<VerticalLayout>(content));
 	state->sliderValues.value(
-	) | rpl::start_with_next([=](const BidSliderValues &values) {
+	) | rpl::on_next([=](const BidSliderValues &values) {
 		const auto initial = !sliderWrap->count();
 		if (!initial) {
 			while (sliderWrap->count()) {
@@ -772,7 +773,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 			activeFgOverride);
 		bubble->setAttribute(Qt::WA_TransparentForMouseEvents, false);
 		bubble->setClickedCallback(setCustom);
-		state->subtext.value() | rpl::start_with_next([=](QString &&text) {
+		state->subtext.value() | rpl::on_next([=](QString &&text) {
 			bubble->setSubtext(std::move(text));
 		}, bubble->lifetime());
 
@@ -789,7 +790,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 		sliderWrap->resizeToWidth(st::boxWideWidth);
 
 		const auto custom = CreateChild<AbstractButton>(sliderWrap);
-		state->chosen.changes() | rpl::start_with_next([=] {
+		state->chosen.changes() | rpl::on_next([=] {
 			custom->update();
 		}, custom->lifetime());
 		custom->show();
@@ -805,7 +806,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 			p.fillRect(rem, rem + sub, inner, stroke, color);
 			p.fillRect(rem + sub, rem + inner - sub, stroke, sub, color);
 		});
-		sliderWrap->sizeValue() | rpl::start_with_next([=](QSize size) {
+		sliderWrap->sizeValue() | rpl::on_next([=](QSize size) {
 			custom->move(
 				size.width() - st::boxRowPadding.right() - custom->width(),
 				size.height() - custom->height());
@@ -954,30 +955,6 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 		helper.context());
 }
 
-[[nodiscard]] std::vector<int> RandomIndicesSubset(int total, int subset) {
-	const auto take = std::min(total, subset);
-	if (!take) {
-		return {};
-	}
-	auto result = std::vector<int>();
-	auto taken = base::flat_set<int>();
-	result.reserve(take);
-	taken.reserve(take);
-	for (auto i = 0; i < take; ++i) {
-		auto index = base::RandomIndex(total - i);
-		for (const auto already : taken) {
-			if (index >= already) {
-				++index;
-			} else {
-				break;
-			}
-		}
-		taken.emplace(index);
-		result.push_back(index);
-	}
-	return result;
-}
-
 [[nodiscard]] object_ptr<TableLayout> AuctionInfoTable(
 		not_null<QWidget*> parent,
 		not_null<VerticalLayout*> container,
@@ -996,7 +973,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 	const auto preview = (now.startDate > base::unixtime::now());
 	const auto name = now.gift->resellTitle;
 	state->finished = now.finished()
-		? (rpl::single(true) | rpl::type_erased())
+		? (rpl::single(true) | rpl::type_erased)
 		: (MinutesLeftTillValue(now.endDate) | rpl::map(!rpl::mappers::_1));
 
 	const auto date = [&](TimeId time) {
@@ -1124,7 +1101,7 @@ void AuctionBidBox(not_null<GenericBox*> box, AuctionBidBoxArgs &&args) {
 			rpl::mappers::_1 != 0
 		) | rpl::take(
 			1
-		) | rpl::start_with_next([=](int64 price) {
+		) | rpl::on_next([=](int64 price) {
 			delete round;
 
 			raw->insertRow(
@@ -1311,7 +1288,7 @@ void AuctionGotGiftsBox(
 			put();
 			base::timer_each(
 				kSwitchPreviewCoverInterval / 3
-			) | rpl::start_with_next(put, lifetime);
+			) | rpl::on_next(put, lifetime);
 
 			return lifetime;
 		};
@@ -1381,7 +1358,7 @@ void AuctionInfoBox(
 	});
 	AddSkip(container, st::defaultVerticalListSkip * 2);
 
-	AddUniqueCloseButton(
+	Settings::AddUniqueCloseMoreButton(
 		box,
 		{},
 		now.finished() ? nullptr : MakeAuctionFillMenuCallback(show, now));
@@ -1445,7 +1422,7 @@ void AuctionInfoBox(
 			return !list.models.empty();
 		}) | rpl::take(
 			1
-		) | rpl::start_with_next([=](const UniqueGiftAttributes &list) {
+		) | rpl::on_next([=](const UniqueGiftAttributes &list) {
 			auto emoji = tr::marked();
 			const auto indices = RandomIndicesSubset(list.models.size(), 3);
 			for (const auto index : indices) {
@@ -1469,7 +1446,10 @@ void AuctionInfoBox(
 				st::boxRowPadding + st::uniqueGiftValueAvailableMargin,
 				style::al_top
 			)->setClickHandlerFilter([=](const auto &...) {
-				show->show(Box(StarGiftPreviewBox, window, *now.gift, list));
+				const auto title = now.gift->resellTitle;
+				const auto type = Data::GiftAttributeIdType::Model;
+				const auto null = nullptr;
+				show->show(Box(StarGiftPreviewBox, title, list, type, null));
 				return false;
 			});
 		}, box->lifetime());
@@ -1488,7 +1468,7 @@ void AuctionInfoBox(
 			GiftTypeStars{ .info = *state->value.current().gift },
 			state->value.value()));
 		sendBox->boxClosing(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			box->closeBox();
 		}, box->lifetime());
 	});
@@ -1539,7 +1519,7 @@ base::weak_qptr<BoxContent> ChooseAndShowAuctionBox(
 				},
 				state->value()));
 			sendBox->boxClosing(
-			) | rpl::start_with_next(close, sendBox->lifetime());
+			) | rpl::on_next(close, sendBox->lifetime());
 		};
 		const auto from = current.my.to;
 		const auto text = (from->isSelf()
@@ -1591,7 +1571,7 @@ base::weak_qptr<BoxContent> ChooseAndShowAuctionBox(
 	}
 	if (const auto strong = box.get()) {
 		strong->boxClosing(
-		) | rpl::start_with_next(boxClosed, strong->lifetime());
+		) | rpl::on_next(boxClosed, strong->lifetime());
 	} else {
 		boxClosed();
 	}
@@ -1603,7 +1583,7 @@ base::weak_qptr<BoxContent> ChooseAndShowAuctionBox(
 rpl::lifetime ShowStarGiftAuction(
 		not_null<Window::SessionController*> controller,
 		PeerData *peer,
-		QString slug,
+		uint64 giftId,
 		Fn<void()> finishRequesting,
 		Fn<void()> boxClosed) {
 	const auto weak = base::make_weak(controller);
@@ -1614,8 +1594,8 @@ rpl::lifetime ShowStarGiftAuction(
 	};
 	const auto state = std::make_shared<State>();
 	auto result = session->giftAuctions().state(
-		slug
-	) | rpl::start_with_next([=](Data::GiftAuctionState &&value) {
+		giftId
+	) | rpl::on_next([=](Data::GiftAuctionState &&value) {
 		if (const auto onstack = finishRequesting) {
 			onstack();
 		}
@@ -1908,7 +1888,7 @@ rpl::producer<TextWithEntities> ActiveAuctionsButton(
 }
 
 struct Single {
-	QString slug;
+	uint64 giftId = 0;
 	not_null<DocumentData*> document;
 	int round = 0;
 	int total = 0;
@@ -1922,7 +1902,7 @@ object_ptr<Ui::RpWidget> MakeActiveAuctionRow(
 		not_null<QWidget*> parent,
 		not_null<Window::SessionController*> window,
 		not_null<DocumentData*> document,
-		const QString &slug,
+		uint64 giftId,
 		rpl::producer<Single> value) {
 	auto result = object_ptr<Ui::VerticalLayout>(parent);
 	const auto raw = result.data();
@@ -1952,7 +1932,7 @@ object_ptr<Ui::RpWidget> MakeActiveAuctionRow(
 			tag));
 
 	raw->paintRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		auto q = QPainter(raw);
 		sticker->paint(q, {
 			.textColor = st::windowFg->c,
@@ -1989,7 +1969,7 @@ object_ptr<Ui::RpWidget> MakeActiveAuctionRow(
 			st::defaultPopupMenu,
 			helper.context()),
 		st::auctionListTextPadding);
-	rpl::duplicate(value) | rpl::start_with_next([=](const Single &fields) {
+	rpl::duplicate(value) | rpl::on_next([=](const Single &fields) {
 		const auto outbid = (fields.position > fields.winning);
 		subtitle->setTextColorOverride(outbid
 			? st::attentionButtonFg->c
@@ -2019,10 +1999,10 @@ object_ptr<Ui::RpWidget> MakeActiveAuctionRow(
 			Ui::Text::Colorized(NiceCountdownText(seconds)));
 	}));
 	button->setClickedCallback([=] {
-		window->showStarGiftAuction(slug);
+		window->showStarGiftAuction(giftId);
 	});
 	button->setFullRadius(true);
-	raw->widthValue() | rpl::start_with_next([=](int width) {
+	raw->widthValue() | rpl::on_next([=](int width) {
 		button->setFullWidth(width);
 	}, button->lifetime());
 
@@ -2035,9 +2015,9 @@ Fn<void()> ActiveAuctionsCallback(
 	const auto &list = auctions.list;
 	const auto count = int(list.size());
 	if (count == 1) {
-		const auto slug = list.front()->gift->auctionSlug;
+		const auto giftId = list.front()->gift->id;
 		return [=] {
-			window->showStarGiftAuction(slug);
+			window->showStarGiftAuction(giftId);
 		};
 	}
 	struct Auctions {
@@ -2046,7 +2026,7 @@ Fn<void()> ActiveAuctionsCallback(
 	const auto state = std::make_shared<Auctions>();
 	const auto singleFrom = [](const Data::GiftAuctionState &state) {
 		return Single{
-			.slug = state.gift->auctionSlug,
+			.giftId = state.gift->id,
 			.document = state.gift->document,
 			.round = state.currentRound,
 			.total = state.totalRounds,
@@ -2076,7 +2056,7 @@ Fn<void()> ActiveAuctionsCallback(
 
 				const auto &now = entry.current();
 				entry = auctions->state(
-					now.slug
+					now.giftId
 				) | rpl::filter([=](const GiftAuctionState &state) {
 					return state.my.bid != 0;
 				}) | rpl::map(singleFrom);
@@ -2087,13 +2067,13 @@ Fn<void()> ActiveAuctionsCallback(
 						box,
 						window,
 						now.document,
-						now.slug,
+						now.giftId,
 						entry.value()),
 					st::boxRowPadding + QMargins(0, skip, 0, skip));
 
 				auctions->state(
-					now.slug
-				) | rpl::start_with_next([=](const GiftAuctionState &state) {
+					now.giftId
+				) | rpl::on_next([=](const GiftAuctionState &state) {
 					if (!state.my.bid) {
 						delete row;
 						if (const auto now = rows->current(); now > 1) {
@@ -2109,6 +2089,30 @@ Fn<void()> ActiveAuctionsCallback(
 			box->addButton(tr::lng_box_ok(), [=] { box->closeBox(); });
 		}));
 	};
+}
+
+std::vector<int> RandomIndicesSubset(int total, int subset) {
+	const auto take = std::min(total, subset);
+	if (!take) {
+		return {};
+	}
+	auto result = std::vector<int>();
+	auto taken = base::flat_set<int>();
+	result.reserve(take);
+	taken.reserve(take);
+	for (auto i = 0; i < take; ++i) {
+		auto index = base::RandomIndex(total - i);
+		for (const auto already : taken) {
+			if (index >= already) {
+				++index;
+			} else {
+				break;
+			}
+		}
+		taken.emplace(index);
+		result.push_back(index);
+	}
+	return result;
 }
 
 } // namespace Ui
